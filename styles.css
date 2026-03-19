@@ -3176,6 +3176,376 @@ button.staff-role:hover {
   }
 }
 
+/* ---------- My Family Dashboard ---------- */
+.my-family-section {
+  padding: 0 0 20px;
+  margin-top: -16px;
+  position: relative;
+  z-index: 2;
+}
+
+.my-family-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.mf-card {
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border);
+}
+
+.mf-card-title {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-text-light);
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--color-primary-light);
+}
+
+.mf-kid {
+  background: var(--color-cream);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.mf-kid:last-child {
+  margin-bottom: 0;
+}
+
+/* Kid header bar */
+.mf-kid-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mf-kid-photo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mf-kid-photo span {
+  color: var(--color-white);
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.mf-kid-name {
+  flex: 1;
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+
+.mf-class-link {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 50px;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.mf-class-link:hover {
+  background: rgba(var(--color-primary-rgb), 0.16);
+}
+
+/* Schedule table */
+.mf-schedule {
+  padding: 4px 0;
+}
+
+.mf-sched-row {
+  display: grid;
+  grid-template-columns: 52px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+}
+
+.mf-sched-row:nth-child(even) {
+  background: rgba(255,255,255,0.5);
+}
+
+.mf-sched-time {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.mf-sched-class {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.mf-sched-room {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.08);
+  padding: 2px 10px;
+  border-radius: 50px;
+  white-space: nowrap;
+}
+
+.mf-sched-teacher {
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  white-space: nowrap;
+}
+
+.mf-empty-text {
+  font-style: italic;
+  color: var(--color-text-light);
+  font-weight: 400;
+}
+
+.mf-sched-empty .mf-sched-class {
+  grid-column: 2 / -1;
+}
+
+/* Elective link in schedule */
+.mf-elective-link {
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(var(--color-primary-rgb), 0.4);
+  transition: all var(--transition-fast);
+}
+
+.mf-elective-link:hover {
+  color: var(--color-primary-dark);
+  border-bottom-color: var(--color-primary-dark);
+}
+
+/* Elective detail popup */
+.elective-detail h3 {
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+}
+
+.elective-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.elective-meta span {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 12px;
+  border-radius: 50px;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+}
+
+.elective-teacher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 14px;
+}
+
+.elective-roster-title {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-text-light);
+  margin-bottom: 10px;
+}
+
+.elective-roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.elective-student {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  background: var(--color-cream);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.elective-student-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.elective-student-dot span {
+  color: var(--color-white);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.elective-student strong {
+  color: var(--color-text);
+}
+
+.elective-student-last {
+  color: var(--color-text-light);
+  font-size: 0.78rem;
+}
+
+/* Parent duties */
+.mf-duty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mf-duty:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.mf-duty-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-primary);
+}
+
+.mf-duty-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.mf-duty-info strong {
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.mf-duty-info span {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+}
+
+.mf-duty-link {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mf-duty-link:hover {
+  text-decoration: underline;
+}
+
+.mf-empty {
+  font-size: 0.9rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+
+.mf-status-done, .mf-status-upcoming, .mf-status-open {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 50px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  vertical-align: middle;
+}
+
+.mf-status-done {
+  background: rgba(var(--color-primary-light-rgb), 0.2);
+  color: var(--color-primary-dark);
+}
+
+.mf-status-upcoming {
+  background: rgba(var(--color-accent-light-rgb), 0.2);
+  color: var(--color-accent-dark);
+}
+
+.mf-status-open {
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+  .my-family-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .mf-sched-row {
+    grid-template-columns: 42px 1fr;
+    gap: 2px 8px;
+  }
+
+  .mf-sched-room,
+  .mf-sched-teacher {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .mf-kid-bar {
+    flex-wrap: wrap;
+  }
+
+  .mf-class-link {
+    margin-left: 42px;
+  }
+}
+
 /* ---------- Calendar ---------- */
 .portal-calendar {
   padding: 60px 0;

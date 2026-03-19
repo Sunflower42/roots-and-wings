@@ -128,11 +128,14 @@
 
   // The demo password — NOT SECURE, replace with real auth
   var DEMO_PASSWORD = 'rootsandwings2026';
+  var DEMO_EMAIL = 'bogan@email.com'; // stub: password login acts as the Bogan family
   var SESSION_KEY = 'rw_member_auth';
 
   function showDashboard() {
     if (loginSection) loginSection.style.display = 'none';
     if (dashboard) dashboard.classList.add('visible');
+    // Render My Family (deferred — FAMILIES may not be defined yet on initial load)
+    setTimeout(function () { if (typeof renderMyFamily === 'function') renderMyFamily(); }, 0);
     // Re-trigger fade-in observer for dashboard elements
     var dashFades = dashboard ? dashboard.querySelectorAll('.fade-in') : [];
     if (dashFades.length > 0 && 'IntersectionObserver' in window) {
@@ -177,6 +180,7 @@
 
         if (pw === DEMO_PASSWORD) {
           sessionStorage.setItem(SESSION_KEY, 'true');
+          sessionStorage.setItem('rw_user_email', DEMO_EMAIL);
           if (loginError) loginError.classList.remove('visible');
           if (passwordInput) passwordInput.classList.remove('error');
           showDashboard();
@@ -266,6 +270,71 @@
     var i = (name.charCodeAt(0) + (name.length > 1 ? name.charCodeAt(1) : 0)) % FACE_COLORS.length;
     return 'linear-gradient(135deg,' + FACE_COLORS[i][0] + ',' + FACE_COLORS[i][1] + ')';
   }
+
+  // ── Afternoon electives (per session, per kid by name) ──
+  // Each session has a list of electives with time slot and enrolled kids
+  var ELECTIVES = {
+    3: [ // Session 3 (current)
+      {name:'Fancy Beading', time:'1:00–1:55', room:'Kindness', teacher:'Monica Crawford', kids:['Willa Bogan','Trinity Brooks','Clara Fisher','Hana Kim','Olivia Baker']},
+      {name:'Board Games', time:'2:00–2:55', room:'Multi-Purpose Room', teacher:'Tamara Dixon', kids:['Willa Bogan','Owen Campbell','Nolan Patterson','Rowan Ellis']},
+      {name:'Cooking Basics', time:'1:00–1:55', room:'Kitchen', teacher:'Maria Garcia', kids:['Teddy Bogan','Juniper Taylor','Wren Mitchell','Amelia Johnson','Beckett Graves']},
+      {name:'Lego Engineering', time:'2:00–2:55', room:'Patience', teacher:'Chris Foster', kids:['Teddy Bogan','Miles Jackson','Scarlett Palmer','Sophia Chen']},
+      {name:'Creative Writing', time:'1:00–1:55', room:'Faithfulness', teacher:'Kim Johnson', kids:['June Bogan','Sienna Collins','Zara Washington','Henry Johnson','Daisy Lawson']},
+      {name:'Film Studies', time:'2:00–2:55', room:'Multi-Purpose Room', teacher:'Ben Hughes', kids:['June Bogan','Norah Carter','Elias Robinson','Finn Henderson','Gus Owens']},
+      {name:'Nature Journaling', time:'1:00–1:55', room:'Outdoor / Pavilion', teacher:'Rachel Davis', kids:['Caleb Adams','Liam Anderson','Roman Collins','Violet Hughes']},
+      {name:'Outdoor Games', time:'2:00–2:55', room:'Outdoor / Pavilion', teacher:'Marcus Brooks', kids:['Caleb Adams','Ezra Dixon','Malcolm Washington','Jada Robinson','Luna Keller']},
+      {name:'Watercolors', time:'1:00–1:55', room:'Patience', teacher:'Priya Ellis', kids:['Emma Anderson','Hazel Campbell','Sadie Ellis','Poppy Patterson','Ruby Henderson']},
+      {name:'Drama', time:'2:00–2:55', room:'Faithfulness', teacher:'Courtney Bennett', kids:['Emma Anderson','Aiden Coleman','Felix Owens','Declan Sullivan','Camila Martinez']}
+    ]
+  };
+
+  // ── Cleaning crew assignments (per session, per family) ──
+  var CLEANING_CREW = {
+    3: [ // Session 3
+      {family:'Anderson', area:'Main Floor Bathrooms'},
+      {family:'Baker', area:'Kitchen'},
+      {family:'Chen', area:'Fellowship Hall'},
+      {family:'Davis', area:'Classrooms (Patience & Kindness)'},
+      {family:'Foster', area:'Outdoor / Pavilion'},
+      {family:'Garcia', area:'Main Floor Bathrooms'},
+      {family:'Hughes', area:'Kitchen'},
+      {family:'Johnson', area:'Fellowship Hall'},
+      {family:'Keller', area:'Classrooms (Patience & Kindness)'},
+      {family:'Martinez', area:'Outdoor / Pavilion'},
+      {family:'Nguyen', area:'Main Floor Bathrooms'},
+      {family:'Palmer', area:'Kitchen'},
+      {family:'Quinn', area:'Fellowship Hall'},
+      {family:'Robinson', area:'Classrooms (Patience & Kindness)'},
+      {family:'Sullivan', area:'Outdoor / Pavilion'}
+    ]
+    // Note: not every family is on cleaning crew every session
+    // Bogan, Bellner, etc. are NOT on this session's crew
+  };
+
+  // ── Volunteer roles (year-long) ──
+  var VOLUNTEER_ROLES = [
+    {role:'Safety Coordinator', family:'Raymont', year:'1st'},
+    {role:'Parent Social Events', family:'Bellner', year:'1st'},
+    {role:'Lunch Setup Lead', family:'Anderson', year:'1st'},
+    {role:'Supply Room Manager', family:'Crawford', year:'1st'},
+    {role:'Photo / Social Media', family:'Bogan', year:'1st'},
+    {role:'Session Coordinator', family:'Smith', year:'2nd'},
+    {role:'Field Trip Organizer', family:'Newlin', year:'2nd'},
+    {role:'Curriculum Lead', family:'Shewan', year:'2nd'},
+    {role:'New Family Liaison', family:'Billingsley', year:'2nd'},
+    {role:'Event Planner', family:'Lawson', year:'2nd'}
+  ];
+
+  // ── Special events (with coordinator groups) ──
+  var SPECIAL_EVENTS = [
+    {event:'Ice Cream Social', date:'September 2025', status:'Complete', coordinators:['Bellner','Davis','Fisher']},
+    {event:'School Dance', date:'October 2025', status:'Complete', coordinators:['Smith','Garcia','Coleman']},
+    {event:'Maker\'s Market', date:'December 2025', status:'Complete', coordinators:['Bogan','Newlin','Sullivan','Crawford']},
+    {event:'Passion Fair', date:'February 2026', status:'Complete', coordinators:['Shewan','Billingsley','Harris']},
+    {event:'Spring Camp', date:'April 2026', status:'Planning', coordinators:['Bogan','Raymont','Dixon']},
+    {event:'Field Day', date:'May 2026', status:'Planning', coordinators:['Brooks','Foster','Quinn','Owens']},
+    {event:'End-of-Year Showcase', date:'May 2026', status:'Needs Volunteers', coordinators:['Bellner','Lawson']}
+  ];
 
   // Class staff — liaison (year-long), teacher + assistants per session
   // currentSession controls which session's teacher/assistants are shown
@@ -909,6 +978,266 @@
       }
     });
   });
+
+  // ──────────────────────────────────────────────
+  // 7c. My Family Dashboard
+  // ──────────────────────────────────────────────
+
+  // SVG icons for duties
+  var DUTY_ICONS = {
+    teach: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
+    assist: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    star: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+    board: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>',
+    clean: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+    event: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+    volunteer: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>'
+  };
+
+  // Helper: find a kid's afternoon electives for the current session
+  function getKidElectives(kidFullName) {
+    var sessElectives = ELECTIVES[currentSession] || [];
+    var result = [];
+    sessElectives.forEach(function (elec) {
+      if (elec.kids.indexOf(kidFullName) !== -1) {
+        result.push(elec);
+      }
+    });
+    // Sort by time
+    result.sort(function (a, b) { return a.time.localeCompare(b.time); });
+    return result;
+  }
+
+  function renderMyFamily() {
+    var email = sessionStorage.getItem('rw_user_email');
+    var section = document.getElementById('myFamily');
+    var grid = document.getElementById('myFamilyGrid');
+    var greeting = document.getElementById('dashboardGreeting');
+    if (!email || !section || !grid) return;
+
+    // Find the family by email
+    var fam = null;
+    for (var i = 0; i < FAMILIES.length; i++) {
+      if (FAMILIES[i].email === email) { fam = FAMILIES[i]; break; }
+    }
+    if (!fam) return;
+
+    // Personalize greeting
+    var firstName = fam.parents.split(' & ')[0].split(' ')[0];
+    if (greeting) greeting.textContent = 'Welcome, ' + firstName + '!';
+
+    var html = '';
+
+    // ──── Kids' schedule card ────
+    html += '<div class="mf-card">';
+    html += '<h3 class="mf-card-title">Kids\' Schedule &mdash; Session ' + currentSession + '</h3>';
+    fam.kids.forEach(function (kid) {
+      var staff = CLASS_STAFF[kid.group];
+      var sess = staff ? staff.sessions[currentSession - 1] : null;
+      var room = staff ? staff.room : '';
+      var teacher = sess ? sess.teacher : 'TBD';
+      var displayLast = kid.lastName || fam.name;
+      var kidFull = kid.name + ' ' + displayLast;
+
+      // Get afternoon electives
+      var electives = getKidElectives(kidFull);
+
+      html += '<div class="mf-kid">';
+      // Kid header bar
+      html += '<div class="mf-kid-bar">';
+      html += '<div class="mf-kid-photo" style="background:' + faceColor(kid.name) + '"><span>' + kid.name.charAt(0) + '</span></div>';
+      html += '<strong class="mf-kid-name">' + kid.name + '</strong>';
+      html += '<button class="mf-class-link" data-group="' + kid.group + '">View Classmates &rarr;</button>';
+      html += '</div>';
+
+      // Schedule table
+      html += '<div class="mf-schedule">';
+
+      // Morning
+      html += '<div class="mf-sched-row">';
+      html += '<span class="mf-sched-time">Morning</span>';
+      html += '<span class="mf-sched-class">' + kid.group + '</span>';
+      html += '<span class="mf-sched-room">' + room + '</span>';
+      html += '<span class="mf-sched-teacher">' + teacher + '</span>';
+      html += '</div>';
+
+      // Afternoon electives
+      if (electives.length > 0) {
+        electives.forEach(function (e) {
+          var label = e.time.indexOf('1:00') !== -1 ? 'PM 1' : 'PM 2';
+          html += '<div class="mf-sched-row">';
+          html += '<span class="mf-sched-time">' + label + '</span>';
+          html += '<button class="mf-elective-link mf-sched-class" data-elective="' + e.name + '">' + e.name + '</button>';
+          html += '<span class="mf-sched-room">' + e.room + '</span>';
+          html += '<span class="mf-sched-teacher">' + e.teacher + '</span>';
+          html += '</div>';
+        });
+      } else {
+        html += '<div class="mf-sched-row mf-sched-empty">';
+        html += '<span class="mf-sched-time">PM</span>';
+        html += '<span class="mf-sched-class mf-empty-text">No electives yet</span>';
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+    });
+    html += '</div>';
+
+    // ──── Responsibilities card ────
+    html += '<div class="mf-card">';
+    html += '<h3 class="mf-card-title">Your Responsibilities</h3>';
+    var duties = [];
+    var parentFullNames = fam.parents.split(' & ').map(function(p) { return p.trim() + ' ' + fam.name; });
+
+    // Teaching / assisting (morning classes)
+    var groups = Object.keys(CLASS_STAFF);
+    groups.forEach(function (groupName) {
+      var staff = CLASS_STAFF[groupName];
+      var sess = staff.sessions[currentSession - 1];
+      if (!sess) return;
+
+      // Liaison
+      parentFullNames.forEach(function (full) {
+        if (staff.liaison === full) {
+          duties.push({icon: 'star', text: groupName + ' Class Liaison', detail: 'Year-long role'});
+        }
+        if (sess.teacher === full) {
+          duties.push({icon: 'teach', text: 'Teaching ' + groupName, detail: '10:00–12:00 &middot; ' + (staff.room || '')});
+        }
+        sess.assistants.forEach(function (a) {
+          if (a === full) {
+            duties.push({icon: 'assist', text: 'Assisting ' + groupName, detail: '10:00–12:00 &middot; ' + (staff.room || '')});
+          }
+        });
+      });
+    });
+
+    // Teaching afternoon electives
+    var sessElectives = ELECTIVES[currentSession] || [];
+    sessElectives.forEach(function (elec) {
+      parentFullNames.forEach(function (full) {
+        if (elec.teacher === full) {
+          duties.push({icon: 'teach', text: 'Teaching ' + elec.name, detail: elec.time + ' &middot; Afternoon elective'});
+        }
+      });
+    });
+
+    // Board role
+    if (fam.boardRole) {
+      duties.push({icon: 'board', text: fam.boardRole, detail: 'Board of Directors'});
+    }
+
+    // Volunteer role (year-long)
+    VOLUNTEER_ROLES.forEach(function (vr) {
+      if (vr.family === fam.name) {
+        duties.push({icon: 'volunteer', text: vr.role, detail: vr.year + ' Year &middot; Year-long'});
+      }
+    });
+
+    // Cleaning crew
+    var sessCleaning = CLEANING_CREW[currentSession] || [];
+    var myClean = null;
+    sessCleaning.forEach(function (c) {
+      if (c.family === fam.name) myClean = c;
+    });
+    if (myClean) {
+      duties.push({icon: 'clean', text: 'Cleaning Crew: ' + myClean.area, detail: 'Session ' + currentSession});
+    }
+
+    // Special events
+    SPECIAL_EVENTS.forEach(function (ev) {
+      if (ev.coordinators.indexOf(fam.name) !== -1) {
+        var otherCoords = ev.coordinators.filter(function(c) { return c !== fam.name; });
+        var withText = otherCoords.length > 0 ? 'with ' + otherCoords.join(', ') : '';
+        var statusClass = ev.status === 'Complete' ? 'mf-status-done' : ev.status === 'Needs Volunteers' ? 'mf-status-open' : 'mf-status-upcoming';
+        duties.push({icon: 'event', text: ev.event + ' Coordinator', detail: ev.date + ' &middot; <span class="' + statusClass + '">' + ev.status + '</span>' + (withText ? ' &middot; ' + withText : '')});
+      }
+    });
+
+    if (duties.length === 0) {
+      html += '<p class="mf-empty">No assignments found for this session.</p>';
+    } else {
+      duties.forEach(function (d) {
+        html += '<div class="mf-duty">';
+        html += '<div class="mf-duty-icon">' + (DUTY_ICONS[d.icon] || '') + '</div>';
+        html += '<div class="mf-duty-info"><strong>' + d.text + '</strong><span>' + d.detail + '</span></div>';
+        html += '</div>';
+      });
+    }
+    html += '</div>';
+
+    grid.innerHTML = html;
+    section.style.display = '';
+
+    // Wire up "View Class" buttons
+    grid.querySelectorAll('.mf-class-link').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var group = this.getAttribute('data-group');
+        activeFilter = group;
+        document.querySelectorAll('.filter-pill').forEach(function (p) {
+          p.classList.toggle('active', p.getAttribute('data-filter') === group);
+        });
+        renderDirectory();
+        var dirSection = document.getElementById('directory');
+        if (dirSection) dirSection.scrollIntoView({behavior: 'smooth'});
+      });
+    });
+
+    // Wire up elective detail links
+    grid.querySelectorAll('.mf-elective-link').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var elecName = this.getAttribute('data-elective');
+        showElectiveDetail(elecName);
+      });
+    });
+  }
+
+  // Elective detail popup
+  function showElectiveDetail(elecName) {
+    var sessElectives = ELECTIVES[currentSession] || [];
+    var elec = null;
+    for (var i = 0; i < sessElectives.length; i++) {
+      if (sessElectives[i].name === elecName) { elec = sessElectives[i]; break; }
+    }
+    if (!elec || !personDetail || !personDetailCard) return;
+
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail">';
+    html += '<h3>' + elec.name + '</h3>';
+    html += '<div class="elective-meta">';
+    html += '<span>' + elec.time + '</span>';
+    html += '<span>' + elec.room + '</span>';
+    html += '<span>Session ' + currentSession + '</span>';
+    html += '</div>';
+    html += '<div class="elective-teacher">';
+    html += '<div class="staff-dot" style="background:' + faceColor(elec.teacher) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + elec.teacher.charAt(0) + '</span></div>';
+    html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + elec.teacher + '</strong><small style="color:var(--color-text-light);">Teacher</small></div>';
+    html += '</div>';
+    html += '<h4 class="elective-roster-title">' + elec.kids.length + ' Students</h4>';
+    html += '<div class="elective-roster">';
+    elec.kids.forEach(function (kidName) {
+      var first = kidName.split(' ')[0];
+      var last = kidName.split(' ').slice(1).join(' ');
+      html += '<div class="elective-student">';
+      html += '<div class="elective-student-dot" style="background:' + faceColor(first) + '"><span>' + first.charAt(0) + '</span></div>';
+      html += '<div><strong>' + first + '</strong> <span class="elective-student-last">' + last + '</span></div>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) {
+      if (e.target === personDetail) closeDetail();
+    });
+  }
+
+  // Render on load if already logged in
+  if (sessionStorage.getItem(SESSION_KEY) === 'true') {
+    renderMyFamily();
+  }
 
   // ──────────────────────────────────────────────
   // 8. Google Sign-In (Members Portal)
