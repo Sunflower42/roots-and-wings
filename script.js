@@ -271,184 +271,266 @@
     return 'linear-gradient(135deg,' + FACE_COLORS[i][0] + ',' + FACE_COLORS[i][1] + ')';
   }
 
-  // ── Afternoon electives (per session, per kid by name) ──
-  // Each session has a list of electives with time slot and enrolled kids
-  var ELECTIVES = {
-    3: [ // Session 3 (current)
-      {name:'Fancy Beading', time:'1:00–1:55', room:'Kindness', teacher:'Monica Crawford', kids:['Willa Bogan','Trinity Brooks','Clara Fisher','Hana Kim','Olivia Baker']},
-      {name:'Board Games', time:'2:00–2:55', room:'Multi-Purpose Room', teacher:'Tamara Dixon', kids:['Willa Bogan','Owen Campbell','Nolan Patterson','Rowan Ellis']},
-      {name:'Cooking Basics', time:'1:00–1:55', room:'Kitchen', teacher:'Maria Garcia', kids:['Teddy Bogan','Juniper Taylor','Wren Mitchell','Amelia Johnson','Beckett Graves']},
-      {name:'Lego Engineering', time:'2:00–2:55', room:'Patience', teacher:'Chris Foster', kids:['Teddy Bogan','Miles Jackson','Scarlett Palmer','Sophia Chen']},
-      {name:'Creative Writing', time:'1:00–1:55', room:'Faithfulness', teacher:'Kim Johnson', kids:['June Bogan','Sienna Collins','Zara Washington','Henry Johnson','Daisy Lawson']},
-      {name:'Film Studies', time:'2:00–2:55', room:'Multi-Purpose Room', teacher:'Ben Hughes', kids:['June Bogan','Norah Carter','Elias Robinson','Finn Henderson','Gus Owens']},
-      {name:'Nature Journaling', time:'1:00–1:55', room:'Outdoor / Pavilion', teacher:'Rachel Davis', kids:['Caleb Adams','Liam Anderson','Roman Collins','Violet Hughes']},
-      {name:'Outdoor Games', time:'2:00–2:55', room:'Outdoor / Pavilion', teacher:'Marcus Brooks', kids:['Caleb Adams','Ezra Dixon','Malcolm Washington','Jada Robinson','Luna Keller']},
-      {name:'Watercolors', time:'1:00–1:55', room:'Patience', teacher:'Priya Ellis', kids:['Emma Anderson','Hazel Campbell','Sadie Ellis','Poppy Patterson','Ruby Henderson']},
-      {name:'Drama', time:'2:00–2:55', room:'Faithfulness', teacher:'Courtney Bennett', kids:['Emma Anderson','Aiden Coleman','Felix Owens','Declan Sullivan','Camila Martinez']}
-    ]
+
+  // ── Session metadata ──
+  var SESSION_DATES = {
+    1: { name: 'Fall Session 1', start: '2025-09-03', end: '2025-10-01' },
+    2: { name: 'Fall Session 2', start: '2025-10-15', end: '2025-11-12' },
+    3: { name: 'Winter Session 3', start: '2026-01-14', end: '2026-02-11' },
+    4: { name: 'Spring Session 4', start: '2026-03-04', end: '2026-04-01' },
+    5: { name: 'Spring Session 5', start: '2026-04-15', end: '2026-05-13' }
   };
 
-  // ── Cleaning crew assignments (per session, per family) ──
-  var CLEANING_CREW = {
-    3: [ // Session 3
-      {family:'Anderson', area:'Main Floor Bathrooms'},
-      {family:'Baker', area:'Kitchen'},
-      {family:'Chen', area:'Fellowship Hall'},
-      {family:'Davis', area:'Classrooms (Patience & Kindness)'},
-      {family:'Foster', area:'Outdoor / Pavilion'},
-      {family:'Garcia', area:'Main Floor Bathrooms'},
-      {family:'Hughes', area:'Kitchen'},
-      {family:'Johnson', area:'Fellowship Hall'},
-      {family:'Keller', area:'Classrooms (Patience & Kindness)'},
-      {family:'Martinez', area:'Outdoor / Pavilion'},
-      {family:'Nguyen', area:'Main Floor Bathrooms'},
-      {family:'Palmer', area:'Kitchen'},
-      {family:'Quinn', area:'Fellowship Hall'},
-      {family:'Robinson', area:'Classrooms (Patience & Kindness)'},
-      {family:'Sullivan', area:'Outdoor / Pavilion'}
-    ]
-    // Note: not every family is on cleaning crew every session
-    // Bogan, Bellner, etc. are NOT on this session's crew
-  };
+  var currentSession = 4; // 1–5
 
-  // ── Volunteer roles (year-long) ──
-  var VOLUNTEER_ROLES = [
-    {role:'Safety Coordinator', family:'Raymont', year:'1st'},
-    {role:'Parent Social Events', family:'Bellner', year:'1st'},
-    {role:'Lunch Setup Lead', family:'Anderson', year:'1st'},
-    {role:'Supply Room Manager', family:'Crawford', year:'1st'},
-    {role:'Photo / Social Media', family:'Bogan', year:'1st'},
-    {role:'Session Coordinator', family:'Smith', year:'2nd'},
-    {role:'Field Trip Organizer', family:'Newlin', year:'2nd'},
-    {role:'Curriculum Lead', family:'Shewan', year:'2nd'},
-    {role:'New Family Liaison', family:'Billingsley', year:'2nd'},
-    {role:'Event Planner', family:'Lawson', year:'2nd'}
-  ];
-
-  // ── Special events (with coordinator groups) ──
-  var SPECIAL_EVENTS = [
-    {event:'Ice Cream Social', date:'September 2025', status:'Complete', coordinators:['Bellner','Davis','Fisher']},
-    {event:'School Dance', date:'October 2025', status:'Complete', coordinators:['Smith','Garcia','Coleman']},
-    {event:'Maker\'s Market', date:'December 2025', status:'Complete', coordinators:['Bogan','Newlin','Sullivan','Crawford']},
-    {event:'Passion Fair', date:'February 2026', status:'Complete', coordinators:['Shewan','Billingsley','Harris']},
-    {event:'Spring Camp', date:'April 2026', status:'Planning', coordinators:['Bogan','Raymont','Dixon']},
-    {event:'Field Day', date:'May 2026', status:'Planning', coordinators:['Brooks','Foster','Quinn','Owens']},
-    {event:'End-of-Year Showcase', date:'May 2026', status:'Needs Volunteers', coordinators:['Bellner','Lawson']}
-  ];
-
-  // Class staff — liaison (year-long), teacher + assistants per session
-  // currentSession controls which session's teacher/assistants are shown
-  var currentSession = 3; // 1–5
-  var CLASS_STAFF = {
+  // ── Morning classes (by group, per session) ──
+  var AM_CLASSES = {
     'Greenhouse': {
-      room: 'Patience',
       ages: '0–2',
       note: 'No programming',
       liaison: 'Ashley Brooks',
-      sessions: [
-        {teacher:'Rachel Adams', assistants:['Angela Carter']},
-        {teacher:'Angela Carter', assistants:['Rachel Adams']},
-        {teacher:'Lisa Chen', assistants:['Brittany Coleman']},
-        {teacher:'Rachel Adams', assistants:['Lisa Chen']},
-        {teacher:'Angela Carter', assistants:['Ashley Brooks']}
-      ]
+      sessions: {
+        1: { topic: 'Free Play', room: 'Patience', teacher: 'Rachel Adams', assistants: ['Angela Carter'] },
+        2: { topic: 'Free Play', room: 'Patience', teacher: 'Angela Carter', assistants: ['Rachel Adams'] },
+        3: { topic: 'Free Play', room: 'Patience', teacher: 'Lisa Chen', assistants: ['Brittany Coleman'] },
+        4: { topic: 'Free Play', room: 'Patience', teacher: 'Rachel Adams', assistants: ['Lisa Chen'] },
+        5: { topic: 'Free Play', room: 'Patience', teacher: 'Angela Carter', assistants: ['Ashley Brooks'] }
+      }
     },
     'Saplings': {
-      room: 'Faithfulness',
       ages: '3–5',
       liaison: 'Laura Campbell',
-      sessions: [
-        {teacher:'Jen Baker', assistants:['Amy Foster']},
-        {teacher:'Amy Foster', assistants:['Jen Baker']},
-        {teacher:'Kevin Ellis', assistants:['Amanda Fisher']},
-        {teacher:'Amanda Fisher', assistants:['Laura Campbell']},
-        {teacher:'Jen Baker', assistants:['Kevin Ellis']}
-      ]
+      sessions: {
+        1: { topic: 'Seasons & Weather', room: 'Faithfulness', teacher: 'Jen Baker', assistants: ['Amy Foster'] },
+        2: { topic: 'Animals & Habitats', room: 'Faithfulness', teacher: 'Amy Foster', assistants: ['Jen Baker'] },
+        3: { topic: 'Colors & Shapes', room: 'Faithfulness', teacher: 'Kevin Ellis', assistants: ['Amanda Fisher'] },
+        4: { topic: 'Nature Art', room: 'Trust', teacher: 'Amanda Fisher', assistants: ['Laura Campbell'] },
+        5: { topic: 'Garden Explorers', room: 'Trust', teacher: 'Jen Baker', assistants: ['Kevin Ellis'] }
+      }
     },
     'Sassafras': {
-      room: 'Kindness',
       ages: '5–6',
       liaison: 'Danielle Graves',
-      sessions: [
-        {teacher:'Rachel Adams', assistants:['Danielle Graves']},
-        {teacher:'Nicole Keller', assistants:['Tiffany Morris']},
-        {teacher:'Danielle Graves', assistants:['Rachel Adams']},
-        {teacher:'Tiffany Morris', assistants:['Nicole Keller']},
-        {teacher:'Shannon Quinn', assistants:['Danielle Graves']}
-      ]
+      sessions: {
+        1: { topic: 'Five Senses', room: 'Trust', teacher: 'Rachel Adams', assistants: ['Danielle Graves'] },
+        2: { topic: 'Becoming Nocturnal', room: 'Trust', teacher: 'Nicole Keller', assistants: ['Tiffany Morris'] },
+        3: { topic: 'Map Makers', room: 'Trust', teacher: 'Danielle Graves', assistants: ['Rachel Adams'] },
+        4: { topic: 'Story Science', room: 'Trust', teacher: 'Tiffany Morris', assistants: ['Nicole Keller'] },
+        5: { topic: 'Bug Detectives', room: 'Trust', teacher: 'Shannon Quinn', assistants: ['Danielle Graves'] }
+      }
     },
     'Oaks': {
-      room: 'Multi-Purpose Room',
       ages: '7–8',
       liaison: 'Maria Garcia',
-      sessions: [
-        {teacher:'Sarah Anderson', assistants:['Brittany Coleman']},
-        {teacher:'Maria Garcia', assistants:['Kevin Ellis']},
-        {teacher:'Gabriela Martinez', assistants:['Erica Patterson']},
-        {teacher:'Soo-Yun Kim', assistants:['Maria Garcia']},
-        {teacher:'Kristen Henderson', assistants:['Sarah Anderson']}
-      ]
+      sessions: {
+        1: { topic: 'The Science of Cooking', room: 'Patience', teacher: 'Sarah Anderson', assistants: ['Brittany Coleman'] },
+        2: { topic: 'STEAM', room: 'Patience', teacher: 'Maria Garcia', assistants: ['Kevin Ellis'] },
+        3: { topic: 'Simple Machines', room: 'Patience', teacher: 'Gabriela Martinez', assistants: ['Erica Patterson'] },
+        4: { topic: 'Ancient Egypt', room: 'Patience', teacher: 'Soo-Yun Kim', assistants: ['Maria Garcia'] },
+        5: { topic: 'Weather Watchers', room: 'Patience', teacher: 'Kristen Henderson', assistants: ['Sarah Anderson'] }
+      }
     },
     'Maples': {
-      room: 'Kitchen',
       ages: '8–9',
       liaison: 'Kim Johnson',
-      sessions: [
-        {teacher:'DeShawn Barnes', assistants:['Lisa Chen']},
-        {teacher:'Kim Johnson', assistants:['Latasha Jackson']},
-        {teacher:'Latasha Jackson', assistants:['Denise Mitchell']},
-        {teacher:'Denise Mitchell', assistants:['Kim Johnson']},
-        {teacher:'Lisa Chen', assistants:['DeShawn Barnes']}
-      ]
+      sessions: {
+        1: { topic: 'Inventors, Explorers & Eco Warriors', room: 'Faithfulness', teacher: 'DeShawn Barnes', assistants: ['Lisa Chen'] },
+        2: { topic: 'Adventures with Alice', room: 'Faithfulness', teacher: 'Kim Johnson', assistants: ['Latasha Jackson'] },
+        3: { topic: 'Myth & Legend', room: 'Faithfulness', teacher: 'Latasha Jackson', assistants: ['Denise Mitchell'] },
+        4: { topic: 'Robotics', room: 'Faithfulness', teacher: 'Denise Mitchell', assistants: ['Kim Johnson'] },
+        5: { topic: 'Ocean Explorers', room: 'Faithfulness', teacher: 'Lisa Chen', assistants: ['DeShawn Barnes'] }
+      }
     },
     'Birch': {
-      room: 'Patience',
       ages: '9–10',
       liaison: 'Tamara Dixon',
-      sessions: [
-        {teacher:'Rachel Davis', assistants:['Tamara Dixon']},
-        {teacher:'Eric Collins', assistants:['Linh Nguyen']},
-        {teacher:'Tamara Dixon', assistants:['Cassandra Owens']},
-        {teacher:'Cassandra Owens', assistants:['Rachel Davis']},
-        {teacher:'Linh Nguyen', assistants:['Eric Collins']}
-      ]
+      sessions: {
+        1: { topic: 'The Human Body', room: 'MPR', teacher: 'Rachel Davis', assistants: ['Tamara Dixon'] },
+        2: { topic: 'Maps & Treasures', room: 'MPR', teacher: 'Eric Collins', assistants: ['Linh Nguyen'] },
+        3: { topic: 'Geology Rocks', room: 'MPR', teacher: 'Tamara Dixon', assistants: ['Cassandra Owens'] },
+        4: { topic: 'Creative Writing', room: 'MPR', teacher: 'Cassandra Owens', assistants: ['Rachel Davis'] },
+        5: { topic: 'Debate Club', room: 'MPR', teacher: 'Linh Nguyen', assistants: ['Eric Collins'] }
+      }
     },
     'Willows': {
-      room: 'Faithfulness',
       ages: '10–11',
       liaison: 'Heather Lawson',
-      sessions: [
-        {teacher:'Courtney Bennett', assistants:['Tonya Harris']},
-        {teacher:'Heather Lawson', assistants:['Megan Sullivan']},
-        {teacher:'Tonya Harris', assistants:['Heather Lawson']},
-        {teacher:'Megan Sullivan', assistants:['Courtney Bennett']},
-        {teacher:'Courtney Bennett', assistants:['Linh Nguyen']}
-      ]
+      sessions: {
+        1: { topic: 'Art', room: 'Goodness', teacher: 'Courtney Bennett', assistants: ['Tonya Harris'] },
+        2: { topic: "It's a Surprise!", room: 'Goodness', teacher: 'Heather Lawson', assistants: ['Megan Sullivan'] },
+        3: { topic: 'Photography', room: 'Goodness', teacher: 'Tonya Harris', assistants: ['Heather Lawson'] },
+        4: { topic: 'World Cultures', room: 'Goodness', teacher: 'Megan Sullivan', assistants: ['Courtney Bennett'] },
+        5: { topic: 'Entrepreneurship', room: 'Goodness', teacher: 'Courtney Bennett', assistants: ['Linh Nguyen'] }
+      }
     },
     'Cedars': {
-      room: 'Kindness',
       ages: '12–13',
       liaison: 'Amy Foster',
-      sessions: [
-        {teacher:'Marcus Brooks', assistants:['Monica Crawford']},
-        {teacher:'Elena Ramirez', assistants:['Amy Foster']},
-        {teacher:'Amy Foster', assistants:['Marcus Brooks']},
-        {teacher:'Monica Crawford', assistants:['Elena Ramirez']},
-        {teacher:'Marcus Brooks', assistants:['Monica Crawford']}
-      ]
+      sessions: {
+        1: { topic: 'Australia', room: 'JYF', teacher: 'Marcus Brooks', assistants: ['Monica Crawford'] },
+        2: { topic: 'Woodworking', room: 'JYF', teacher: 'Elena Ramirez', assistants: ['Amy Foster'] },
+        3: { topic: 'Film Production', room: 'JYF', teacher: 'Amy Foster', assistants: ['Marcus Brooks'] },
+        4: { topic: 'Chemistry', room: 'JYF', teacher: 'Monica Crawford', assistants: ['Elena Ramirez'] },
+        5: { topic: 'Mock Trial', room: 'JYF', teacher: 'Marcus Brooks', assistants: ['Monica Crawford'] }
+      }
     },
     'Pigeons': {
-      room: 'Multi-Purpose Room',
       ages: '14+',
       liaison: 'Kendra Robinson',
-      sessions: [
-        {teacher:'Keisha Washington', assistants:['Kendra Robinson']},
-        {teacher:'Kendra Robinson', assistants:['Heather Lawson']},
-        {teacher:'Heather Lawson', assistants:['Keisha Washington']},
-        {teacher:'Kim Johnson', assistants:['Cassandra Owens']},
-        {teacher:'Cassandra Owens', assistants:['Kim Johnson']}
+      sessions: {
+        1: { topic: 'LARPing', room: 'MYF', teacher: 'Keisha Washington', assistants: ['Kendra Robinson'] },
+        2: { topic: 'International Sweets & Eats', room: 'MYF', teacher: 'Kendra Robinson', assistants: ['Heather Lawson'] },
+        3: { topic: 'Debate & Rhetoric', room: 'MYF', teacher: 'Heather Lawson', assistants: ['Keisha Washington'] },
+        4: { topic: 'Film Studies', room: 'MYF', teacher: 'Kim Johnson', assistants: ['Cassandra Owens'] },
+        5: { topic: 'Senior Projects', room: 'MYF', teacher: 'Cassandra Owens', assistants: ['Kim Johnson'] }
+      }
+    }
+  };
+
+  // ── Afternoon electives (per session) ──
+  var PM_ELECTIVES = {
+    4: [
+      // Hour 1
+      {name:'Cooking', hour:1, ageRange:'3-6', description:'We are going to be cracking some eggs, whisking cream and getting down in the kitchen with our littlest cooks learning how to make Dutch babies, fruit galettes and more!', room:'Kitchen', leader:'Maria Garcia', assistants:['Angela Carter'], maxCapacity:10, students:['Jaylen Barnes','Owen Campbell','Willa Bogan','Trinity Brooks','Leo Davis','Piper Graves','Eli Keller']},
+      {name:'Puppet Fun', hour:1, ageRange:'3-7', description:'In this class we will read and learn about different types of puppets and a bit about the history of puppets and puppeteers. We will make our own puppets in a few different styles and even put on a short puppet show!', room:'Trust', leader:'Monica Crawford', assistants:['Laura Campbell'], maxCapacity:10, students:['Chloe Davis','Diego Martinez','Hana Kim','Nolan Patterson','Clara Fisher','Wyatt Henderson','Imani Washington','Theo Billingsley']},
+      {name:'Pirates', hour:1, ageRange:'7-11', description:'Building a cardboard boat, making pirate names and decor, learning pirate songs, learn knots \u2014 set sail on a swashbuckling adventure!', room:'Faithfulness', leader:'Marcus Brooks', assistants:['Eric Collins'], maxCapacity:12, students:['Emma Anderson','Noah Baker','Aiden Coleman','Sadie Ellis','Rosie Bellner','Declan Sullivan','Xavier Harris','Camila Martinez']},
+      {name:"What's Beneath Our Feet?", hour:1, ageRange:'7-11', description:"Worm investigations! Model of the Earth's layers! Core samples to find the best place to build a house! What does trash tell us about a civilization? How do archaeologists study trash?", room:'MPR', leader:'Rachel Davis', assistants:['Erica Patterson'], maxCapacity:10, students:['Hazel Campbell','Sofia Garcia','Jude Kim','Minh Nguyen','Nia Barnes','Sophia Chen','Teddy Bogan']},
+      {name:'Collage', hour:1, ageRange:'7-11', description:'Snip it, rip it, stick it! Let\'s turn art chaos into AWESOME.', room:'Patience', leader:'Priya Ellis', assistants:['Denise Mitchell'], maxCapacity:10, students:['Ruby Henderson','Jasper Crawford','Valentina Ramirez','Amelia Johnson','Beckett Graves','Wren Mitchell','Poppy Patterson']},
+      {name:'Mythbusters', hour:1, ageRange:'10+', description:'Can you really make a battery from a lemon? Does toast always land butter-side down? Questions, experiments... Chaos?', room:'Goodness', leader:'Eric Collins', assistants:['Tamara Dixon'], maxCapacity:10, students:['Ezra Dixon','Violet Hughes','Malcolm Washington','Luna Keller','Harper Bennett','Naomi Harris','An Nguyen']},
+      {name:'Board Games Club', hour:1, ageRange:'11+', description:'Bring in your favorite board games to play with friends or borrow some of ours!', room:'MYF', leader:'Chris Foster', assistants:[], maxCapacity:12, students:['Sawyer Lawson','Maeve Sullivan','Sam Bellner','Ava Baker','Lily Coleman','Mateo Garcia']},
+      {name:'Improv', hour:1, ageRange:'12+', description:"Come work on your improv skills! Whether you're an experienced improviser or brand new to the form, you're welcome to join the fun. Yes, let's!", room:'JYF', leader:'Courtney Bennett', assistants:['Kendra Robinson'], maxCapacity:12, students:['Lucia Martinez','Margot Quinn','Silas Taylor','Jordan Brooks','Ivy Dixon','Mason Foster','Cruz Ramirez']},
+      {name:'Upcycled Sewing Studio', hour:'both', ageRange:'10+', description:'This is an open-ended sewing studio. Haberdashery, sewing machine safety, and basic sewing by hand will be provided. Please bring old or retired clothes, fabric, bits and bobs to add to your upcycled creation!', room:'Kitchen Annex', leader:'Kim Johnson', assistants:['Heather Lawson'], maxCapacity:12, students:['Jada Robinson','Stella Owens','Gavin Shewan','Iris Billingsley','Caleb Smith','June Bogan']},
+      // Hour 2
+      {name:'Indoor Outdoor Games', hour:2, ageRange:'3-10', description:'We will play games and hang out. If the weather is pleasant we will move outside!', room:'Faithfulness', leader:'Ben Hughes', assistants:['Ashley Brooks'], maxCapacity:12, students:['Jaylen Barnes','Dante Ramirez','Ethan Foster','Claire Shewan','Blake Mitchell','August Palmer','Leo Davis','Theo Billingsley']},
+      {name:'Musical Art', hour:2, ageRange:'3-12', description:'Do you like pop, rock, jazz, broadway hits, classical, techno? Each week we will have a different style of music playing as we create our own art. Let the music inspire you! A variety of art supplies and mediums will be available and music requests will be taken!', room:'Patience', leader:'Heather Lawson', assistants:['Megan Sullivan'], maxCapacity:12, students:['Bea Newlin','Archer Hughes','Rowan Ellis','Asher Taylor','Nora Raymont','Maya Carter','Aria Morris']},
+      {name:'Bingo', hour:2, ageRange:'5+', description:"All ages welcome as long as you know your letters! Let's play bingo and win prizes!", room:'Trust', leader:'Shannon Quinn', assistants:['Nicole Keller'], maxCapacity:14, students:['Willa Bogan','Trinity Brooks','Kai Collins','Olivia Baker','Piper Graves','Eli Keller','Imani Washington','Emma Anderson','Poppy Patterson']},
+      {name:'Pet Science', hour:2, ageRange:'7-11', description:"Want to know if you, your cat, or your dog has the cleanest mouth? What about if Crazy Cat Ladies are a real thing? Have you heard of Pavlov's dogs and pet training? Would it work on your siblings?", room:'Goodness', leader:'Amanda Fisher', assistants:['Gabriela Martinez'], maxCapacity:10, students:['Noah Baker','Aiden Coleman','Hazel Campbell','Jude Kim','Nia Barnes','Sophia Chen','Teddy Bogan']},
+      {name:'Percy Jackson Adventure Club', hour:2, ageRange:'9+', description:"Calling all demigods! Are you ready to live your own hero's journey? Each week, we'll step into the world of Percy Jackson for epic role-playing quests, combat training with safe swords and archery, and themed snacks. Expect plenty of blue treats, high-stakes games, and a chance to hang out with fellow fans!", room:'MPR', leader:'Kendra Robinson', assistants:['Keisha Washington'], maxCapacity:12, students:['Amelia Johnson','Beckett Graves','Caleb Adams','Liam Anderson','Roman Collins','Ezra Dixon','Violet Hughes','Will Raymont']},
+      {name:'Beginner Ukulele', hour:2, ageRange:'10+', description:'In this class students will learn 2-3 simple chords that can be used to play dozens of songs! They will learn how to properly hold and care for a ukulele. Bring your singing voice because we will be singing along!', room:'MYF', leader:'Kevin Ellis', assistants:[], maxCapacity:10, students:['Luna Keller','Malcolm Washington','Harper Bennett','Mila Davis','An Nguyen','Maeve Sullivan']},
+      {name:'D&D Club', hour:2, ageRange:'12+', description:'This is a student-led D&D club. Embark on a tabletop roleplaying adventure with your fellow adventurers!', room:'JYF', leader:'Matt Johnson', assistants:[], maxCapacity:8, students:['Ava Baker','Mateo Garcia','Silas Taylor','Jordan Brooks','Ivy Dixon','Mason Foster','Henry Johnson']}
+    ]
+  };
+
+  // ── AM Support Roles (per session) ──
+  var AM_SUPPORT_ROLES = {
+    4: {
+      floaters: { '10-11': ['Brittany Coleman', 'Latasha Jackson'], '11-12': ['DeShawn Barnes', 'Latasha Jackson'] },
+      prepPeriod: { '10-11': ['Linh Nguyen', 'Jessica Palmer'], '11-12': ['Linh Nguyen'] },
+      boardDuties: { '10-11': ['Molly Bellner'], '11-12': ['Anna Billingsley'] }
+    }
+  };
+
+  var PM_SUPPORT_ROLES = {
+    4: { floaters: ['Brittany Coleman', 'Tanya Barnes'], boardDuties: ['Molly Bellner', 'LeAnn Newlin', 'Tiffany Smith'], supplyCloset: ['Monica Crawford'] }
+  };
+
+  // ── Cleaning crew assignments (structured by area) ──
+  var CLEANING_CREW = {
+    liaison: 'Parn Sudmee',
+    sessions: {
+      4: {
+        mainFloor: {
+          'Classrooms & MPR': ['Anderson', 'Baker'],
+          'Kitchen': ['Chen', 'Davis'],
+          'Kitchen Annex & FH': ['Foster', 'Garcia'],
+          'Hallways': ['Hughes'],
+          'Bathrooms': ['Johnson']
+        },
+        upstairs: {
+          'Classrooms': ['Keller'],
+          'Bathrooms': ['Martinez'],
+          'Halls & Stairs': ['Mitchell']
+        },
+        outside: {
+          'Garage & Grounds': ['Morris']
+        },
+        floater: ['Nguyen']
+      }
+    }
+  };
+
+  // ── Volunteer committees (year-long) ──
+  var VOLUNTEER_COMMITTEES = [
+    {
+      name: 'Facility Committee',
+      chair: { title: 'President', person: 'Molly Bellner' },
+      roles: [
+        { title: 'Opener & Morning Set-Up', person: 'Kristen Henderson' },
+        { title: 'Closer/Lost & Found', person: 'Erica Patterson' },
+        { title: 'Safety Coordinator', person: 'Colleen Raymont' },
+        { title: 'Cleaning Crew Liaison', person: 'Parn Sudmee' }
+      ]
+    },
+    {
+      name: 'Programming Committee',
+      chair: { title: 'Vice President', person: 'Colleen Raymont' },
+      roles: [
+        { title: 'Morning Class Liaisons', person: 'See class groups' },
+        { title: 'Afternoon Class Liaison', person: 'Tamara Dixon' }
+      ]
+    },
+    {
+      name: 'Finance Committee',
+      chair: { title: 'Treasurer', person: 'Jessica Shewan' },
+      roles: [
+        { title: 'Fundraising Coordinator', person: 'Elena Ramirez' },
+        { title: 'Field Trip Coordinators', person: 'LeAnn Newlin' },
+        { title: 'Supply Coordinator', person: 'Monica Crawford' }
+      ]
+    },
+    {
+      name: 'Support Committee',
+      chair: { title: 'Sustaining Director', person: 'Anna Billingsley' },
+      roles: [
+        { title: 'Summer Social Events', person: 'Megan Sullivan' },
+        { title: 'Parent Social Events', person: 'Molly Bellner' },
+        { title: 'Special Events Liaison', person: 'Courtney Bennett' },
+        { title: 'Gratitude/Encouragement', person: 'Priya Ellis' }
+      ]
+    },
+    {
+      name: 'Administrative Committee',
+      chair: { title: 'Secretary', person: 'LeAnn Newlin' },
+      roles: [
+        { title: 'Archives', person: '' },
+        { title: 'Admin/Organization', person: '' }
+      ]
+    },
+    {
+      name: 'Membership Committee',
+      chair: { title: 'Membership Director', person: 'Tiffany Smith' },
+      roles: [
+        { title: 'Welcome Coordinator', person: 'Laura Campbell' },
+        { title: 'Public Communications', person: '' }
+      ]
+    },
+    {
+      name: 'Communications Committee',
+      chair: { title: 'Communications Director', person: 'Erin Bogan' },
+      roles: [
+        { title: 'Yearbook Coordinator', person: 'Tonya Harris' }
       ]
     }
+  ];
+
+  // ── Special events ──
+  var SPECIAL_EVENTS = [
+    {name:'Ice Cream Social', date:'August 27, 2025', coordinator:'', planningSupport:['','',''], maxSupport:3, status:'Complete'},
+    {name:'Fall Dance', date:'October 17, 2025', coordinator:'Carrie', planningSupport:['','','','',''], maxSupport:5, status:'Complete'},
+    {name:"Maker's Market", date:'December 3, 2025', coordinator:'Bethany', planningSupport:['','','',''], maxSupport:4, status:'Complete'},
+    {name:'PJ Party', date:'December 10, 2025', coordinator:'Lyndsey', planningSupport:['','',''], maxSupport:3, status:'Complete'},
+    {name:'Service Project', date:'December 10, 2025', coordinator:'Sarah', planningSupport:['','',''], maxSupport:3, status:'Complete'},
+    {name:'Passion Fair', date:'February 11, 2026', coordinator:'Lindsey', planningSupport:['','',''], maxSupport:3, status:'Complete'},
+    {name:'Camping Trip', date:'March 30 \u2013 April 1, 2026', coordinator:'Amber', planningSupport:['','',''], maxSupport:3, status:'Planning'},
+    {name:'Talent Show', date:'May 20, 2026', coordinator:'Shelly', planningSupport:['','',''], maxSupport:3, status:'Planning'},
+    {name:'Field Day', date:'May 20, 2026', coordinator:'', planningSupport:['',''], maxSupport:2, status:'Needs Volunteers'}
+  ];
+
+  // ── Class Ideas Board ──
+  var CLASS_IDEAS = {
+    'Early Years (3-7)': ['Nature Art','Crafts','Truth or Dare','Reptiles','Making Stuffed Animals','Hot Air Balloons','Baking/Cake Decorating','Playdough','Painting/Art/Food Art','Building (Nature/Blocks/Cardboard)','Trees','Flowers','Cats','Fish','Dinosaurs','Weddings','Weaving','Dance','Caterpillars','Buses','Camping','Hairstyling','Castles','Gems','Costumes','Snow','Sculpting','Make-up/Facepaint','Wikkistix/Pipecleaner Crafts','Origami','Dreams','Foxes'],
+    'Young Years (8-11)': ['DND Lite','Mystery Class','Nature Art','Crafts','Truth or Dare','Taste Testing','Percy Jackson','Jewelry','Animals of the World','Martial Arts/Ninja Obstacle Course','Making Miniatures & Scenes','Sewing','Fashion Design','Minute to Win It Games','Ancient History','Space/Astronomy/Shooting Stars','Beeswax Crafts','Canine Predators','Foods Around the World','Science','Gymnastics','Bunnies','Horrible Histories','Writing Books','Greeking Out','Doughnut Making','Crystals','Exercise Challenges','Pokemon','Digital Art','Fossils','Gardening','Remote Control Car Obstacle Course','Hide & Seek','Tag/Freeze Tag/Freeze Dance','Geology','Star Wars','Pixel Art','Theater','Yoga','Ballroom Dance','Emojis','Flag Football/Capture the Flag','Ocean Life','Food Chains','Drawing'],
+    'Middle/Teen (11+)': ['Dessert/Baking','Australia Themed Class','Puppet Shows','Sports of All Sorts','Dungeons and Dragons','Advanced Art','Embroidery','Outdoor Games (Sardines, Hide & Seek)','Primitive Shelter Building','Among Us In Real Life','Doodle Class','Nerf Battle Class','History of Nintendo','Archery','Basketball','Junk Food Making','Parkour','Costume/Prop Making','Dragons','Machine Sewing','Painting','Nature Art','Resin','Mixology/Drinks Around the World','Legos','Animal Facts & Trivia','Craft Club','Fiber Arts','Fort Building','Charades & Snacks','Clay Critters','Physical Challenges','Photography','Coding','Mythology','Movie Making','Board Game Design','Roller Blades','Making Miniatures','Face Painting','Archery','Movie Club','Obstacle Course','Kickball','Capture the Flag','Cut Throat Kitchen/Chopped','Sewing','Cubing/Speed Cubing']
   };
 
   // Family data — will be replaced by Google Sheet CSV when connected
@@ -687,13 +769,13 @@
 
   // Is this a class/group filter?
   function isGroupFilter(f) {
-    return f !== 'all' && f !== 'parents' && CLASS_STAFF[f];
+    return f !== 'all' && f !== 'parents' && AM_CLASSES[f];
   }
 
   function renderDirectory() {
     if (!directoryGrid) return;
     var query = (directorySearch ? directorySearch.value : '').toLowerCase();
-    var staff = CLASS_STAFF[activeFilter];
+    var staff = AM_CLASSES[activeFilter];
     var isClassView = isGroupFilter(activeFilter) && !query;
     var html = '';
     var shown = 0;
@@ -701,12 +783,13 @@
     // ---- Class view (group filter, no search) — cards with extra info ----
     if (isClassView) {
       // Staff banner with room + age info
-      var sess = staff.sessions[currentSession - 1];
+      var sess = staff.sessions[currentSession];
       html += '<div class="class-staff-banner">';
       html += '<div class="class-staff-header">';
       html += '<span class="class-staff-title">' + activeFilter + '</span>';
-      html += '<span class="class-staff-meta">Room: ' + staff.room + ' &middot; Ages ' + staff.ages;
+      html += '<span class="class-staff-meta">Room: ' + (sess ? sess.room : '') + ' &middot; Ages ' + staff.ages;
       if (staff.note) html += ' &middot; ' + staff.note;
+      if (sess && sess.topic) html += '<br><em>' + sess.topic + '</em>';
       html += '</span>';
       html += '</div>';
       html += '<div class="class-staff-roles">';
@@ -996,16 +1079,27 @@
 
   // Helper: find a kid's afternoon electives for the current session
   function getKidElectives(kidFullName) {
-    var sessElectives = ELECTIVES[currentSession] || [];
+    var sessElectives = PM_ELECTIVES[currentSession] || [];
     var result = [];
     sessElectives.forEach(function (elec) {
-      if (elec.kids.indexOf(kidFullName) !== -1) {
+      if (elec.students.indexOf(kidFullName) !== -1) {
         result.push(elec);
       }
     });
-    // Sort by time
-    result.sort(function (a, b) { return a.time.localeCompare(b.time); });
+    // Sort by hour
+    result.sort(function (a, b) {
+      var ha = a.hour === 'both' ? 1 : a.hour;
+      var hb = b.hour === 'both' ? 1 : b.hour;
+      return ha - hb;
+    });
     return result;
+  }
+
+  // Helper: get time string from hour
+  function electiveTime(hour) {
+    if (hour === 1) return '1:00\u20131:55';
+    if (hour === 2) return '2:00\u20132:55';
+    return '1:00\u20132:55';
   }
 
   function renderMyFamily() {
@@ -1032,10 +1126,11 @@
     html += '<div class="mf-card">';
     html += '<h3 class="mf-card-title">Kids\' Schedule &mdash; Session ' + currentSession + '</h3>';
     fam.kids.forEach(function (kid) {
-      var staff = CLASS_STAFF[kid.group];
-      var sess = staff ? staff.sessions[currentSession - 1] : null;
-      var room = staff ? staff.room : '';
+      var staff = AM_CLASSES[kid.group];
+      var sess = staff ? staff.sessions[currentSession] : null;
+      var room = sess ? sess.room : '';
       var teacher = sess ? sess.teacher : 'TBD';
+      var topic = sess ? sess.topic : '';
       var displayLast = kid.lastName || fam.name;
       var kidFull = kid.name + ' ' + displayLast;
 
@@ -1056,7 +1151,7 @@
       // Morning
       html += '<div class="mf-sched-row">';
       html += '<span class="mf-sched-time">Morning</span>';
-      html += '<span class="mf-sched-class">' + kid.group + '</span>';
+      html += '<span class="mf-sched-class">' + kid.group + (topic ? ': ' + topic : '') + '</span>';
       html += '<span class="mf-sched-room">' + room + '</span>';
       html += '<span class="mf-sched-teacher">' + teacher + '</span>';
       html += '</div>';
@@ -1064,12 +1159,12 @@
       // Afternoon electives
       if (electives.length > 0) {
         electives.forEach(function (e) {
-          var label = e.time.indexOf('1:00') !== -1 ? 'PM 1' : 'PM 2';
+          var label = e.hour === 'both' ? 'PM' : e.hour === 1 ? 'PM 1' : 'PM 2';
           html += '<div class="mf-sched-row">';
           html += '<span class="mf-sched-time">' + label + '</span>';
           html += '<button class="mf-elective-link mf-sched-class" data-elective="' + e.name + '">' + e.name + '</button>';
           html += '<span class="mf-sched-room">' + e.room + '</span>';
-          html += '<span class="mf-sched-teacher">' + e.teacher + '</span>';
+          html += '<span class="mf-sched-teacher">' + e.leader + '</span>';
           html += '</div>';
         });
       } else {
@@ -1090,10 +1185,10 @@
     var parentFullNames = fam.parents.split(' & ').map(function(p) { return p.trim() + ' ' + fam.name; });
 
     // Teaching / assisting (morning classes)
-    var groups = Object.keys(CLASS_STAFF);
+    var groups = Object.keys(AM_CLASSES);
     groups.forEach(function (groupName) {
-      var staff = CLASS_STAFF[groupName];
-      var sess = staff.sessions[currentSession - 1];
+      var staff = AM_CLASSES[groupName];
+      var sess = staff.sessions[currentSession];
       if (!sess) return;
 
       // Liaison
@@ -1102,22 +1197,25 @@
           duties.push({icon: 'star', text: groupName + ' Class Liaison', detail: 'Year-long role'});
         }
         if (sess.teacher === full) {
-          duties.push({icon: 'teach', text: 'Teaching ' + groupName, detail: '10:00–12:00 &middot; ' + (staff.room || '')});
+          duties.push({icon: 'teach', text: 'Teaching ' + groupName, detail: '10:00\u201312:00 \u00b7 ' + (sess.room || '')});
         }
         sess.assistants.forEach(function (a) {
           if (a === full) {
-            duties.push({icon: 'assist', text: 'Assisting ' + groupName, detail: '10:00–12:00 &middot; ' + (staff.room || '')});
+            duties.push({icon: 'assist', text: 'Assisting ' + groupName, detail: '10:00\u201312:00 \u00b7 ' + (sess.room || '')});
           }
         });
       });
     });
 
-    // Teaching afternoon electives
-    var sessElectives = ELECTIVES[currentSession] || [];
+    // Teaching/assisting afternoon electives
+    var sessElectives = PM_ELECTIVES[currentSession] || [];
     sessElectives.forEach(function (elec) {
       parentFullNames.forEach(function (full) {
-        if (elec.teacher === full) {
-          duties.push({icon: 'teach', text: 'Teaching ' + elec.name, detail: elec.time + ' &middot; Afternoon elective'});
+        if (elec.leader === full) {
+          duties.push({icon: 'teach', text: 'Teaching ' + elec.name, detail: electiveTime(elec.hour) + ' \u00b7 Afternoon elective'});
+        }
+        if (elec.assistants && elec.assistants.indexOf(full) !== -1) {
+          duties.push({icon: 'assist', text: 'Assisting ' + elec.name, detail: electiveTime(elec.hour) + ' \u00b7 Afternoon elective'});
         }
       });
     });
@@ -1127,30 +1225,50 @@
       duties.push({icon: 'board', text: fam.boardRole, detail: 'Board of Directors'});
     }
 
-    // Volunteer role (year-long)
-    VOLUNTEER_ROLES.forEach(function (vr) {
-      if (vr.family === fam.name) {
-        duties.push({icon: 'volunteer', text: vr.role, detail: vr.year + ' Year &middot; Year-long'});
+    // Volunteer committees (year-long)
+    VOLUNTEER_COMMITTEES.forEach(function (committee) {
+      if (committee.chair && committee.chair.person) {
+        parentFullNames.forEach(function (full) {
+          if (committee.chair.person === full) {
+            duties.push({icon: 'volunteer', text: committee.chair.title + ' (' + committee.name + ')', detail: 'Board &middot; Year-long'});
+          }
+        });
       }
+      committee.roles.forEach(function (r) {
+        parentFullNames.forEach(function (full) {
+          if (r.person === full) {
+            duties.push({icon: 'volunteer', text: r.title, detail: committee.name + ' &middot; Year-long'});
+          }
+        });
+      });
     });
 
     // Cleaning crew
-    var sessCleaning = CLEANING_CREW[currentSession] || [];
-    var myClean = null;
-    sessCleaning.forEach(function (c) {
-      if (c.family === fam.name) myClean = c;
-    });
-    if (myClean) {
-      duties.push({icon: 'clean', text: 'Cleaning Crew: ' + myClean.area, detail: 'Session ' + currentSession});
+    var sessClean = CLEANING_CREW.sessions[currentSession];
+    if (sessClean) {
+      var cleanAreas = ['mainFloor', 'upstairs', 'outside'];
+      cleanAreas.forEach(function (floor) {
+        if (!sessClean[floor]) return;
+        var areas = Object.keys(sessClean[floor]);
+        areas.forEach(function (area) {
+          if (sessClean[floor][area].indexOf(fam.name) !== -1) {
+            duties.push({icon: 'clean', text: 'Cleaning: ' + area, detail: 'Session ' + currentSession});
+          }
+        });
+      });
+      if (sessClean.floater && sessClean.floater.indexOf(fam.name) !== -1) {
+        duties.push({icon: 'clean', text: 'Cleaning Floater', detail: 'Session ' + currentSession});
+      }
     }
 
     // Special events
     SPECIAL_EVENTS.forEach(function (ev) {
-      if (ev.coordinators.indexOf(fam.name) !== -1) {
-        var otherCoords = ev.coordinators.filter(function(c) { return c !== fam.name; });
-        var withText = otherCoords.length > 0 ? 'with ' + otherCoords.join(', ') : '';
-        var statusClass = ev.status === 'Complete' ? 'mf-status-done' : ev.status === 'Needs Volunteers' ? 'mf-status-open' : 'mf-status-upcoming';
-        duties.push({icon: 'event', text: ev.event + ' Coordinator', detail: ev.date + ' &middot; <span class="' + statusClass + '">' + ev.status + '</span>' + (withText ? ' &middot; ' + withText : '')});
+      var isCoord = ev.coordinator && parentFullNames.some(function(full) {
+        return ev.coordinator.indexOf(fam.parents.split(' & ')[0].split(' ')[0]) !== -1;
+      });
+      var statusClass = ev.status === 'Complete' ? 'mf-status-done' : ev.status === 'Needs Volunteers' ? 'mf-status-open' : 'mf-status-upcoming';
+      if (isCoord) {
+        duties.push({icon: 'event', text: ev.name + ' Coordinator', detail: ev.date + ' &middot; <span class="' + statusClass + '">' + ev.status + '</span>'});
       }
     });
 
@@ -1192,30 +1310,57 @@
     });
   }
 
-  // Elective detail popup
+  // Elective detail popup (enhanced)
   function showElectiveDetail(elecName) {
-    var sessElectives = ELECTIVES[currentSession] || [];
+    var sessElectives = PM_ELECTIVES[currentSession] || [];
     var elec = null;
     for (var i = 0; i < sessElectives.length; i++) {
       if (sessElectives[i].name === elecName) { elec = sessElectives[i]; break; }
     }
     if (!elec || !personDetail || !personDetailCard) return;
 
+    var pct = Math.round((elec.students.length / elec.maxCapacity) * 100);
+    var barColor = pct >= 90 ? 'var(--color-error)' : pct >= 70 ? 'var(--color-accent)' : 'var(--color-primary-light)';
+
     var html = '<button class="detail-close" aria-label="Close">&times;</button>';
     html += '<div class="elective-detail">';
     html += '<h3>' + elec.name + '</h3>';
     html += '<div class="elective-meta">';
-    html += '<span>' + elec.time + '</span>';
+    html += '<span class="elective-age-pill">' + elec.ageRange + '</span>';
+    html += '<span>' + electiveTime(elec.hour) + '</span>';
     html += '<span>' + elec.room + '</span>';
-    html += '<span>Session ' + currentSession + '</span>';
+    if (elec.hour === 'both') html += '<span class="elective-both-badge">Both Hours</span>';
     html += '</div>';
+
+    // Description
+    html += '<p class="elective-description">' + elec.description + '</p>';
+
+    // Leader + assistants
+    html += '<div class="elective-staff-list">';
     html += '<div class="elective-teacher">';
-    html += '<div class="staff-dot" style="background:' + faceColor(elec.teacher) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + elec.teacher.charAt(0) + '</span></div>';
-    html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + elec.teacher + '</strong><small style="color:var(--color-text-light);">Teacher</small></div>';
+    html += '<div class="staff-dot" style="background:' + faceColor(elec.leader) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + elec.leader.charAt(0) + '</span></div>';
+    html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + elec.leader + '</strong><small style="color:var(--color-text-light);">Leader</small></div>';
     html += '</div>';
-    html += '<h4 class="elective-roster-title">' + elec.kids.length + ' Students</h4>';
+    if (elec.assistants && elec.assistants.length > 0) {
+      elec.assistants.forEach(function (a) {
+        html += '<div class="elective-teacher">';
+        html += '<div class="staff-dot" style="background:' + faceColor(a) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + a.charAt(0) + '</span></div>';
+        html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + a + '</strong><small style="color:var(--color-text-light);">Assistant</small></div>';
+        html += '</div>';
+      });
+    }
+    html += '</div>';
+
+    // Capacity bar
+    html += '<div class="elective-capacity">';
+    html += '<div class="elective-capacity-label">' + elec.students.length + ' of ' + elec.maxCapacity + ' spots filled</div>';
+    html += '<div class="elective-capacity-bar"><div class="elective-capacity-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div>';
+    html += '</div>';
+
+    // Student roster
+    html += '<h4 class="elective-roster-title">' + elec.students.length + ' Students</h4>';
     html += '<div class="elective-roster">';
-    elec.kids.forEach(function (kidName) {
+    elec.students.forEach(function (kidName) {
       var first = kidName.split(' ')[0];
       var last = kidName.split(' ').slice(1).join(' ');
       html += '<div class="elective-student">';
@@ -1233,6 +1378,312 @@
       if (e.target === personDetail) closeDetail();
     });
   }
+
+  // ──────────────────────────────────────────────
+  // 7d. Coordination Tab Renderers
+  // ──────────────────────────────────────────────
+
+  // Track which session each tab is viewing (defaults to currentSession)
+  var sessionTabView = currentSession;
+  var cleaningTabView = currentSession;
+
+  // Build session pager: « Session 3 | ● Session 4 | Session 5 »
+  function buildSessionPager(viewSess, renderFnName) {
+    var sessInfo = SESSION_DATES[viewSess];
+    var label = sessInfo ? sessInfo.name : 'Session ' + viewSess;
+    var isCurrent = viewSess === currentSession;
+
+    var html = '<div class="session-pager">';
+    if (viewSess > 1) {
+      html += '<button class="session-pager-btn session-pager-prev" data-sess="' + (viewSess - 1) + '" data-render="' + renderFnName + '">';
+      html += '&laquo; Session ' + (viewSess - 1);
+      html += '</button>';
+    } else {
+      html += '<span class="session-pager-btn session-pager-disabled">&laquo;</span>';
+    }
+
+    html += '<span class="session-pager-current' + (isCurrent ? ' session-pager-active' : '') + '">';
+    html += label;
+    if (isCurrent) html += ' <span class="session-pager-now">Current</span>';
+    html += '</span>';
+
+    if (viewSess < 5) {
+      html += '<button class="session-pager-btn session-pager-next" data-sess="' + (viewSess + 1) + '" data-render="' + renderFnName + '">';
+      html += 'Session ' + (viewSess + 1) + ' &raquo;';
+      html += '</button>';
+    } else {
+      html += '<span class="session-pager-btn session-pager-disabled">&raquo;</span>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // Wire up pager buttons inside a container
+  function wirePager(container) {
+    container.querySelectorAll('.session-pager-btn[data-sess]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var newSess = parseInt(this.getAttribute('data-sess'), 10);
+        var renderFn = this.getAttribute('data-render');
+        if (renderFn === 'session') {
+          sessionTabView = newSess;
+          renderSessionTab();
+        } else if (renderFn === 'cleaning') {
+          cleaningTabView = newSess;
+          renderCleaningTab();
+        }
+      });
+    });
+  }
+
+  function renderSessionTab() {
+    var container = document.getElementById('sessionTabContent');
+    if (!container) return;
+    var viewSess = sessionTabView;
+    var sess = SESSION_DATES[viewSess];
+    var electives = PM_ELECTIVES[viewSess] || [];
+
+    var html = buildSessionPager(viewSess, 'session');
+
+    // Morning classes table
+    html += '<h4 class="session-section-title">Morning Classes &mdash; 10:00\u201312:00</h4>';
+    html += '<div class="directory-table-wrap"><table class="portal-table"><thead><tr><th>Group</th><th>Ages</th><th>Topic</th><th>Teacher</th><th>Room</th></tr></thead><tbody>';
+    var groups = Object.keys(AM_CLASSES);
+    groups.forEach(function (groupName) {
+      var cls = AM_CLASSES[groupName];
+      var s = cls.sessions[viewSess];
+      if (!s) return;
+      html += '<tr class="session-class-row" data-group="' + groupName + '">';
+      html += '<td><span class="session-group-link">' + groupName + '</span></td>';
+      html += '<td>' + cls.ages + '</td>';
+      html += '<td>' + s.topic + '</td>';
+      html += '<td>' + s.teacher + '</td>';
+      html += '<td>' + s.room + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+
+    // Afternoon electives by hour
+    if (electives.length > 0) {
+      var hour1 = electives.filter(function (e) { return e.hour === 1 || e.hour === 'both'; });
+      var hour2 = electives.filter(function (e) { return e.hour === 2 || e.hour === 'both'; });
+
+      html += '<h4 class="session-section-title">Afternoon Electives &mdash; Hour 1: 1:00\u20131:55</h4>';
+      html += '<div class="elective-card-grid">';
+      hour1.forEach(function (e) { html += buildElectiveCard(e); });
+      html += '</div>';
+
+      html += '<h4 class="session-section-title">Afternoon Electives &mdash; Hour 2: 2:00\u20132:55</h4>';
+      html += '<div class="elective-card-grid">';
+      hour2.forEach(function (e) { html += buildElectiveCard(e); });
+      html += '</div>';
+    } else {
+      html += '<p style="color:var(--color-text-light);margin-top:20px;"><em>Afternoon elective sign-ups not yet available for this session.</em></p>';
+    }
+
+    container.innerHTML = html;
+
+    // Wire up pager
+    wirePager(container);
+
+    // Wire up elective card clicks
+    container.querySelectorAll('.elective-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        showElectiveDetail(this.getAttribute('data-elective'));
+      });
+    });
+
+    // Wire up full row clicks → jump to directory with that class filter
+    container.querySelectorAll('.session-class-row').forEach(function (row) {
+      row.onclick = function () {
+        var group = this.getAttribute('data-group');
+        activeFilter = group;
+        document.querySelectorAll('.filter-pill').forEach(function (p) {
+          p.classList.toggle('active', p.getAttribute('data-filter') === group);
+        });
+        renderDirectory();
+        var dirSection = document.getElementById('directory');
+        if (dirSection) dirSection.scrollIntoView({ behavior: 'smooth' });
+      };
+    });
+  }
+
+  function buildElectiveCard(e) {
+    var pct = Math.round((e.students.length / e.maxCapacity) * 100);
+    var barColor = pct >= 90 ? 'var(--color-error)' : pct >= 70 ? 'var(--color-accent)' : 'var(--color-primary-light)';
+    var html = '<button class="elective-card" data-elective="' + e.name + '">';
+    html += '<div class="elective-card-header">';
+    html += '<span class="elective-card-name">' + e.name + '</span>';
+    html += '<span class="elective-age-pill">' + e.ageRange + '</span>';
+    html += '</div>';
+    if (e.hour === 'both') html += '<span class="elective-both-badge">Both Hours</span>';
+    html += '<p class="elective-card-desc">' + e.description + '</p>';
+    html += '<div class="elective-card-meta">' + e.room + ' &middot; ' + e.leader + '</div>';
+    html += '<div class="elective-capacity-bar"><div class="elective-capacity-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div>';
+    html += '<div class="elective-card-spots">' + e.students.length + '/' + e.maxCapacity + '</div>';
+    html += '</button>';
+    return html;
+  }
+
+  function renderCleaningTab() {
+    var container = document.getElementById('cleaningTabContent');
+    if (!container) return;
+    var viewSess = cleaningTabView;
+    var sessClean = CLEANING_CREW.sessions[viewSess];
+
+    var html = buildSessionPager(viewSess, 'cleaning');
+    html += '<p style="color:var(--color-text-light);margin-bottom:16px;">Liaison: <strong>' + CLEANING_CREW.liaison + '</strong></p>';
+
+    if (!sessClean) {
+      html += '<p style="color:var(--color-text-light);"><em>Cleaning assignments not yet available for this session.</em></p>';
+      container.innerHTML = html;
+      wirePager(container);
+      return;
+    }
+
+    var floors = [
+      { key: 'mainFloor', label: 'Main Floor' },
+      { key: 'upstairs', label: 'Upstairs' },
+      { key: 'outside', label: 'Outside' }
+    ];
+
+    html += '<div class="cleaning-grid">';
+    floors.forEach(function (floor) {
+      if (!sessClean[floor.key]) return;
+      html += '<div class="cleaning-floor-card">';
+      html += '<h4>' + floor.label + '</h4>';
+      var areas = Object.keys(sessClean[floor.key]);
+      areas.forEach(function (area) {
+        var families = sessClean[floor.key][area];
+        html += '<div class="cleaning-role">';
+        html += '<span class="cleaning-area">' + area + '</span>';
+        html += '<span class="cleaning-families">' + families.map(function (f) { return f + ' family'; }).join(', ') + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+
+    if (sessClean.floater && sessClean.floater.length > 0) {
+      html += '<div class="cleaning-floor-card">';
+      html += '<h4>Floater</h4>';
+      html += '<div class="cleaning-role"><span class="cleaning-families">' + sessClean.floater.map(function (f) { return f + ' family'; }).join(', ') + '</span></div>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    container.innerHTML = html;
+    wirePager(container);
+  }
+
+  function renderVolunteersTab() {
+    var container = document.getElementById('volunteersTabContent');
+    if (!container) return;
+
+    var html = '<h3>Volunteer Committees &mdash; 2025\u20132026</h3>';
+    html += '<div class="portal-volunteer-grid">';
+
+    VOLUNTEER_COMMITTEES.forEach(function (committee) {
+      html += '<div class="portal-role-card">';
+      html += '<h4>' + committee.name + '</h4>';
+      if (committee.chair) {
+        html += '<div class="committee-chair"><strong>' + committee.chair.title + ':</strong> ' + committee.chair.person + '</div>';
+      }
+      html += '<ul>';
+      committee.roles.forEach(function (r) {
+        var personText = r.person ? r.person : '<em>Open</em>';
+        html += '<li><strong>' + r.title + ':</strong> ' + personText + '</li>';
+      });
+      html += '</ul></div>';
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+  }
+
+  function renderEventsTab() {
+    var container = document.getElementById('eventsTabContent');
+    if (!container) return;
+
+    var html = '<h3>Special Events &mdash; 2025\u20132026</h3>';
+    html += '<div class="events-grid">';
+
+    SPECIAL_EVENTS.forEach(function (ev) {
+      var statusClass = ev.status === 'Complete' ? 'status-done' : ev.status === 'Needs Volunteers' ? 'status-open' : 'status-upcoming';
+      var coordText = ev.coordinator || '<em class="event-open-slot">Needs volunteer</em>';
+      var filled = ev.planningSupport.filter(function (s) { return s !== ''; }).length;
+
+      html += '<div class="event-card">';
+      html += '<div class="event-card-header">';
+      html += '<div>';
+      html += '<strong class="event-card-name">' + ev.name + '</strong>';
+      html += '<div class="event-card-date">' + ev.date + '</div>';
+      html += '</div>';
+      html += '<span class="status-badge ' + statusClass + '">' + ev.status + '</span>';
+      html += '</div>';
+
+      // Coordinator
+      html += '<div class="event-roles">';
+      html += '<div class="event-role">';
+      html += '<span class="event-role-label">Coordinator</span>';
+      html += '<span class="event-role-person">' + coordText + '</span>';
+      html += '</div>';
+
+      // Planning support slots
+      ev.planningSupport.forEach(function (person, idx) {
+        html += '<div class="event-role">';
+        html += '<span class="event-role-label">Support ' + (idx + 1) + '</span>';
+        if (person) {
+          html += '<span class="event-role-person">' + person + '</span>';
+        } else {
+          html += '<span class="event-role-person"><em class="event-open-slot">Open</em></span>';
+        }
+        html += '</div>';
+      });
+
+      // Summary line
+      html += '<div class="event-fill-summary">' + filled + ' of ' + ev.maxSupport + ' support spots filled</div>';
+
+      html += '</div></div>';
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+  }
+
+  function renderIdeasTab() {
+    var container = document.getElementById('ideasTabContent');
+    if (!container) return;
+
+    var html = '<h3>Class Ideas Board</h3>';
+    html += '<p style="color:var(--color-text-light);margin-bottom:20px;">Have an idea for a class? Share it in the <a href="https://docs.google.com/spreadsheets/d/PLACEHOLDER-MASTER" target="_blank">master spreadsheet</a> or the Google Chat!</p>';
+    html += '<div class="ideas-grid">';
+
+    var groups = Object.keys(CLASS_IDEAS);
+    groups.forEach(function (group) {
+      var ideas = CLASS_IDEAS[group];
+      html += '<div class="ideas-card">';
+      html += '<h4>' + group + '</h4>';
+      html += '<div class="ideas-list">';
+      ideas.forEach(function (idea) {
+        html += '<span class="idea-chip">' + idea + '</span>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+  }
+
+  // Render all coordination tabs
+  function renderCoordinationTabs() {
+    renderSessionTab();
+    renderCleaningTab();
+    renderVolunteersTab();
+    renderEventsTab();
+    renderIdeasTab();
+  }
+
+  // Render tabs on load
+  renderCoordinationTabs();
 
   // Render on load if already logged in
   if (sessionStorage.getItem(SESSION_KEY) === 'true') {

@@ -39,7 +39,7 @@
   <section class="login-section" id="loginSection" aria-label="Member login">
     <div class="login-card">
       <div class="hero-logo" aria-hidden="true">
-        <img src="logo-new.png" alt="" width="90" height="90" onerror="this.style.display='none'">
+        <img src="logo-new.png" alt="" width="90" onerror="this.style.display='none'">
       </div>
       <div class="login-brand-text">
         ROOTS AND WINGS
@@ -246,148 +246,33 @@
             <button class="portal-tab active" role="tab" data-tab="session">Current Session</button>
             <button class="portal-tab" role="tab" data-tab="cleaning">Cleaning Crew</button>
             <button class="portal-tab" role="tab" data-tab="volunteers">Volunteers</button>
-            <button class="portal-tab" role="tab" data-tab="kitchen">Kitchen</button>
-            <button class="portal-tab" role="tab" data-tab="pavilion">Pavilion</button>
             <button class="portal-tab" role="tab" data-tab="events">Special Events</button>
             <button class="portal-tab" role="tab" data-tab="ideas">Class Ideas</button>
           </div>
 
-          <!-- Current Session -->
+          <!-- Current Session (JS-rendered) -->
           <div class="portal-tab-panel active" id="tab-session" role="tabpanel">
-            <h3>Spring Session 4 &mdash; March 4 &ndash; April 1, 2026</h3>
-            <div class="directory-table-wrap">
-              <table class="portal-table">
-                <thead>
-                  <tr><th>Time</th><th>Greenhouse (0-2)</th><th>Saplings (3-5)</th><th>Sassafras (5-6)</th><th>Oaks (7-8)</th><th>Maples (8-9)</th><th>Birch (9-10)</th><th>Willows (10-11)</th><th>Cedars (12-13)</th><th>Pigeons (14+)</th></tr>
-                </thead>
-                <tbody>
-                  <tr><td><strong>10:00&ndash;12:00</strong></td><td>Parent Room</td><td>Nature Art<br><em>Sarah A.</em></td><td>Story Science<br><em>Jen B.</em></td><td>Ancient Egypt<br><em>Lisa C.</em></td><td>Robotics<br><em>Chris F.</em></td><td>Creative Writing<br><em>Kim J.</em></td><td>World Cultures<br><em>Rachel D.</em></td><td>Chemistry<br><em>Matt J.</em></td><td>Film Studies<br><em>Ben H.</em></td></tr>
-                  <tr><td><strong>1:00&ndash;1:55</strong></td><td colspan="9" style="text-align:center;color:var(--color-text-light)"><em>Afternoon electives &mdash; mixed ages, sign up in Google Chat</em></td></tr>
-                  <tr><td><strong>2:00&ndash;2:55</strong></td><td colspan="9" style="text-align:center;color:var(--color-text-light)"><em>Afternoon electives &mdash; mixed ages, sign up in Google Chat</em></td></tr>
-                </tbody>
-              </table>
-            </div>
+            <div id="sessionTabContent"></div>
           </div>
 
-          <!-- Cleaning Crew -->
+          <!-- Cleaning Crew (JS-rendered) -->
           <div class="portal-tab-panel" id="tab-cleaning" role="tabpanel">
-            <h3>Cleaning Assignments</h3>
-            <div class="directory-table-wrap">
-              <table class="portal-table">
-                <thead><tr><th>Date</th><th>Kitchen</th><th>Fellowship Hall</th><th>Classrooms</th><th>Bathrooms</th><th>Outdoor/Pavilion</th></tr></thead>
-                <tbody>
-                  <tr><td>March 4</td><td>Anderson family</td><td>Baker family</td><td>Chen family</td><td>Davis family</td><td>Foster family</td></tr>
-                  <tr><td>March 11</td><td>Garcia family</td><td>Hughes family</td><td>Johnson family</td><td>Anderson family</td><td>Baker family</td></tr>
-                  <tr><td>March 18</td><td>Chen family</td><td>Davis family</td><td>Foster family</td><td>Garcia family</td><td>Hughes family</td></tr>
-                  <tr><td>March 25</td><td>Johnson family</td><td>Anderson family</td><td>Baker family</td><td>Chen family</td><td>Davis family</td></tr>
-                  <tr><td>April 1</td><td>Foster family</td><td>Garcia family</td><td>Hughes family</td><td>Johnson family</td><td>Anderson family</td></tr>
-                </tbody>
-              </table>
-            </div>
+            <div id="cleaningTabContent"></div>
           </div>
 
-          <!-- Volunteers -->
+          <!-- Volunteers (JS-rendered) -->
           <div class="portal-tab-panel" id="tab-volunteers" role="tabpanel">
-            <h3>Volunteer Roles &mdash; 2025&ndash;2026</h3>
-            <div class="portal-volunteer-grid">
-              <div class="portal-role-card">
-                <h4>1st Year Roles</h4>
-                <ul>
-                  <li><strong>Morning Greeter:</strong> <em>TBD</em></li>
-                  <li><strong>Lunch Setup:</strong> <em>TBD</em></li>
-                  <li><strong>Playground Monitor:</strong> <em>TBD</em></li>
-                  <li><strong>Supply Room:</strong> <em>TBD</em></li>
-                  <li><strong>Photo/Social Media:</strong> <em>TBD</em></li>
-                </ul>
-              </div>
-              <div class="portal-role-card">
-                <h4>2nd Year Roles</h4>
-                <ul>
-                  <li><strong>Session Coordinator:</strong> <em>TBD</em></li>
-                  <li><strong>Field Trip Organizer:</strong> <em>TBD</em></li>
-                  <li><strong>Curriculum Lead:</strong> <em>TBD</em></li>
-                  <li><strong>New Family Liaison:</strong> <em>TBD</em></li>
-                  <li><strong>Event Planner:</strong> <em>TBD</em></li>
-                </ul>
-              </div>
-              <div class="portal-role-card">
-                <h4>Morning Volunteers</h4>
-                <p>Each co-op day needs parent volunteers in every classroom. Sign up in the
-                <a href="https://docs.google.com/spreadsheets/d/PLACEHOLDER-MASTER" target="_blank">master spreadsheet</a>.</p>
-              </div>
-            </div>
+            <div id="volunteersTabContent"></div>
           </div>
 
-          <!-- Kitchen Schedule -->
-          <div class="portal-tab-panel" id="tab-kitchen" role="tabpanel">
-            <h3>Kitchen Schedule &mdash; Session 4</h3>
-            <div class="directory-table-wrap">
-              <table class="portal-table">
-                <thead><tr><th>Date</th><th>10:00&ndash;12:00</th><th>12:00&ndash;1:00 (Lunch)</th><th>1:00&ndash;1:55</th><th>2:00&ndash;2:55</th></tr></thead>
-                <tbody>
-                  <tr><td>March 4</td><td>Saplings &mdash; Nature Art</td><td><em>Open / Lunch</em></td><td>Baking Elective</td><td><em>Available</em></td></tr>
-                  <tr><td>March 11</td><td>Sassafras &mdash; Story Science</td><td><em>Open / Lunch</em></td><td><em>Available</em></td><td>Baking Elective</td></tr>
-                  <tr><td>March 18</td><td>Saplings &mdash; Nature Art</td><td><em>Open / Lunch</em></td><td>Baking Elective</td><td><em>Available</em></td></tr>
-                  <tr><td>March 25</td><td>Sassafras &mdash; Story Science</td><td><em>Open / Lunch</em></td><td><em>Available</em></td><td>Baking Elective</td></tr>
-                  <tr><td>April 1</td><td>Saplings &mdash; Nature Art</td><td><em>Open / Lunch</em></td><td>Baking Elective</td><td><em>Available</em></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Pavilion Schedule -->
-          <div class="portal-tab-panel" id="tab-pavilion" role="tabpanel">
-            <h3>Pavilion Schedule &mdash; Session 4</h3>
-            <div class="directory-table-wrap">
-              <table class="portal-table">
-                <thead><tr><th>Date</th><th>10:00&ndash;12:00</th><th>12:00&ndash;1:00</th><th>1:00&ndash;1:55</th><th>2:00&ndash;2:55</th></tr></thead>
-                <tbody>
-                  <tr><td>March 4</td><td>Oaks &mdash; Outdoor Science</td><td><em>Lunch / Free Play</em></td><td>Nature Journaling</td><td><em>Free Play</em></td></tr>
-                  <tr><td>March 11</td><td><em>Weather permitting</em></td><td><em>Lunch / Free Play</em></td><td>Outdoor Games</td><td>Nature Journaling</td></tr>
-                  <tr><td>March 18</td><td>Oaks &mdash; Outdoor Science</td><td><em>Lunch / Free Play</em></td><td>Nature Journaling</td><td><em>Free Play</em></td></tr>
-                  <tr><td>March 25</td><td><em>Weather permitting</em></td><td><em>Lunch / Free Play</em></td><td>Outdoor Games</td><td>Nature Journaling</td></tr>
-                  <tr><td>April 1</td><td>Oaks &mdash; Outdoor Science</td><td><em>Lunch / Free Play</em></td><td>Nature Journaling</td><td><em>Free Play</em></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Special Events -->
+          <!-- Special Events (JS-rendered) -->
           <div class="portal-tab-panel" id="tab-events" role="tabpanel">
-            <h3>Special Event Coordinators &mdash; 2025&ndash;2026</h3>
-            <div class="directory-table-wrap">
-              <table class="portal-table">
-                <thead><tr><th>Event</th><th>Date</th><th>Coordinator(s)</th><th>Status</th></tr></thead>
-                <tbody>
-                  <tr><td>Ice Cream Social</td><td>September 2025</td><td><em>TBD</em></td><td><span class="status-badge status-done">Complete</span></td></tr>
-                  <tr><td>School Dance</td><td>October 2025</td><td><em>TBD</em></td><td><span class="status-badge status-done">Complete</span></td></tr>
-                  <tr><td>Maker's Market</td><td>December 2025</td><td><em>TBD</em></td><td><span class="status-badge status-done">Complete</span></td></tr>
-                  <tr><td>Passion Fair</td><td>February 2026</td><td><em>TBD</em></td><td><span class="status-badge status-done">Complete</span></td></tr>
-                  <tr><td>Spring Camp</td><td>April 2026</td><td><em>TBD</em></td><td><span class="status-badge status-upcoming">Planning</span></td></tr>
-                  <tr><td>Field Day</td><td>May 2026</td><td><em>TBD</em></td><td><span class="status-badge status-upcoming">Planning</span></td></tr>
-                  <tr><td>End-of-Year Showcase</td><td>May 2026</td><td><em>TBD</em></td><td><span class="status-badge status-open">Needs Volunteers</span></td></tr>
-                </tbody>
-              </table>
-            </div>
+            <div id="eventsTabContent"></div>
           </div>
 
-          <!-- Class Ideas -->
+          <!-- Class Ideas (JS-rendered) -->
           <div class="portal-tab-panel" id="tab-ideas" role="tabpanel">
-            <h3>Class Ideas Board</h3>
-            <p style="color:var(--color-text-light);margin-bottom:20px;">Have an idea for a class? Add it here or in the
-              <a href="https://docs.google.com/spreadsheets/d/PLACEHOLDER-MASTER" target="_blank">master spreadsheet</a>. Mark if you'd be willing to teach it!</p>
-            <div class="directory-table-wrap">
-              <table class="portal-table">
-                <thead><tr><th>Class Idea</th><th>Age Group</th><th>Suggested By</th><th>Willing to Teach?</th></tr></thead>
-                <tbody>
-                  <tr><td>Intro to Coding (Scratch)</td><td>Birch / Willows</td><td><em>Example</em></td><td>Yes</td></tr>
-                  <tr><td>Watercolor Painting</td><td>Any</td><td><em>Example</em></td><td>Yes</td></tr>
-                  <tr><td>Basic Woodworking</td><td>Cedars / Pigeons</td><td><em>Example</em></td><td>Need volunteer</td></tr>
-                  <tr><td>Gardening &amp; Composting</td><td>Saplings / Sassafras</td><td><em>Example</em></td><td>Yes</td></tr>
-                  <tr><td>Spanish for Beginners</td><td>Oaks / Maples</td><td><em>Example</em></td><td>Need volunteer</td></tr>
-                </tbody>
-              </table>
-            </div>
+            <div id="ideasTabContent"></div>
           </div>
         </div>
       </div>
