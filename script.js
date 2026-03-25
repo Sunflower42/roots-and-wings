@@ -944,6 +944,17 @@
     html += phoneSvg + ' ' + fam.phone + '</a>';
     html += '</div>';
 
+    // Board responsibilities
+    if (boardInfo && boardInfo.responsibilities) {
+      html += '<div class="detail-responsibilities">';
+      html += '<h4>' + boardInfo.responsibilities.committee + '</h4>';
+      html += '<ul>';
+      boardInfo.responsibilities.bullets.forEach(function (b) {
+        html += '<li>' + b + '</li>';
+      });
+      html += '</ul></div>';
+    }
+
     // Show other family members
     html += '<div class="detail-family">';
     html += '<h4>' + fam.name + ' Family</h4>';
@@ -995,6 +1006,15 @@
     html += '<a href="mailto:' + boardInfo.email + '" class="detail-btn detail-btn-board">';
     html += emailSvg + ' ' + boardInfo.email + '</a>';
     html += '</div>';
+    if (boardInfo.responsibilities) {
+      html += '<div class="detail-responsibilities">';
+      html += '<h4>' + boardInfo.responsibilities.committee + '</h4>';
+      html += '<ul>';
+      boardInfo.responsibilities.bullets.forEach(function (b) {
+        html += '<li>' + b + '</li>';
+      });
+      html += '</ul></div>';
+    }
     personDetailCard.innerHTML = html;
     personDetail.style.display = 'flex';
     document.body.style.overflow = 'hidden';
@@ -1038,7 +1058,8 @@
       var boardRole = this.getAttribute('data-board-role');
       var boardEmail = this.getAttribute('data-board-email');
       var familyName = this.getAttribute('data-board-family');
-      var boardInfo = {role: boardRole, email: boardEmail};
+      var resp = BOARD_RESPONSIBILITIES[boardRole];
+      var boardInfo = {role: boardRole, email: boardEmail, responsibilities: resp || null};
 
       // Try to find by explicit family mapping first, then by full name
       var found = null;
@@ -1067,6 +1088,78 @@
   // ──────────────────────────────────────────────
 
   // SVG icons for duties
+  // ── Board responsibilities (contact-for guidance) ──
+  var BOARD_RESPONSIBILITIES = {
+    'President': {
+      committee: 'Facility Committee',
+      bullets: ['Building & grounds oversight', 'FMC relationship & facility coordination']
+    },
+    'Vice President': {
+      committee: 'Programming Committee',
+      bullets: ['Class planning & session scheduling', 'Supporting class leads & assistants']
+    },
+    'Treasurer': {
+      committee: 'Finance Committee',
+      bullets: ['Billing, fees & reimbursements', 'Financial assistance & fundraising']
+    },
+    'Membership Director': {
+      committee: 'Membership Committee',
+      bullets: ['Enrollment & new family onboarding', 'Registration & class placement']
+    },
+    'Communications Director': {
+      committee: 'Communications Committee',
+      bullets: ['Google Workspace & member comms', 'Surveys, yearbook & newsletter']
+    },
+    'Secretary': {
+      committee: 'Administrative Committee',
+      bullets: ['Meeting minutes & official records', 'Government filings & archives']
+    },
+    'Sustaining Director': {
+      committee: 'Support Committee',
+      bullets: ['Member retention & satisfaction', 'Special event support & burnout monitoring']
+    }
+  };
+
+  // ── Stub billing data (to be replaced with Google Sheets API) ──
+  // Each family key is the family name (matches FAMILIES[].name)
+  // amounts are per-semester; lineItems show the breakdown
+  var BILLING = {
+    _meta: {
+      paymentMethods: 'PayPal or check',
+      paypalLink: 'https://www.paypal.com/paypalme/PLACEHOLDER', // TODO: replace with real PayPal.me link
+      checkPayableTo: 'Roots and Wings Homeschool, Inc.',
+      checkDeliverTo: 'Jessica Shewan (Treasurer)',
+      note: 'All fees are nonrefundable. Contact treasurer@rootsandwingsindy.com with questions.'
+    },
+    // Stub data for demo family (Bogan, 3 kids)
+    'Bogan': {
+      spring: {
+        semester: 'Spring 2026',
+        dueDate: '2026-01-07',
+        status: 'Due',
+        lineItems: [
+          { label: 'Member fee (per family)', amount: 40 },
+          { label: 'AM class fees (3 kids × $10 × 3 sessions)', amount: 90 },
+          { label: 'PM class fees (3 kids × $10 × 3 sessions)', amount: 90 }
+        ],
+        totalDue: 220,
+        totalPaid: 0
+      },
+      fall: {
+        semester: 'Fall 2025',
+        dueDate: '2025-08-27',
+        status: 'Paid',
+        lineItems: [
+          { label: 'Member fee (per family)', amount: 40 },
+          { label: 'AM class fees (3 kids × $10 × 2 sessions)', amount: 60 },
+          { label: 'PM class fees (3 kids × $10 × 2 sessions)', amount: 60 }
+        ],
+        totalDue: 160,
+        totalPaid: 160
+      }
+    }
+  };
+
   var DUTY_ICONS = {
     teach: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
     assist: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
@@ -1281,6 +1374,63 @@
         html += '<div class="mf-duty-info"><strong>' + d.text + '</strong><span>' + d.detail + '</span></div>';
         html += '</div>';
       });
+    }
+    html += '</div>';
+
+    // ──── Billing card ────
+    var billing = BILLING[fam.name];
+    html += '<div class="mf-card mf-billing-card">';
+    html += '<h3 class="mf-card-title">Billing &amp; Fees</h3>';
+    if (billing) {
+      var semesters = ['spring', 'fall'];
+      semesters.forEach(function (key) {
+        var sem = billing[key];
+        if (!sem) return;
+        var isPaid = sem.status === 'Paid';
+        var statusClass = isPaid ? 'mf-billing-paid' : (sem.status === 'Overdue' ? 'mf-billing-overdue' : 'mf-billing-due-status');
+        html += '<div class="mf-billing-semester">';
+        html += '<div class="mf-billing-header">';
+        html += '<strong>' + sem.semester + '</strong>';
+        html += '<span class="mf-billing-status ' + statusClass + '">' + sem.status + '</span>';
+        html += '</div>';
+        html += '<div class="mf-billing-due">Due: ' + new Date(sem.dueDate + 'T00:00:00').toLocaleDateString('en-US', {month: 'long', day: 'numeric', year: 'numeric'}) + '</div>';
+        html += '<div class="mf-billing-lines">';
+        sem.lineItems.forEach(function (item) {
+          html += '<div class="mf-billing-line">';
+          html += '<span>' + item.label + '</span>';
+          html += '<span>$' + item.amount.toFixed(2) + '</span>';
+          html += '</div>';
+        });
+        html += '<div class="mf-billing-line mf-billing-total">';
+        html += '<span>Total</span>';
+        html += '<span>$' + sem.totalDue.toFixed(2) + '</span>';
+        html += '</div>';
+        if (!isPaid && sem.totalPaid > 0) {
+          html += '<div class="mf-billing-line mf-billing-paid-line">';
+          html += '<span>Paid</span>';
+          html += '<span>$' + sem.totalPaid.toFixed(2) + '</span>';
+          html += '</div>';
+          html += '<div class="mf-billing-line mf-billing-balance">';
+          html += '<span>Balance due</span>';
+          html += '<span>$' + (sem.totalDue - sem.totalPaid).toFixed(2) + '</span>';
+          html += '</div>';
+        }
+        if (!isPaid && BILLING._meta.paypalLink) {
+          var payAmount = sem.totalDue - sem.totalPaid;
+          html += '<div class="mf-billing-pay-wrap">';
+          html += '<a href="' + BILLING._meta.paypalLink + '/' + payAmount.toFixed(2) + '" target="_blank" rel="noopener noreferrer" class="mf-billing-pay-btn">';
+          html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+          html += ' Pay $' + payAmount.toFixed(2) + '</a>';
+          html += '</div>';
+        }
+        html += '</div></div>';
+      });
+      html += '<div class="mf-billing-footer">';
+      html += '<p><a href="' + BILLING._meta.paypalLink + '" target="_blank" rel="noopener noreferrer" class="mf-billing-contact-link">PayPal</a> or check &mdash; checks payable to <em>' + BILLING._meta.checkPayableTo + '</em></p>';
+      html += '<p class="mf-billing-contact">Questions? <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a></p>';
+      html += '</div>';
+    } else {
+      html += '<p class="mf-empty">Billing information is not yet available for your family. Contact <a href="mailto:treasurer@rootsandwingsindy.com">the Treasurer</a> with questions.</p>';
     }
     html += '</div>';
 
