@@ -242,48 +242,48 @@
       </div>
 
       <div class="age-groups-grid">
-        <div class="age-group-card fade-in" style="--accent: #8DB43E">
+        <div class="age-group-card fade-in" style="--accent: #8DB43E" onclick="openAgeGroupModal('greenhouse')">
           <span class="age-group-emoji" aria-hidden="true">🌱</span>
           <h4>Greenhouse</h4>
           <span class="age-range">Ages 0 – 2</span>
           <span class="age-group-note">No programming</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #2D6A3F">
+        <div class="age-group-card fade-in" style="--accent: #2D6A3F" onclick="openAgeGroupModal('saplings')">
           <span class="age-group-emoji" aria-hidden="true">🌿</span>
           <h4>Saplings</h4>
           <span class="age-range">Ages 3 – 5</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #D4712A">
+        <div class="age-group-card fade-in" style="--accent: #D4712A" onclick="openAgeGroupModal('sassafras')">
           <span class="age-group-emoji" aria-hidden="true">🍃</span>
           <h4>Sassafras</h4>
           <span class="age-range">Ages 5 – 6</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #5BACC8">
+        <div class="age-group-card fade-in" style="--accent: #5BACC8" onclick="openAgeGroupModal('oaks')">
           <span class="age-group-emoji" aria-hidden="true">🌳</span>
           <h4>Oaks</h4>
           <span class="age-range">Ages 7 – 8</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #E8A628">
+        <div class="age-group-card fade-in" style="--accent: #E8A628" onclick="openAgeGroupModal('maples')">
           <span class="age-group-emoji" aria-hidden="true">🍁</span>
           <h4>Maples</h4>
           <span class="age-range">Ages 8 – 9</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #1E4F2E">
+        <div class="age-group-card fade-in" style="--accent: #1E4F2E" onclick="openAgeGroupModal('birch')">
           <span class="age-group-emoji" aria-hidden="true">🌲</span>
           <h4>Birch</h4>
           <span class="age-range">Ages 9 – 10</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #8DB43E">
+        <div class="age-group-card fade-in" style="--accent: #8DB43E" onclick="openAgeGroupModal('willows')">
           <span class="age-group-emoji" aria-hidden="true">🌾</span>
           <h4>Willows</h4>
           <span class="age-range">Ages 10 – 11</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #5BACC8">
+        <div class="age-group-card fade-in" style="--accent: #5BACC8" onclick="openAgeGroupModal('cedars')">
           <span class="age-group-emoji" aria-hidden="true">🌲</span>
           <h4>Cedars</h4>
           <span class="age-range">Ages 12 – 13</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #D4712A">
+        <div class="age-group-card fade-in" style="--accent: #D4712A" onclick="openAgeGroupModal('pigeons')">
           <span class="age-group-emoji" aria-hidden="true">🕊️</span>
           <h4>Pigeons</h4>
           <span class="age-range">Ages 14+</span>
@@ -623,6 +623,18 @@
       </div>
     </div>
   </footer>
+
+  <!-- ====== Age Group Modal ====== -->
+  <div id="age-group-modal" class="age-group-modal-overlay" onclick="if(event.target===this){closeAgeGroupModal();}">
+    <div class="age-group-modal">
+      <button class="age-group-modal-close" aria-label="Close" onclick="closeAgeGroupModal()">&times;</button>
+      <span id="ag-modal-emoji" class="age-group-modal-emoji"></span>
+      <h2 id="ag-modal-title" class="age-group-modal-title"></h2>
+      <span id="ag-modal-range" class="age-group-modal-range"></span>
+      <p id="ag-modal-desc" class="age-group-modal-desc"></p>
+      <ul id="ag-modal-activities" class="age-group-modal-activities"></ul>
+    </div>
+  </div>
 
   <!-- ====== Tour Modal ====== -->
   <div id="tour-modal" class="tour-modal-overlay" onclick="if(event.target===this){this.classList.remove('active');document.body.style.overflow='';}">

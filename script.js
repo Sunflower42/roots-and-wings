@@ -2898,9 +2898,10 @@
       id: 'playfair',
       label: 'Style 2',
       font: 'Playfair Display',
-      logo: 'Image_20260404_230404_036.png',
+      logo: 'Image_20260405_161019_508.png',
       watermark: 'Image_20260404_230404_036.png',
       brandText: 'Roots & Wings',
+      useFullLogo: true,
       swatches: ['#2D6A3F', '#1E4F2E', '#D4712A', '#8DB43E']
     },
     {
@@ -2953,7 +2954,7 @@
         el.style.display = 'none';
       });
       document.querySelectorAll('.nav-brand img').forEach(function(img) {
-        img.style.height = '56px';
+        img.style.height = '80px';
         img.style.width = 'auto';
       });
       document.querySelectorAll('.footer-brand .nav-brand-text').forEach(function(el) {
@@ -3043,3 +3044,148 @@
   buildSwitcher();
 
 })();
+
+// ──────────────────────────────────────────────
+// Age Group Modal
+// ──────────────────────────────────────────────
+var ageGroupData = {
+  greenhouse: {
+    emoji: '🌱',
+    name: 'Greenhouse',
+    range: 'Ages 0 – 2',
+    desc: 'Our youngest learners stay with their parents in a nurturing, play-based space. The Greenhouse is a welcoming environment where families with babies and toddlers can connect while older siblings attend classes.',
+    activities: [
+      'Parent-and-child free play',
+      'Sensory exploration stations',
+      'Story time and music',
+      'Social time for parents and caregivers'
+    ]
+  },
+  saplings: {
+    emoji: '🌿',
+    name: 'Saplings',
+    range: 'Ages 3 – 5',
+    desc: 'Saplings discover the joy of learning through play, creativity, and gentle exploration. Classes focus on building social skills, curiosity, and a love of nature.',
+    activities: [
+      'Nature walks and outdoor exploration',
+      'Arts and crafts',
+      'Songs, movement, and creative play',
+      'Early math and literacy through games',
+      'Show-and-tell and storytelling'
+    ]
+  },
+  sassafras: {
+    emoji: '🍃',
+    name: 'Sassafras',
+    range: 'Ages 5 – 6',
+    desc: 'Sassafras bridges the gap between early learners and elementary-aged kids. Hands-on projects and collaborative activities help build confidence and independence.',
+    activities: [
+      'Hands-on science experiments',
+      'Beginning reading and writing workshops',
+      'Art projects and creative expression',
+      'Nature journaling',
+      'Group games and teamwork activities'
+    ]
+  },
+  oaks: {
+    emoji: '🌳',
+    name: 'Oaks',
+    range: 'Ages 7 – 8',
+    desc: 'Oaks dive deeper into subjects with curiosity-driven learning. Classes encourage critical thinking and hands-on discovery across science, history, and the arts.',
+    activities: [
+      'Science labs and experiments',
+      'History and geography explorations',
+      'Creative writing and book discussions',
+      'Art and music',
+      'Physical education and outdoor games'
+    ]
+  },
+  maples: {
+    emoji: '🍁',
+    name: 'Maples',
+    range: 'Ages 8 – 9',
+    desc: 'Maples build on foundational skills with more in-depth projects and group collaboration. This is where kids really start to develop their own interests and passions.',
+    activities: [
+      'Project-based learning',
+      'STEM challenges and building',
+      'Creative arts and drama',
+      'Research and presentation skills',
+      'Cooperative group projects'
+    ]
+  },
+  birch: {
+    emoji: '🌲',
+    name: 'Birch',
+    range: 'Ages 9 – 10',
+    desc: 'Birch learners take on more responsibility and dig into subjects that spark their curiosity. Classes blend academics with real-world skills and teamwork.',
+    activities: [
+      'In-depth science and nature study',
+      'Math games and problem-solving',
+      'Literature circles and writing',
+      'Community service projects',
+      'Leadership and life skills'
+    ]
+  },
+  willows: {
+    emoji: '🌾',
+    name: 'Willows',
+    range: 'Ages 10 – 11',
+    desc: 'Willows are developing independence and a strong sense of self. Classes challenge them academically while fostering creativity, collaboration, and critical thinking.',
+    activities: [
+      'Advanced science and experiments',
+      'History deep dives and debates',
+      'Creative writing and journalism',
+      'Art, music, and performance',
+      'Mentoring younger students'
+    ]
+  },
+  cedars: {
+    emoji: '🌲',
+    name: 'Cedars',
+    range: 'Ages 12 – 13',
+    desc: 'Cedars tackle more complex topics and develop skills for the teen years ahead. Classes emphasize critical thinking, self-directed learning, and real-world application.',
+    activities: [
+      'Lab sciences and research projects',
+      'Essay writing and public speaking',
+      'Current events and civic engagement',
+      'Electives based on student interests',
+      'Peer collaboration and group leadership'
+    ]
+  },
+  pigeons: {
+    emoji: '🕊️',
+    name: 'Pigeons',
+    range: 'Ages 14+',
+    desc: 'Our oldest learners are preparing to spread their wings. Pigeons engage in advanced coursework, real-world projects, and mentorship opportunities that build confidence for whatever comes next.',
+    activities: [
+      'Advanced academics and electives',
+      'Independent research and capstone projects',
+      'Community involvement and service',
+      'Mentorship and teaching younger groups',
+      'Life skills, career exploration, and goal-setting'
+    ]
+  }
+};
+
+function openAgeGroupModal(groupId) {
+  var data = ageGroupData[groupId];
+  if (!data) return;
+  document.getElementById('ag-modal-emoji').textContent = data.emoji;
+  document.getElementById('ag-modal-title').textContent = data.name;
+  document.getElementById('ag-modal-range').textContent = data.range;
+  document.getElementById('ag-modal-desc').textContent = data.desc;
+  var list = document.getElementById('ag-modal-activities');
+  list.innerHTML = '';
+  data.activities.forEach(function(item) {
+    var li = document.createElement('li');
+    li.textContent = item;
+    list.appendChild(li);
+  });
+  document.getElementById('age-group-modal').classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeAgeGroupModal() {
+  document.getElementById('age-group-modal').classList.remove('active');
+  document.body.style.overflow = '';
+}

@@ -1154,6 +1154,111 @@ p + p { margin-top: 1rem; }
   margin-top: 6px;
 }
 
+/* Age Group Modal */
+.age-group-card {
+  cursor: pointer;
+}
+
+.age-group-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.age-group-modal-overlay.active {
+  display: flex;
+}
+
+.age-group-modal {
+  background: var(--color-white);
+  border-radius: 16px;
+  padding: 40px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  animation: modalSlideIn 0.3s ease;
+}
+
+.age-group-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: none;
+  border: none;
+  font-size: 1.8rem;
+  color: var(--color-text-light);
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px;
+  transition: color 0.2s;
+}
+
+.age-group-modal-close:hover {
+  color: var(--color-text);
+}
+
+.age-group-modal-emoji {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.age-group-modal-title {
+  font-family: var(--font-heading);
+  font-size: 1.6rem;
+  color: var(--color-primary-dark);
+  margin-bottom: 4px;
+}
+
+.age-group-modal-range {
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-accent-dark);
+  background-color: rgba(var(--color-accent-light-rgb), 0.15);
+  padding: 4px 14px;
+  border-radius: 50px;
+  margin-bottom: 16px;
+}
+
+.age-group-modal-desc {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--color-text);
+  margin-bottom: 12px;
+}
+
+.age-group-modal-activities {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0 0;
+}
+
+.age-group-modal-activities li {
+  font-size: 0.9rem;
+  color: var(--color-text);
+  padding: 6px 0 6px 24px;
+  position: relative;
+  line-height: 1.5;
+}
+
+.age-group-modal-activities li::before {
+  content: '🌿';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  font-size: 0.8rem;
+}
+
 .pricing-note {
   font-size: 0.75rem;
   color: var(--color-text-light);
