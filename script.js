@@ -110,20 +110,11 @@
   }
 
   // ──────────────────────────────────────────────
-  // 5. Member Portal Authentication
+  // 5. Member Portal Authentication (Google Sign-In only)
   // ──────────────────────────────────────────────
-  //
-  // IMPORTANT: This is a client-side password check for demo/development
-  // purposes ONLY. It provides NO real security. For production, replace
-  // with Google OAuth (e.g., Firebase Auth with Google sign-in) to
-  // authenticate against the co-op's Google Workspace domain.
-  //
 
-  var loginForm = document.getElementById('loginForm');
   var loginSection = document.getElementById('loginSection');
   var dashboard = document.getElementById('dashboard');
-  var loginError = document.getElementById('loginError');
-  var passwordInput = document.getElementById('password');
   var logoutBtn = document.getElementById('logoutBtn');
 
   var SESSION_KEY = 'rw_member_auth';

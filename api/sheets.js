@@ -1,5 +1,6 @@
 const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
+const { ALLOWED_ORIGINS } = require('./_config');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
@@ -26,16 +27,6 @@ async function verifyAuth(req) {
     } catch (e) {
       return { ok: false, reason: 'Invalid token' };
     }
-  }
-
-  // Password: "Password <password>"
-  if (authHeader.startsWith('Password ')) {
-    var pw = authHeader.slice(9);
-    var expected = process.env.MEMBER_PASSWORD;
-    if (pw && expected && pw === expected) {
-      return { ok: true, email: 'password-auth' };
-    }
-    return { ok: false, reason: 'Invalid password' };
   }
 
   return { ok: false, reason: 'No credentials provided' };
@@ -891,12 +882,8 @@ function parseClassIdeas(rows) {
 // MAIN HANDLER
 // ══════════════════════════════════════════════
 module.exports = async function handler(req, res) {
-  var allowedOrigins = [
-    'https://roots-and-wings-six.vercel.app',
-    'https://roots-and-wings-erin-bogans-projects.vercel.app'
-  ];
   var origin = req.headers.origin || '';
-  if (allowedOrigins.indexOf(origin) !== -1) {
+  if (ALLOWED_ORIGINS.indexOf(origin) !== -1) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');

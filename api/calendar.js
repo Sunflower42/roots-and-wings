@@ -1,4 +1,26 @@
 const { google } = require('googleapis');
+const { ALLOWED_ORIGINS } = require('./_config');
+const { OAuth2Client } = require('google-auth-library');
+
+const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
+const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
+const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+async function verifyGoogleAuth(req) {
+  var authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) return false;
+  try {
+    var ticket = await oauthClient.verifyIdToken({
+      idToken: authHeader.slice(7),
+      audience: GOOGLE_CLIENT_ID
+    });
+    var payload = ticket.getPayload();
+    var domain = (payload.email || '').split('@')[1] || '';
+    return domain === ALLOWED_DOMAIN;
+  } catch (e) {
+    return false;
+  }
+}
 
 function getAuth() {
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
@@ -14,12 +36,8 @@ const CALENDAR_IDS = [
 ];
 
 module.exports = async function handler(req, res) {
-  var allowedOrigins = [
-    'https://roots-and-wings-six.vercel.app',
-    'https://roots-and-wings-erin-bogans-projects.vercel.app'
-  ];
   var origin = req.headers.origin || '';
-  if (allowedOrigins.indexOf(origin) !== -1) {
+  if (ALLOWED_ORIGINS.indexOf(origin) !== -1) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -27,16 +45,9 @@ module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'public, max-age=300');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // Require auth
-  var authHeader = req.headers.authorization || '';
-  if (!authHeader.startsWith('Bearer ') && !authHeader.startsWith('Password ')) {
+  // Require authenticated @rootsandwingsindy.com Google account
+  if (!(await verifyGoogleAuth(req))) {
     return res.status(401).json({ error: 'Unauthorized' });
-  }
-  if (authHeader.startsWith('Password ')) {
-    var pw = authHeader.slice(9);
-    if (!pw || pw !== process.env.MEMBER_PASSWORD) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
   }
 
   try {
