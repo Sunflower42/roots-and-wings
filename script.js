@@ -4315,7 +4315,7 @@
         var qty = String(s.qty || '').trim();
         var unit = s.qty_unit || '';
         var notes = String(s.notes || '').trim().replace(/\s+/g, ' ');
-        var sig = norm(name) + '|' + norm(qty) + '|' + unit + '|' + norm(notes);
+        var sig = norm(name);
         if (keyToRow[sig]) {
           if (keyToRow[sig].lessons.indexOf(ls.lesson_number) === -1) {
             keyToRow[sig].lessons.push(ls.lesson_number);
