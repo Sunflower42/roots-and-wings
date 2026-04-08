@@ -5447,6 +5447,33 @@ button.staff-role:hover {
 /* ---------- Detail view ---------- */
 .cl-detail-header {
   margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.cl-icon-btn {
+  background: transparent;
+  border: 1.5px solid var(--color-border);
+  color: var(--color-primary);
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+}
+.cl-icon-btn:hover {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-primary);
+}
+@media print {
+  body.printing-curriculum .cl-icon-btn { display: none !important; }
 }
 .cl-back {
   background: transparent;

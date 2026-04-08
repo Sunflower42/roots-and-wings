@@ -4176,6 +4176,9 @@
 
     var html = '<div class="cl-detail-header">';
     html += '<button class="cl-back" id="cl-back-btn">&larr; Library</button>';
+    html += '<button class="cl-icon-btn" id="cl-print-btn" aria-label="Print" title="Print">';
+    html += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>';
+    html += '</button>';
     html += '</div>';
 
     html += '<h3>' + escapeAttr(curr.title) + '</h3>';
@@ -4268,7 +4271,6 @@
 
     // Actions
     html += '<div class="cl-detail-actions">';
-    html += '<button class="cl-action-btn" id="cl-print-btn">Print</button>';
     html += '<button class="cl-action-btn" id="cl-copy-btn" data-id="' + curr.id + '">Copy &amp; Modify</button>';
     if (canEdit) {
       html += '<button class="cl-action-btn" id="cl-edit-btn" data-id="' + curr.id + '">Edit</button>';
