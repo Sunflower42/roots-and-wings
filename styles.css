@@ -5605,8 +5605,161 @@ button.staff-role:hover {
   color: var(--color-text-inverse);
 }
 
+/* ---------- Editor view ---------- */
+.cl-editor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem;
+  background: rgba(var(--color-primary-rgb), 0.04);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.cl-editor-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+.cl-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cl-label-sm {
+  font-size: 0.68rem;
+  margin-top: 0.5rem;
+}
+.cl-input {
+  padding: 8px 12px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.88rem;
+  background: var(--color-white);
+  color: var(--color-text);
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+.cl-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+.cl-textarea {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+.cl-editor-lessons {
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  margin-bottom: 1rem;
+}
+.cl-lesson-edit {
+  background: rgba(var(--color-primary-rgb), 0.02);
+}
+.cl-lesson-title-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  color: var(--color-primary-dark);
+}
+.cl-dyn-section {
+  margin: 0.6rem 0;
+}
+.cl-dyn-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-primary-dark);
+  margin-bottom: 0.35rem;
+}
+.cl-dyn-empty {
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  font-style: italic;
+  padding: 0.25rem 0;
+}
+.cl-dyn-row,
+.cl-supply-row,
+.cl-link-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+.cl-dyn-bullet {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  font-weight: 600;
+  min-width: 1.5em;
+  text-align: right;
+}
+.cl-dyn-row .cl-input { flex: 1; }
+.cl-supply-row .cl-supply-name { flex: 2; }
+.cl-supply-row .cl-supply-qty  { flex: 0.5; min-width: 60px; }
+.cl-supply-row .cl-supply-notes { flex: 2; }
+.cl-link-row .cl-link-label { flex: 1; }
+.cl-link-row .cl-link-url   { flex: 2; }
+.cl-dyn-remove {
+  background: transparent;
+  border: 1.5px solid var(--color-border);
+  color: var(--color-accent-dark);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+}
+.cl-dyn-remove:hover {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border-color: var(--color-accent);
+}
+.cl-dyn-add {
+  background: transparent;
+  border: 1.5px dashed var(--color-primary);
+  color: var(--color-primary);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  margin-top: 0.35rem;
+  transition: all var(--transition-fast);
+}
+.cl-dyn-add:hover {
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border-style: solid;
+}
+
 @media (max-width: 540px) {
   .cl-grid { grid-template-columns: 1fr; }
+  .cl-editor-row { grid-template-columns: 1fr; }
+  .cl-supply-row,
+  .cl-link-row { flex-wrap: wrap; }
+  .cl-supply-row .cl-supply-name,
+  .cl-supply-row .cl-supply-qty,
+  .cl-supply-row .cl-supply-notes,
+  .cl-link-row .cl-link-label,
+  .cl-link-row .cl-link-url { flex: 1 1 100%; }
 }
 
 /* ==========================================================================

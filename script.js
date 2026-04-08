@@ -3272,11 +3272,72 @@
   var curriculumState = {
     view: 'library',      // 'library' | 'detail' | 'editor'
     list: null,           // array of curriculum summaries
-    current: null,        // full curriculum object when in detail/editor view
+    current: null,        // full curriculum object when in detail view
+    draft: null,          // in-progress edit (separate from current so we can cancel)
+    editingId: null,      // id being edited, or null for new
     searchQuery: '',
     subjectFilter: '',
     ageFilter: ''
   };
+
+  function blankLesson(num) {
+    return {
+      lesson_number: num,
+      title: '',
+      overview: '',
+      activity: [''],
+      instruction: [''],
+      links: [],
+      supplies: []
+    };
+  }
+
+  function blankDraft() {
+    var lessons = [];
+    for (var i = 1; i <= 5; i++) lessons.push(blankLesson(i));
+    return {
+      title: '',
+      subject: '',
+      age_range: '',
+      overview: '',
+      tags: [],
+      edit_policy: 'author_only',
+      lesson_count: 5,
+      lessons: lessons
+    };
+  }
+
+  function draftFromCurriculum(curr) {
+    // Deep-clone so edits don't mutate curriculumState.current.
+    var draft = {
+      title: curr.title || '',
+      subject: curr.subject || '',
+      age_range: curr.age_range || '',
+      overview: curr.overview || '',
+      tags: (curr.tags || []).slice(),
+      edit_policy: curr.edit_policy || 'author_only',
+      lesson_count: curr.lesson_count || 5,
+      lessons: []
+    };
+    // Ensure we have exactly 5 lesson slots (so toggling lesson_count up works)
+    for (var i = 1; i <= 5; i++) {
+      var src = (curr.lessons || []).find(function (l) { return l.lesson_number === i; });
+      if (src) {
+        draft.lessons.push({
+          lesson_number: i,
+          title: src.title || '',
+          overview: src.overview || '',
+          activity: (src.activity && src.activity.length ? src.activity.slice() : ['']),
+          instruction: (src.instruction && src.instruction.length ? src.instruction.slice() : ['']),
+          links: (src.links || []).map(function (l) { return { label: l.label || '', url: l.url || '' }; }),
+          supplies: (src.supplies || []).map(function (s) { return { item_name: s.item_name || '', qty: s.qty || '', notes: s.notes || '', closet_item_id: s.closet_item_id || null }; })
+        });
+      } else {
+        draft.lessons.push(blankLesson(i));
+      }
+    }
+    return draft;
+  }
 
   function currentUserIsBoard() {
     var email = sessionStorage.getItem('rw_user_email');
@@ -3349,6 +3410,8 @@
       html += renderCurriculumLibraryBody();
     } else if (curriculumState.view === 'detail') {
       html += renderCurriculumDetailBody();
+    } else if (curriculumState.view === 'editor') {
+      html += renderCurriculumEditorBody();
     }
 
     html += '</div>';
@@ -3356,6 +3419,263 @@
     personDetail.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     wireCurriculumEvents();
+  }
+
+  function startNewCurriculum() {
+    curriculumState.draft = blankDraft();
+    curriculumState.editingId = null;
+    curriculumState.view = 'editor';
+    renderCurriculumModal();
+  }
+
+  function startEditCurriculum() {
+    if (!curriculumState.current) return;
+    curriculumState.draft = draftFromCurriculum(curriculumState.current);
+    curriculumState.editingId = curriculumState.current.id;
+    curriculumState.view = 'editor';
+    renderCurriculumModal();
+  }
+
+  function copyAndEditCurriculum() {
+    // POST /api/curriculum?id=N&action=copy, then open the new copy in the editor.
+    if (!curriculumState.current) return;
+    curriculumFetch('/api/curriculum?id=' + encodeURIComponent(curriculumState.current.id) + '&action=copy', {
+      method: 'POST'
+    }).then(function (res) {
+      if (!res.ok) { alert('Copy failed: ' + (res.data.error || 'unknown')); return; }
+      curriculumState.current = res.data.curriculum;
+      curriculumState.draft = draftFromCurriculum(res.data.curriculum);
+      curriculumState.editingId = res.data.curriculum.id;
+      curriculumState.view = 'editor';
+      renderCurriculumModal();
+    });
+  }
+
+  function renderCurriculumEditorBody() {
+    var d = curriculumState.draft;
+    if (!d) return '<p>Loading...</p>';
+    var isNew = !curriculumState.editingId;
+
+    var html = '<div class="cl-detail-header">';
+    html += '<button class="cl-back" id="cl-editor-cancel">&larr; Cancel</button>';
+    html += '</div>';
+
+    html += '<h3>' + (isNew ? 'New Lesson Plan' : 'Edit Lesson Plan') + '</h3>';
+
+    // Metadata section
+    html += '<div class="cl-editor-meta">';
+    html += '<label class="cl-label">Title<input class="cl-input" id="cl-f-title" value="' + escapeAttr(d.title) + '" placeholder="e.g. Clay Critters"></label>';
+
+    html += '<div class="cl-editor-row">';
+    html += '<label class="cl-label">Subject<input class="cl-input" id="cl-f-subject" value="' + escapeAttr(d.subject) + '" placeholder="e.g. Art"></label>';
+    html += '<label class="cl-label">Age Range<input class="cl-input" id="cl-f-age" value="' + escapeAttr(d.age_range) + '" placeholder="e.g. 7-12"></label>';
+    html += '</div>';
+
+    html += '<label class="cl-label">Overview<textarea class="cl-input cl-textarea" id="cl-f-overview" rows="3" placeholder="What will students learn across the whole unit?">' + escapeAttr(d.overview) + '</textarea></label>';
+
+    html += '<label class="cl-label">Tags (comma-separated)<input class="cl-input" id="cl-f-tags" value="' + escapeAttr((d.tags || []).join(', ')) + '" placeholder="art, clay, sculpture"></label>';
+
+    html += '<div class="cl-editor-row">';
+    html += '<label class="cl-label">Number of Lessons<select class="cl-input" id="cl-f-lesson-count">';
+    for (var i = 1; i <= 5; i++) {
+      html += '<option value="' + i + '"' + (d.lesson_count === i ? ' selected' : '') + '>' + i + '</option>';
+    }
+    html += '</select></label>';
+    html += '<label class="cl-label">Who can edit?<select class="cl-input" id="cl-f-edit-policy">';
+    html += '<option value="author_only"' + (d.edit_policy === 'author_only' ? ' selected' : '') + '>Only me (+ board)</option>';
+    html += '<option value="open"' + (d.edit_policy === 'open' ? ' selected' : '') + '>Anyone can edit</option>';
+    html += '</select></label>';
+    html += '</div>';
+    html += '</div>';
+
+    // Lesson sections
+    html += '<div class="cl-editor-lessons">';
+    for (var n = 0; n < d.lesson_count; n++) {
+      html += renderLessonEditor(d.lessons[n], n);
+    }
+    html += '</div>';
+
+    // Footer
+    html += '<div class="cl-detail-actions">';
+    html += '<button class="cl-action-btn" id="cl-editor-save-btn">' + (isNew ? 'Create Plan' : 'Save Changes') + '</button>';
+    html += '</div>';
+
+    return html;
+  }
+
+  function renderLessonEditor(lesson, idx) {
+    var html = '<div class="cl-lesson cl-lesson-edit" data-lesson-idx="' + idx + '">';
+    html += '<div class="cl-lesson-header">';
+    html += '<span class="cl-lesson-num">Lesson ' + lesson.lesson_number + '</span>';
+    html += '<input class="cl-input cl-lesson-title-input" data-field="title" placeholder="Lesson title" value="' + escapeAttr(lesson.title) + '">';
+    html += '</div>';
+
+    html += '<label class="cl-label cl-label-sm">Lesson overview<textarea class="cl-input cl-textarea" data-field="overview" rows="2" placeholder="What will students learn this lesson?">' + escapeAttr(lesson.overview) + '</textarea></label>';
+
+    // Activity steps
+    html += renderDynamicList('activity', 'Activity steps', lesson.activity);
+
+    // Instruction steps
+    html += renderDynamicList('instruction', 'Instruction / Talking points', lesson.instruction);
+
+    // Supplies
+    html += '<div class="cl-dyn-section"><div class="cl-dyn-label">Supplies</div>';
+    if (lesson.supplies.length === 0) {
+      html += '<div class="cl-dyn-empty">No supplies yet.</div>';
+    }
+    lesson.supplies.forEach(function (s, si) {
+      html += '<div class="cl-supply-row" data-supply-idx="' + si + '">';
+      html += '<input class="cl-input cl-supply-name" data-sfield="item_name" placeholder="Item" value="' + escapeAttr(s.item_name) + '">';
+      html += '<input class="cl-input cl-supply-qty" data-sfield="qty" placeholder="Qty" value="' + escapeAttr(s.qty) + '">';
+      html += '<input class="cl-input cl-supply-notes" data-sfield="notes" placeholder="Notes" value="' + escapeAttr(s.notes) + '">';
+      html += '<button class="cl-dyn-remove" data-dyn-remove="supplies" data-dyn-idx="' + si + '" type="button" title="Remove">&times;</button>';
+      html += '</div>';
+    });
+    html += '<button class="cl-dyn-add" data-dyn-add="supplies" type="button">+ Add supply</button>';
+    html += '</div>';
+
+    // Links / references
+    html += '<div class="cl-dyn-section"><div class="cl-dyn-label">References (links)</div>';
+    if (lesson.links.length === 0) {
+      html += '<div class="cl-dyn-empty">No links yet.</div>';
+    }
+    lesson.links.forEach(function (l, li) {
+      html += '<div class="cl-link-row" data-link-idx="' + li + '">';
+      html += '<input class="cl-input cl-link-label" data-lfield="label" placeholder="Label" value="' + escapeAttr(l.label) + '">';
+      html += '<input class="cl-input cl-link-url" data-lfield="url" placeholder="https://..." value="' + escapeAttr(l.url) + '">';
+      html += '<button class="cl-dyn-remove" data-dyn-remove="links" data-dyn-idx="' + li + '" type="button" title="Remove">&times;</button>';
+      html += '</div>';
+    });
+    html += '<button class="cl-dyn-add" data-dyn-add="links" type="button">+ Add link</button>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function renderDynamicList(field, label, items) {
+    var html = '<div class="cl-dyn-section"><div class="cl-dyn-label">' + label + '</div>';
+    if (items.length === 0) items = [''];
+    items.forEach(function (val, i) {
+      html += '<div class="cl-dyn-row" data-dyn-idx="' + i + '">';
+      html += '<span class="cl-dyn-bullet">' + (i + 1) + '.</span>';
+      html += '<input class="cl-input" data-dyn-field="' + field + '" data-dyn-idx="' + i + '" value="' + escapeAttr(val) + '" placeholder="Step ' + (i + 1) + '">';
+      html += '<button class="cl-dyn-remove" data-dyn-remove="' + field + '" data-dyn-idx="' + i + '" type="button" title="Remove">&times;</button>';
+      html += '</div>';
+    });
+    html += '<button class="cl-dyn-add" data-dyn-add="' + field + '" type="button">+ Add step</button>';
+    html += '</div>';
+    return html;
+  }
+
+  function gatherEditorDraftFromForm() {
+    // Pull all form values back into state.draft so surgical re-renders and saves
+    // use the latest user input without losing anything.
+    var d = curriculumState.draft;
+    if (!d) return;
+
+    var titleEl = personDetailCard.querySelector('#cl-f-title');
+    var subjEl = personDetailCard.querySelector('#cl-f-subject');
+    var ageEl = personDetailCard.querySelector('#cl-f-age');
+    var overviewEl = personDetailCard.querySelector('#cl-f-overview');
+    var tagsEl = personDetailCard.querySelector('#cl-f-tags');
+    var lcEl = personDetailCard.querySelector('#cl-f-lesson-count');
+    var polEl = personDetailCard.querySelector('#cl-f-edit-policy');
+
+    if (titleEl) d.title = titleEl.value;
+    if (subjEl) d.subject = subjEl.value;
+    if (ageEl) d.age_range = ageEl.value;
+    if (overviewEl) d.overview = overviewEl.value;
+    if (tagsEl) d.tags = tagsEl.value.split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+    if (lcEl) d.lesson_count = parseInt(lcEl.value, 10) || 5;
+    if (polEl) d.edit_policy = polEl.value;
+
+    // Lesson-level fields
+    personDetailCard.querySelectorAll('.cl-lesson-edit').forEach(function (lessonEl) {
+      var idx = parseInt(lessonEl.getAttribute('data-lesson-idx'), 10);
+      var lesson = d.lessons[idx];
+      if (!lesson) return;
+
+      var titleInput = lessonEl.querySelector('input[data-field="title"]');
+      if (titleInput) lesson.title = titleInput.value;
+      var overviewInput = lessonEl.querySelector('textarea[data-field="overview"]');
+      if (overviewInput) lesson.overview = overviewInput.value;
+
+      // Activity / instruction lists
+      ['activity', 'instruction'].forEach(function (field) {
+        var inputs = lessonEl.querySelectorAll('input[data-dyn-field="' + field + '"]');
+        var arr = [];
+        inputs.forEach(function (inp) { arr.push(inp.value); });
+        lesson[field] = arr;
+      });
+
+      // Supplies
+      var supplyRows = lessonEl.querySelectorAll('.cl-supply-row');
+      var supplies = [];
+      supplyRows.forEach(function (row) {
+        supplies.push({
+          item_name: (row.querySelector('[data-sfield="item_name"]') || {}).value || '',
+          qty: (row.querySelector('[data-sfield="qty"]') || {}).value || '',
+          notes: (row.querySelector('[data-sfield="notes"]') || {}).value || '',
+          closet_item_id: null
+        });
+      });
+      lesson.supplies = supplies;
+
+      // Links
+      var linkRows = lessonEl.querySelectorAll('.cl-link-row');
+      var links = [];
+      linkRows.forEach(function (row) {
+        links.push({
+          label: (row.querySelector('[data-lfield="label"]') || {}).value || '',
+          url: (row.querySelector('[data-lfield="url"]') || {}).value || ''
+        });
+      });
+      lesson.links = links;
+    });
+  }
+
+  function saveCurriculumDraft() {
+    gatherEditorDraftFromForm();
+    var d = curriculumState.draft;
+    if (!d.title || !d.title.trim()) {
+      alert('Title is required.');
+      return;
+    }
+    // Trim the lessons array down to lesson_count before sending
+    var payload = {
+      title: d.title,
+      subject: d.subject,
+      age_range: d.age_range,
+      overview: d.overview,
+      tags: d.tags,
+      edit_policy: d.edit_policy,
+      lesson_count: d.lesson_count,
+      lessons: d.lessons.slice(0, d.lesson_count)
+    };
+
+    var saveBtn = personDetailCard.querySelector('#cl-editor-save-btn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
+    var id = curriculumState.editingId;
+    var url = '/api/curriculum' + (id ? '?id=' + encodeURIComponent(id) : '');
+    var method = id ? 'PATCH' : 'POST';
+
+    curriculumFetch(url, {
+      method: method,
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      if (!res.ok) {
+        alert('Save failed: ' + (res.data.error || 'unknown'));
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = id ? 'Save Changes' : 'Create Plan'; }
+        return;
+      }
+      curriculumState.current = res.data.curriculum;
+      curriculumState.draft = null;
+      curriculumState.editingId = null;
+      curriculumState.view = 'detail';
+      renderCurriculumModal();
+    });
   }
 
   function renderCurriculumLibraryBody() {
@@ -3516,9 +3836,7 @@
 
     var createBtn = personDetailCard.querySelector('#cl-create-btn');
     if (createBtn) {
-      createBtn.addEventListener('click', function () {
-        alert('Editor coming next — this is Chunk A (browse-only).');
-      });
+      createBtn.addEventListener('click', startNewCurriculum);
     }
 
     // Cards (library view)
@@ -3531,15 +3849,11 @@
     }
     var copyBtn = personDetailCard.querySelector('#cl-copy-btn');
     if (copyBtn) {
-      copyBtn.addEventListener('click', function () {
-        alert('Copy coming in Chunk B.');
-      });
+      copyBtn.addEventListener('click', copyAndEditCurriculum);
     }
     var editBtn = personDetailCard.querySelector('#cl-edit-btn');
     if (editBtn) {
-      editBtn.addEventListener('click', function () {
-        alert('Editor coming in Chunk B.');
-      });
+      editBtn.addEventListener('click', startEditCurriculum);
     }
     var delBtn = personDetailCard.querySelector('#cl-delete-btn');
     if (delBtn) {
@@ -3552,6 +3866,79 @@
         });
       });
     }
+
+    // ── Editor view wiring ──
+    var editorCancel = personDetailCard.querySelector('#cl-editor-cancel');
+    if (editorCancel) {
+      editorCancel.addEventListener('click', function () {
+        if (!confirm('Discard changes?')) return;
+        curriculumState.draft = null;
+        if (curriculumState.editingId && curriculumState.current) {
+          curriculumState.view = 'detail';
+        } else {
+          curriculumState.editingId = null;
+          showCurriculumLibrary();
+          return;
+        }
+        renderCurriculumModal();
+      });
+    }
+
+    var saveBtn = personDetailCard.querySelector('#cl-editor-save-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', saveCurriculumDraft);
+    }
+
+    // Lesson count change → re-render editor (capturing current inputs first)
+    var lcSelect = personDetailCard.querySelector('#cl-f-lesson-count');
+    if (lcSelect) {
+      lcSelect.addEventListener('change', function () {
+        gatherEditorDraftFromForm();
+        curriculumState.draft.lesson_count = parseInt(lcSelect.value, 10) || 5;
+        renderCurriculumModal();
+      });
+    }
+
+    // Dynamic "Add step / supply / link" buttons
+    personDetailCard.querySelectorAll('.cl-dyn-add').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        gatherEditorDraftFromForm();
+        var field = btn.getAttribute('data-dyn-add');
+        var lessonEl = btn.closest('.cl-lesson-edit');
+        var idx = parseInt(lessonEl.getAttribute('data-lesson-idx'), 10);
+        var lesson = curriculumState.draft.lessons[idx];
+        if (field === 'supplies') {
+          lesson.supplies.push({ item_name: '', qty: '', notes: '', closet_item_id: null });
+        } else if (field === 'links') {
+          lesson.links.push({ label: '', url: '' });
+        } else {
+          lesson[field] = lesson[field] || [];
+          lesson[field].push('');
+        }
+        renderCurriculumModal();
+      });
+    });
+
+    // Dynamic remove buttons
+    personDetailCard.querySelectorAll('.cl-dyn-remove').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        gatherEditorDraftFromForm();
+        var field = btn.getAttribute('data-dyn-remove');
+        var idx = parseInt(btn.getAttribute('data-dyn-idx'), 10);
+        var lessonEl = btn.closest('.cl-lesson-edit');
+        var lessonIdx = parseInt(lessonEl.getAttribute('data-lesson-idx'), 10);
+        var lesson = curriculumState.draft.lessons[lessonIdx];
+        if (field === 'supplies') {
+          lesson.supplies.splice(idx, 1);
+        } else if (field === 'links') {
+          lesson.links.splice(idx, 1);
+        } else {
+          lesson[field].splice(idx, 1);
+          if (lesson[field].length === 0) lesson[field] = [''];
+        }
+        renderCurriculumModal();
+      });
+    });
   }
 
   function wireCurriculumCardClicks() {
