@@ -2757,6 +2757,302 @@
     });
   }
 
+  // ──────────────────────────────────────────────
+  // Supply Closet Inventory
+  // ──────────────────────────────────────────────
+  var SUPPLY_CATEGORIES = [
+    { key: 'permanent',          label: 'Permanent',    sub: 'Always available' },
+    { key: 'currently_available', label: 'Currently',    sub: 'May not always be available' },
+    { key: 'classroom_cabinet',  label: 'Classroom',    sub: 'Each AM classroom' },
+    { key: 'game_closet',        label: 'Games',        sub: 'Shared with the church' }
+  ];
+
+  var supplyClosetState = {
+    items: null,        // { permanent: [], ... }
+    activeTab: 'permanent',
+    editingId: null,    // item id currently being edited
+    addingNew: false,
+    canEdit: false
+  };
+
+  function getSupplyCoordinatorName() {
+    if (!VOLUNTEER_COMMITTEES) return null;
+    for (var i = 0; i < VOLUNTEER_COMMITTEES.length; i++) {
+      var roles = VOLUNTEER_COMMITTEES[i].roles || [];
+      for (var j = 0; j < roles.length; j++) {
+        if (roles[j].title && roles[j].title.toLowerCase().indexOf('supply coordinator') !== -1) {
+          return roles[j].person || null;
+        }
+      }
+    }
+    return null;
+  }
+
+  function computeSupplyClosetCanEdit() {
+    // True if current user is on the board or is the Supply Coordinator's family.
+    var email = sessionStorage.getItem('rw_user_email');
+    if (!email) return false;
+    var me = null;
+    for (var i = 0; i < FAMILIES.length; i++) {
+      if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; }
+    }
+    if (!me) return false;
+    if (me.boardRole) return true;
+    var coordName = getSupplyCoordinatorName();
+    if (!coordName) return false;
+    // Match coordinator by family last name
+    var lastName = coordName.trim().split(/\s+/).pop().toLowerCase();
+    return me.name && me.name.toLowerCase() === lastName;
+  }
+
+  function fetchSupplyCloset() {
+    var cred = sessionStorage.getItem('rw_google_credential');
+    if (!cred) return Promise.reject(new Error('Not authenticated'));
+    return fetch('/api/supply-closet', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json(); });
+  }
+
+  function escapeAttr(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderSupplyClosetModal() {
+    if (!personDetail || !personDetailCard) return;
+    var state = supplyClosetState;
+
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail" style="max-width:780px;width:100%;">';
+    html += '<h3>Supply Closet Inventory</h3>';
+    html += '<p style="color:var(--color-text-light);font-size:0.85rem;margin-bottom:1rem;">Browse what\'s in the co-op\'s closets. If something is missing, post in the Supplies chat.</p>';
+
+    // Tabs
+    html += '<div style="display:flex;gap:0.25rem;border-bottom:2px solid var(--color-border,#e5e5e5);margin-bottom:1rem;flex-wrap:wrap;">';
+    SUPPLY_CATEGORIES.forEach(function (cat) {
+      var count = (state.items && state.items[cat.key]) ? state.items[cat.key].length : 0;
+      var isActive = state.activeTab === cat.key;
+      var activeStyle = isActive
+        ? 'background:var(--color-primary);color:#fff;'
+        : 'background:transparent;color:var(--color-text,#333);';
+      html += '<button class="sc-tab" data-sctab="' + cat.key + '" style="' + activeStyle + 'border:none;padding:8px 14px;border-radius:6px 6px 0 0;cursor:pointer;font-size:0.85rem;font-weight:500;">';
+      html += cat.label + ' <span style="opacity:0.7;font-size:0.75rem;">(' + count + ')</span>';
+      html += '</button>';
+    });
+    html += '</div>';
+
+    // Active category header
+    var catMeta = SUPPLY_CATEGORIES.find(function (c) { return c.key === state.activeTab; });
+    if (catMeta) {
+      html += '<p style="font-size:0.75rem;color:var(--color-text-light);margin-bottom:0.75rem;font-style:italic;">' + catMeta.sub + '</p>';
+    }
+
+    // Items list
+    var rows = (state.items && state.items[state.activeTab]) || [];
+    html += '<div style="max-height:400px;overflow-y:auto;border:1px solid var(--color-border,#e5e5e5);border-radius:6px;">';
+    if (rows.length === 0 && !state.addingNew) {
+      html += '<div style="padding:2rem;text-align:center;color:var(--color-text-light);">No items in this category yet.</div>';
+    }
+    rows.forEach(function (item) {
+      if (state.editingId === item.id) {
+        html += renderEditRow(item);
+      } else {
+        html += renderReadRow(item);
+      }
+    });
+    if (state.addingNew) {
+      html += renderEditRow(null);
+    }
+    html += '</div>';
+
+    // Footer: Add button + coordinator info
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;gap:1rem;flex-wrap:wrap;">';
+    if (state.canEdit) {
+      html += '<button id="sc-add-btn" style="background:var(--color-primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:0.85rem;">+ Add Item</button>';
+    } else {
+      html += '<span></span>';
+    }
+    var coord = getSupplyCoordinatorName();
+    if (coord) {
+      html += '<span style="font-size:0.75rem;color:var(--color-text-light);">Supply Coordinator: <strong>' + escapeAttr(coord) + '</strong></span>';
+    }
+    html += '</div>';
+
+    html += '</div>';
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    wireSupplyClosetEvents();
+  }
+
+  function renderReadRow(item) {
+    var canEdit = supplyClosetState.canEdit;
+    var html = '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0.75rem;border-bottom:1px solid var(--color-border,#f0f0f0);">';
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:0.9rem;">' + escapeAttr(item.item_name) + '</div>';
+    if (item.location) {
+      html += '<div style="font-size:0.75rem;color:var(--color-text-light);">' + escapeAttr(item.location) + '</div>';
+    }
+    if (item.notes) {
+      html += '<div style="font-size:0.7rem;color:var(--color-text-light);font-style:italic;">' + escapeAttr(item.notes) + '</div>';
+    }
+    html += '</div>';
+    if (canEdit) {
+      html += '<button class="sc-edit-btn" data-id="' + item.id + '" style="background:transparent;border:1px solid var(--color-border,#ccc);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.75rem;">Edit</button>';
+      html += '<button class="sc-del-btn" data-id="' + item.id + '" style="background:transparent;border:1px solid #d66;color:#d66;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.75rem;">Delete</button>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderEditRow(item) {
+    var isNew = !item;
+    var name = isNew ? '' : escapeAttr(item.item_name);
+    var loc = isNew ? '' : escapeAttr(item.location);
+    var notes = isNew ? '' : escapeAttr(item.notes);
+    var idAttr = isNew ? 'new' : item.id;
+
+    var html = '<div style="padding:0.75rem;border-bottom:1px solid var(--color-border,#f0f0f0);background:#fafafa;">';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">';
+    html += '<input class="sc-in-name" data-id="' + idAttr + '" placeholder="Item name" value="' + name + '" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">';
+    html += '<input class="sc-in-loc" data-id="' + idAttr + '" placeholder="Location" value="' + loc + '" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">';
+    html += '</div>';
+    html += '<input class="sc-in-notes" data-id="' + idAttr + '" placeholder="Notes (optional)" value="' + notes + '" style="width:100%;padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;margin-bottom:0.5rem;box-sizing:border-box;">';
+    html += '<div style="display:flex;gap:0.5rem;justify-content:flex-end;">';
+    html += '<button class="sc-cancel-btn" data-id="' + idAttr + '" style="background:transparent;border:1px solid #ccc;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Cancel</button>';
+    html += '<button class="sc-save-btn" data-id="' + idAttr + '" style="background:var(--color-primary);color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Save</button>';
+    html += '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function wireSupplyClosetEvents() {
+    // Tabs
+    personDetailCard.querySelectorAll('.sc-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        supplyClosetState.activeTab = btn.getAttribute('data-sctab');
+        supplyClosetState.editingId = null;
+        supplyClosetState.addingNew = false;
+        renderSupplyClosetModal();
+      });
+    });
+
+    // Close button
+    var closeBtn = personDetailCard.querySelector('.detail-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+    personDetail.onclick = function (e) {
+      if (e.target === personDetail) closeDetail();
+    };
+
+    // Add
+    var addBtn = personDetailCard.querySelector('#sc-add-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        supplyClosetState.addingNew = true;
+        supplyClosetState.editingId = null;
+        renderSupplyClosetModal();
+      });
+    }
+
+    // Edit
+    personDetailCard.querySelectorAll('.sc-edit-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        supplyClosetState.editingId = parseInt(btn.getAttribute('data-id'), 10);
+        supplyClosetState.addingNew = false;
+        renderSupplyClosetModal();
+      });
+    });
+
+    // Cancel
+    personDetailCard.querySelectorAll('.sc-cancel-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        supplyClosetState.editingId = null;
+        supplyClosetState.addingNew = false;
+        renderSupplyClosetModal();
+      });
+    });
+
+    // Save
+    personDetailCard.querySelectorAll('.sc-save-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var idAttr = btn.getAttribute('data-id');
+        var nameEl = personDetailCard.querySelector('.sc-in-name[data-id="' + idAttr + '"]');
+        var locEl = personDetailCard.querySelector('.sc-in-loc[data-id="' + idAttr + '"]');
+        var notesEl = personDetailCard.querySelector('.sc-in-notes[data-id="' + idAttr + '"]');
+        var payload = {
+          item_name: nameEl ? nameEl.value : '',
+          location: locEl ? locEl.value : '',
+          notes: notesEl ? notesEl.value : '',
+          category: supplyClosetState.activeTab
+        };
+        if (!payload.item_name.trim()) { alert('Item name is required.'); return; }
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        var cred = sessionStorage.getItem('rw_google_credential');
+        var url = '/api/supply-closet';
+        var method = 'POST';
+        if (idAttr !== 'new') {
+          url += '?id=' + encodeURIComponent(idAttr);
+          method = 'PATCH';
+        }
+        fetch(url, {
+          method: method,
+          headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (res) {
+            if (!res.ok) { alert('Error: ' + (res.data.error || 'save failed')); btn.disabled = false; btn.textContent = 'Save'; return; }
+            supplyClosetState.editingId = null;
+            supplyClosetState.addingNew = false;
+            loadSupplyClosetAndRender();
+          })
+          .catch(function (err) { alert('Network error: ' + err.message); btn.disabled = false; btn.textContent = 'Save'; });
+      });
+    });
+
+    // Delete
+    personDetailCard.querySelectorAll('.sc-del-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!confirm('Delete this item from the inventory?')) return;
+        var id = btn.getAttribute('data-id');
+        var cred = sessionStorage.getItem('rw_google_credential');
+        fetch('/api/supply-closet?id=' + encodeURIComponent(id), {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + cred }
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (res) {
+            if (!res.ok) { alert('Error: ' + (res.data.error || 'delete failed')); return; }
+            loadSupplyClosetAndRender();
+          })
+          .catch(function (err) { alert('Network error: ' + err.message); });
+      });
+    });
+  }
+
+  function loadSupplyClosetAndRender() {
+    fetchSupplyCloset().then(function (data) {
+      if (data.error) { alert('Error loading supply closet: ' + data.error); return; }
+      supplyClosetState.items = data.items;
+      renderSupplyClosetModal();
+    }).catch(function (err) {
+      alert('Could not load supply closet: ' + err.message);
+    });
+  }
+
+  function showSupplyClosetPopup() {
+    supplyClosetState.canEdit = computeSupplyClosetCanEdit();
+    supplyClosetState.activeTab = 'permanent';
+    supplyClosetState.editingId = null;
+    supplyClosetState.addingNew = false;
+    loadSupplyClosetAndRender();
+  }
+
+  var supplyClosetBtn = document.getElementById('supplyClosetBtn');
+  if (supplyClosetBtn) {
+    supplyClosetBtn.addEventListener('click', showSupplyClosetPopup);
+  }
+
   // Render all coordination tabs
   function renderCoordinationTabs() {
     renderSessionTab();
