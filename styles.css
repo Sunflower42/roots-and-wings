@@ -5965,23 +5965,31 @@ button.staff-role:hover {
    Curriculum print stylesheet
    ========================================================================== */
 @media print {
-  /* Hide everything that isn't the curriculum detail card */
+  /* Hide every element by default, then re-show the modal subtree */
   body.printing-curriculum {
     background: white !important;
   }
-  body.printing-curriculum > *:not(#personDetail) {
-    display: none !important;
+  body.printing-curriculum * {
+    visibility: hidden !important;
   }
+  body.printing-curriculum #personDetail,
+  body.printing-curriculum #personDetail * {
+    visibility: visible !important;
+  }
+  /* Reposition the modal so it occupies the printable area instead of
+     floating mid-page (its normal position:fixed centered overlay). */
   body.printing-curriculum #personDetail {
-    position: static !important;
-    background: transparent !important;
+    position: absolute !important;
+    inset: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: white !important;
     display: block !important;
     padding: 0 !important;
     margin: 0 !important;
-    width: 100% !important;
-    height: auto !important;
     overflow: visible !important;
-    align-items: flex-start !important;
   }
   body.printing-curriculum .person-detail-card {
     position: static !important;
