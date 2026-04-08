@@ -5695,16 +5695,25 @@ button.staff-role:hover {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.cl-dyn-row {
+  align-items: flex-start;
 }
 .cl-dyn-bullet {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--color-text-light);
-  font-weight: 600;
+  font-weight: 700;
   min-width: 1.5em;
   text-align: right;
+  padding-top: 9px;
+  flex: 0 0 auto;
 }
 .cl-dyn-row .cl-input { flex: 1; }
+.cl-dyn-textarea {
+  min-height: 2.5em;
+  line-height: 1.45;
+}
 .cl-supply-row .cl-supply-name { flex: 2; }
 .cl-supply-row .cl-supply-qty  { flex: 0.5; min-width: 60px; }
 .cl-supply-row .cl-supply-notes { flex: 2; }

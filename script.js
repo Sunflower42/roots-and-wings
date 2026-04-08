@@ -3269,6 +3269,42 @@
   // ──────────────────────────────────────────────
   // Curriculum Library
   // ──────────────────────────────────────────────
+  var SUBJECT_OPTIONS = [
+    'Art',
+    'Music',
+    'Drama / Performing Arts',
+    'Science',
+    'Math',
+    'Reading / Literature',
+    'Writing',
+    'History / Social Studies',
+    'Geography',
+    'Nature / Outdoor',
+    'Cooking',
+    'Crafts',
+    'Movement / PE',
+    'Languages',
+    'Life Skills',
+    'Other'
+  ];
+
+  // Mirrors the co-op's age groups, plus broader buckets and "All ages".
+  var AGE_RANGE_OPTIONS = [
+    'All ages',
+    'Saplings (3-5)',
+    'Sassafras (5-6)',
+    'Oaks (7-8)',
+    'Maples (8-9)',
+    'Birch (9-10)',
+    'Willows (10-11)',
+    'Cedars (12-13)',
+    'Pigeons (14+)',
+    'Mixed: Younger (3-8)',
+    'Mixed: Elementary (5-11)',
+    'Mixed: Older (8-14)',
+    'Teen (14+)'
+  ];
+
   var curriculumState = {
     view: 'library',      // 'library' | 'detail' | 'editor'
     list: null,           // array of curriculum summaries
@@ -3467,8 +3503,18 @@
     html += '<label class="cl-label">Title<input class="cl-input" id="cl-f-title" value="' + escapeAttr(d.title) + '" placeholder="e.g. Clay Critters"></label>';
 
     html += '<div class="cl-editor-row">';
-    html += '<label class="cl-label">Subject<input class="cl-input" id="cl-f-subject" value="' + escapeAttr(d.subject) + '" placeholder="e.g. Art"></label>';
-    html += '<label class="cl-label">Age Range<input class="cl-input" id="cl-f-age" value="' + escapeAttr(d.age_range) + '" placeholder="e.g. 7-12"></label>';
+    html += '<label class="cl-label">Subject<select class="cl-input" id="cl-f-subject">';
+    html += '<option value="">— Select —</option>';
+    SUBJECT_OPTIONS.forEach(function (s) {
+      html += '<option value="' + escapeAttr(s) + '"' + (d.subject === s ? ' selected' : '') + '>' + escapeAttr(s) + '</option>';
+    });
+    html += '</select></label>';
+    html += '<label class="cl-label">Age Range<select class="cl-input" id="cl-f-age">';
+    html += '<option value="">— Select —</option>';
+    AGE_RANGE_OPTIONS.forEach(function (a) {
+      html += '<option value="' + escapeAttr(a) + '"' + (d.age_range === a ? ' selected' : '') + '>' + escapeAttr(a) + '</option>';
+    });
+    html += '</select></label>';
     html += '</div>';
 
     html += '<label class="cl-label">Overview<textarea class="cl-input cl-textarea" id="cl-f-overview" rows="3" placeholder="What will students learn across the whole unit?">' + escapeAttr(d.overview) + '</textarea></label>';
@@ -3559,7 +3605,7 @@
     items.forEach(function (val, i) {
       html += '<div class="cl-dyn-row" data-dyn-idx="' + i + '">';
       html += '<span class="cl-dyn-bullet">' + (i + 1) + '.</span>';
-      html += '<input class="cl-input" data-dyn-field="' + field + '" data-dyn-idx="' + i + '" value="' + escapeAttr(val) + '" placeholder="Step ' + (i + 1) + '">';
+      html += '<textarea class="cl-input cl-textarea cl-dyn-textarea" data-dyn-field="' + field + '" data-dyn-idx="' + i + '" rows="2" placeholder="Step ' + (i + 1) + '">' + escapeAttr(val) + '</textarea>';
       html += '<button class="cl-dyn-remove" data-dyn-remove="' + field + '" data-dyn-idx="' + i + '" type="button" title="Remove">&times;</button>';
       html += '</div>';
     });
@@ -3601,9 +3647,9 @@
       var overviewInput = lessonEl.querySelector('textarea[data-field="overview"]');
       if (overviewInput) lesson.overview = overviewInput.value;
 
-      // Activity / instruction lists
+      // Activity / instruction lists (textareas, fall back to inputs for safety)
       ['activity', 'instruction'].forEach(function (field) {
-        var inputs = lessonEl.querySelectorAll('input[data-dyn-field="' + field + '"]');
+        var inputs = lessonEl.querySelectorAll('[data-dyn-field="' + field + '"]');
         var arr = [];
         inputs.forEach(function (inp) { arr.push(inp.value); });
         lesson[field] = arr;
@@ -3808,9 +3854,22 @@
 
   function wireCurriculumEvents() {
     var closeBtn = personDetailCard.querySelector('.detail-close');
-    if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () {
+        if (curriculumState.view === 'editor') {
+          if (!confirm('Discard changes and close?')) return;
+          curriculumState.draft = null;
+          curriculumState.editingId = null;
+        }
+        closeDetail();
+      });
+    }
+    // Backdrop click closes the modal — except in the editor, where it would
+    // be too easy to lose unsaved work.
     personDetail.onclick = function (e) {
-      if (e.target === personDetail) closeDetail();
+      if (e.target !== personDetail) return;
+      if (curriculumState.view === 'editor') return;
+      closeDetail();
     };
 
     // Library controls
