@@ -4263,7 +4263,7 @@
       if (ls.links && ls.links.length) {
         html += '<div class="section"><h3>References</h3><ul>';
         ls.links.forEach(function (l) {
-          html += '<li>' + esc(l.label || l.url) + ' (' + esc(l.url) + ')</li>';
+          html += '<li><a href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.label || l.url) + '</a></li>';
         });
         html += '</ul></div>';
       }
@@ -4336,7 +4336,8 @@
       var qtyStr = bits.length ? ' <span class="cl-qty">(' + bits.join(' ') + ')</span>' : '';
       var lessonsStr = '<span class="cl-master-lessons"> · L' + r.lessons.join(',') + '</span>';
       var notesStr = r.notes ? ' <span class="cl-notes">— ' + escapeAttr(r.notes) + '</span>' : '';
-      html += '<li class="cl-master-item"><span class="cl-master-name">' + escapeAttr(r.name) + '</span>' + qtyStr + lessonsStr + notesStr + '</li>';
+      var nameHtml = '<a class="cl-master-name" href="https://www.amazon.com/s?k=' + encodeURIComponent(r.name) + '" target="_blank" rel="noopener noreferrer">' + escapeAttr(r.name) + '</a>';
+      html += '<li class="cl-master-item">' + nameHtml + qtyStr + lessonsStr + notesStr + '</li>';
     });
     html += '</ul>';
     html += '</details>';
@@ -4403,7 +4404,7 @@
       if (ls.supplies && ls.supplies.length) {
         html += '<div class="cl-lesson-section"><strong>Supplies</strong><ul class="cl-supply-list">';
         ls.supplies.forEach(function (s) {
-          var line = escapeAttr(s.item_name);
+          var line = '<a href="https://www.amazon.com/s?k=' + encodeURIComponent(s.item_name) + '" target="_blank" rel="noopener noreferrer">' + escapeAttr(s.item_name) + '</a>';
           var qtyParts = [];
           if (s.qty) qtyParts.push(escapeAttr(s.qty));
           if (s.qty_unit === 'student') qtyParts.push('per student');
