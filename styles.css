@@ -5454,21 +5454,15 @@ button.staff-role:hover {
 .cl-detail-header {
   margin-bottom: 0.5rem;
 }
-.cl-title-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.4rem;
-  flex-shrink: 0;
-}
 .cl-detail-actions-top {
   padding-top: 0;
   border-top: none;
   margin-top: 0;
+  margin-bottom: 0.5rem;
 }
 .cl-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.4rem;
