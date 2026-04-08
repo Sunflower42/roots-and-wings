@@ -5819,6 +5819,55 @@ button.staff-role:hover {
   line-height: 1.5;
   white-space: pre-wrap;
 }
+
+.cl-master-supplies {
+  background: rgba(var(--color-accent-light-rgb), 0.18);
+  border: 1px solid var(--color-accent-dark);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+.cl-master-title {
+  margin: 0 0 0.2rem 0;
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  color: var(--color-accent-dark);
+}
+.cl-master-sub {
+  margin: 0 0 0.6rem 0;
+  font-size: 0.72rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+.cl-master-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.cl-master-item {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.08);
+  font-size: 0.85rem;
+}
+.cl-master-item:last-child { border-bottom: none; }
+.cl-master-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.cl-master-detail {
+  font-size: 0.78rem;
+  color: var(--color-text);
+  margin: 0.15rem 0 0 0.75rem;
+  line-height: 1.4;
+}
+.cl-master-lessons {
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+.cl-supply-copy {
+  font-size: 0.75rem;
+}
 .cl-dyn-remove {
   background: transparent;
   border: 1.5px solid var(--color-border);

@@ -3759,6 +3759,25 @@
       html += '</div>';
     });
     html += '<button class="cl-dyn-add" data-dyn-add="supplies" type="button">+ Add supply</button>';
+
+    // Copy supplies from another lesson (only show if there is one)
+    var otherLessons = [];
+    for (var oi = 0; oi < curriculumState.draft.lesson_count; oi++) {
+      if (oi === idx) continue;
+      var ol = curriculumState.draft.lessons[oi];
+      if (ol && ol.supplies && ol.supplies.length > 0) {
+        otherLessons.push({ idx: oi, lesson: ol });
+      }
+    }
+    if (otherLessons.length > 0) {
+      html += '<select class="cl-input cl-supply-copy" data-target-lesson="' + idx + '" style="margin-left:0.5rem;max-width:240px;display:inline-block;width:auto;">';
+      html += '<option value="">Copy supplies from…</option>';
+      otherLessons.forEach(function (o) {
+        var label = 'Lesson ' + (o.idx + 1) + (o.lesson.title ? ': ' + o.lesson.title : '') + ' (' + o.lesson.supplies.length + ')';
+        html += '<option value="' + o.idx + '">' + escapeAttr(label) + '</option>';
+      });
+      html += '</select>';
+    }
     html += '</div>';
 
     // ── Room setup ──
@@ -3989,6 +4008,72 @@
     return html;
   }
 
+  function renderMasterSupplyList(curr) {
+    // Aggregate supplies across all lessons. Group by lowercase item_name
+    // so "Clay" and "clay" merge. Within each group, list each instance
+    // with its lesson number and qty.
+    var lessons = curr.lessons || [];
+    var groups = {}; // key: lowercase name → { displayName, instances: [{lesson, qty, unit, notes}] }
+    var order = [];
+    lessons.forEach(function (ls) {
+      (ls.supplies || []).forEach(function (s) {
+        var key = (s.item_name || '').toLowerCase().trim();
+        if (!key) return;
+        if (!groups[key]) {
+          groups[key] = { displayName: s.item_name, instances: [] };
+          order.push(key);
+        }
+        groups[key].instances.push({
+          lesson: ls.lesson_number,
+          qty: s.qty || '',
+          unit: s.qty_unit || '',
+          notes: s.notes || ''
+        });
+      });
+    });
+    if (order.length === 0) return '';
+
+    var html = '<div class="cl-master-supplies">';
+    html += '<h4 class="cl-master-title">Master Supply List</h4>';
+    html += '<p class="cl-master-sub">Everything needed across all lessons. Use this when shopping or packing.</p>';
+    html += '<ul class="cl-master-list">';
+    order.forEach(function (key) {
+      var g = groups[key];
+      // De-dupe identical instances (same qty + unit + notes)
+      var seen = {};
+      var unique = g.instances.filter(function (inst) {
+        var sig = inst.qty + '|' + inst.unit + '|' + inst.notes;
+        if (seen[sig]) {
+          seen[sig].lessons.push(inst.lesson);
+          return false;
+        }
+        seen[sig] = { lessons: [inst.lesson], inst: inst };
+        return true;
+      }).map(function (inst) {
+        var sig = inst.qty + '|' + inst.unit + '|' + inst.notes;
+        return { inst: inst, lessons: seen[sig].lessons };
+      });
+
+      html += '<li class="cl-master-item">';
+      html += '<span class="cl-master-name">' + escapeAttr(g.displayName) + '</span>';
+      unique.forEach(function (entry) {
+        var inst = entry.inst;
+        var bits = [];
+        if (inst.qty) bits.push(escapeAttr(inst.qty));
+        if (inst.unit === 'student') bits.push('per student');
+        else if (inst.unit === 'class') bits.push('per class');
+        var qtyStr = bits.length ? '<span class="cl-qty">(' + bits.join(' ') + ')</span> ' : '';
+        var lessonsStr = '<span class="cl-master-lessons">Lesson' + (entry.lessons.length > 1 ? 's ' : ' ') + entry.lessons.join(', ') + '</span>';
+        var notesStr = inst.notes ? ' <span class="cl-notes">— ' + escapeAttr(inst.notes) + '</span>' : '';
+        html += '<div class="cl-master-detail">' + qtyStr + lessonsStr + notesStr + '</div>';
+      });
+      html += '</li>';
+    });
+    html += '</ul>';
+    html += '</div>';
+    return html;
+  }
+
   function renderCurriculumDetailBody() {
     var curr = curriculumState.current;
     if (!curr) return '<p>Loading...</p>';
@@ -4021,6 +4106,9 @@
       curr.tags.forEach(function (t) { html += '<span class="cl-tag">' + escapeAttr(t) + '</span>'; });
       html += '</div>';
     }
+
+    // ── Master Supply List (aggregated across all lessons) ──
+    html += renderMasterSupplyList(curr);
 
     // Lessons
     html += '<div class="cl-lessons">';
@@ -4242,6 +4330,42 @@
           lesson.instruction.push('');
         }
         renderCurriculumModal();
+      });
+    });
+
+    // Copy supplies from another lesson
+    personDetailCard.querySelectorAll('.cl-supply-copy').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        if (!sel.value) return;
+        gatherEditorDraftFromForm();
+        var sourceIdx = parseInt(sel.value, 10);
+        var targetIdx = parseInt(sel.getAttribute('data-target-lesson'), 10);
+        var source = curriculumState.draft.lessons[sourceIdx];
+        var target = curriculumState.draft.lessons[targetIdx];
+        if (!source || !target) return;
+        // Skip duplicates already in the target (matched by case-insensitive name)
+        var existing = {};
+        target.supplies.forEach(function (s) { existing[(s.item_name || '').toLowerCase().trim()] = true; });
+        var added = 0;
+        source.supplies.forEach(function (s) {
+          var k = (s.item_name || '').toLowerCase().trim();
+          if (!k || existing[k]) return;
+          target.supplies.push({
+            item_name: s.item_name,
+            qty: s.qty,
+            qty_unit: s.qty_unit,
+            notes: s.notes,
+            closet_item_id: s.closet_item_id || null
+          });
+          existing[k] = true;
+          added++;
+        });
+        sel.value = '';
+        renderCurriculumModal();
+        if (added === 0) {
+          // Brief inline-style feedback if everything was already there
+          alert('All of those supplies are already in this lesson.');
+        }
       });
     });
 
