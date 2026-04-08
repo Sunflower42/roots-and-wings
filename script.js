@@ -3312,8 +3312,45 @@
     editingId: null,      // id being edited, or null for new
     searchQuery: '',
     subjectFilter: '',
-    ageFilter: ''
+    ageFilter: '',
+    closetItems: null     // cached supply_closet for the autocomplete datalist
   };
+
+  function loadClosetItemsForEditor() {
+    if (curriculumState.closetItems) return Promise.resolve();
+    var cred = sessionStorage.getItem('rw_google_credential');
+    return fetch('/api/supply-closet', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      // Flatten grouped response into one array
+      var flat = [];
+      if (data && data.items) {
+        Object.keys(data.items).forEach(function (cat) {
+          (data.items[cat] || []).forEach(function (item) {
+            flat.push({ id: item.id, item_name: item.item_name, location: item.location, category: cat });
+          });
+        });
+      }
+      // De-dupe by name (some items appear in multiple categories)
+      var seen = {};
+      curriculumState.closetItems = flat.filter(function (i) {
+        var k = i.item_name.toLowerCase();
+        if (seen[k]) return false;
+        seen[k] = true;
+        return true;
+      }).sort(function (a, b) { return a.item_name.localeCompare(b.item_name); });
+    }).catch(function () {
+      curriculumState.closetItems = []; // fail open with empty list
+    });
+  }
+
+  function CATEGORY_LABEL(cat) {
+    if (cat === 'permanent') return 'Permanent';
+    if (cat === 'currently_available') return 'Currently available';
+    if (cat === 'classroom_cabinet') return 'Classroom';
+    if (cat === 'game_closet') return 'Games';
+    return cat;
+  }
 
   function blankLesson(num) {
     return {
@@ -3565,25 +3602,31 @@
   }
 
   function startNewCurriculum() {
-    curriculumState.draft = blankDraft();
-    curriculumState.editingId = null;
-    curriculumState.view = 'editor';
-    renderCurriculumModal();
+    loadClosetItemsForEditor().then(function () {
+      curriculumState.draft = blankDraft();
+      curriculumState.editingId = null;
+      curriculumState.view = 'editor';
+      renderCurriculumModal();
+    });
   }
 
   function startEditCurriculum() {
     if (!curriculumState.current) return;
-    curriculumState.draft = draftFromCurriculum(curriculumState.current);
-    curriculumState.editingId = curriculumState.current.id;
-    curriculumState.view = 'editor';
-    renderCurriculumModal();
+    loadClosetItemsForEditor().then(function () {
+      curriculumState.draft = draftFromCurriculum(curriculumState.current);
+      curriculumState.editingId = curriculumState.current.id;
+      curriculumState.view = 'editor';
+      renderCurriculumModal();
+    });
   }
 
   function copyAndEditCurriculum() {
     // POST /api/curriculum?id=N&action=copy, then open the new copy in the editor.
     if (!curriculumState.current) return;
-    curriculumFetch('/api/curriculum?id=' + encodeURIComponent(curriculumState.current.id) + '&action=copy', {
-      method: 'POST'
+    loadClosetItemsForEditor().then(function () {
+      return curriculumFetch('/api/curriculum?id=' + encodeURIComponent(curriculumState.current.id) + '&action=copy', {
+        method: 'POST'
+      });
     }).then(function (res) {
       if (!res.ok) { alert('Copy failed: ' + (res.data.error || 'unknown')); return; }
       curriculumState.current = res.data.curriculum;
@@ -3604,6 +3647,17 @@
     html += '</div>';
 
     html += '<h3>' + (isNew ? 'New Lesson Plan' : 'Edit Lesson Plan') + '</h3>';
+
+    // Datalist for supply autocomplete from the closet inventory
+    var closet = curriculumState.closetItems || [];
+    if (closet.length) {
+      html += '<datalist id="cl-closet-items">';
+      closet.forEach(function (it) {
+        var hint = CATEGORY_LABEL(it.category) + (it.location ? ' · ' + it.location : '');
+        html += '<option value="' + escapeAttr(it.item_name) + '">' + escapeAttr(hint) + '</option>';
+      });
+      html += '</datalist>';
+    }
 
     // Pre-fill from a class the user is teaching (only when creating new)
     if (isNew) {
@@ -3691,7 +3745,7 @@
     }
     lesson.supplies.forEach(function (s, si) {
       html += '<div class="cl-supply-row" data-supply-idx="' + si + '">';
-      html += '<input class="cl-input cl-supply-name" data-sfield="item_name" placeholder="Item" value="' + escapeAttr(s.item_name) + '">';
+      html += '<input class="cl-input cl-supply-name" data-sfield="item_name" placeholder="Item (type to search closet)" list="cl-closet-items" value="' + escapeAttr(s.item_name) + '">';
       html += '<input class="cl-input cl-supply-qty" data-sfield="qty" placeholder="Qty" value="' + escapeAttr(s.qty) + '">';
       html += '<select class="cl-input cl-supply-unit" data-sfield="qty_unit">';
       html += '<option value=""' + ((!s.qty_unit) ? ' selected' : '') + '>—</option>';
@@ -3910,7 +3964,12 @@
         html += '<div class="cl-card-title">' + escapeAttr(c.title) + '</div>';
         var meta = [];
         if (c.subject) meta.push(escapeAttr(c.subject));
-        if (c.age_range) meta.push('Ages ' + escapeAttr(c.age_range));
+        if (c.age_range) {
+          var ageStr = c.age_range.toLowerCase().indexOf('all') !== -1 || c.age_range.toLowerCase().indexOf('mixed') !== -1
+            ? c.age_range
+            : 'Ages ' + c.age_range;
+          meta.push(escapeAttr(ageStr));
+        }
         if (c.lesson_count) meta.push(c.lesson_count + ' lesson' + (c.lesson_count === 1 ? '' : 's'));
         if (meta.length) html += '<div class="cl-card-meta">' + meta.join(' &middot; ') + '</div>';
         if (c.overview) html += '<div class="cl-card-overview">' + escapeAttr(c.overview.slice(0, 140)) + (c.overview.length > 140 ? '...' : '') + '</div>';
@@ -3935,7 +3994,13 @@
     html += '<h3>' + escapeAttr(curr.title) + '</h3>';
     var metaParts = [];
     if (curr.subject) metaParts.push(escapeAttr(curr.subject));
-    if (curr.age_range) metaParts.push('Ages ' + escapeAttr(curr.age_range));
+    if (curr.age_range) {
+      // Don't say "Ages All ages"; the option already reads naturally
+      var ageStr = curr.age_range.toLowerCase().indexOf('all') !== -1 || curr.age_range.toLowerCase().indexOf('mixed') !== -1
+        ? curr.age_range
+        : 'Ages ' + curr.age_range;
+      metaParts.push(escapeAttr(ageStr));
+    }
     metaParts.push(curr.lesson_count + ' lesson' + (curr.lesson_count === 1 ? '' : 's'));
     html += '<div class="cl-detail-meta">' + metaParts.join(' &middot; ') + '</div>';
     html += '<div class="cl-detail-author">by ' + escapeAttr(curr.author_name || curr.author_email) + '</div>';

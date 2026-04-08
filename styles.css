@@ -5729,8 +5729,13 @@ button.staff-role:hover {
   font-weight: 700;
   min-width: 1.5em;
   text-align: right;
-  padding-top: 9px;
+  padding-top: 10px;
   flex: 0 0 auto;
+  line-height: 1.3;
+}
+/* Bullets in the read-only detail view sit next to plain text, not textareas */
+.cl-step-table-row .cl-dyn-bullet {
+  padding-top: 0;
 }
 .cl-dyn-row .cl-input { flex: 1; }
 .cl-dyn-textarea {
@@ -5745,24 +5750,26 @@ button.staff-role:hover {
 .cl-link-row .cl-link-url   { flex: 2; }
 
 /* Parallel Activity / Instruction step rows */
-.cl-steps-headers {
-  display: grid;
-  grid-template-columns: 28px 1fr 1fr 28px;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.35rem;
-}
-.cl-steps-col {
-  margin-bottom: 0;
-}
-.cl-steps-spacer { width: 28px; }
+.cl-steps-headers,
 .cl-steps-row {
   display: grid;
-  grid-template-columns: 28px 1fr 1fr 28px;
+  grid-template-columns: 1.75em 1fr 1fr 28px;
   gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+.cl-steps-row {
   align-items: flex-start;
   margin-bottom: 0.5rem;
 }
+.cl-steps-headers {
+  align-items: end;
+  margin-bottom: 0.4rem;
+}
+.cl-steps-headers .cl-dyn-label {
+  margin-bottom: 0;
+  padding-left: 2px;
+}
+.cl-steps-spacer { width: 28px; }
 .cl-step-cell {
   min-height: 3.5em;
   line-height: 1.45;
@@ -5774,12 +5781,16 @@ button.staff-role:hover {
   flex-direction: column;
   gap: 0.4rem;
 }
-.cl-step-table-headers {
+.cl-step-table-headers,
+.cl-step-table-row {
   display: grid;
-  grid-template-columns: 28px 1fr 1fr;
+  grid-template-columns: 1.75em 1fr 1fr;
   gap: 0.5rem;
+}
+.cl-step-table-headers {
   padding-bottom: 0.25rem;
   border-bottom: 1px solid var(--color-border);
+  align-items: end;
 }
 .cl-step-col-label {
   font-size: 0.65rem;
@@ -5789,9 +5800,6 @@ button.staff-role:hover {
   color: var(--color-primary-dark);
 }
 .cl-step-table-row {
-  display: grid;
-  grid-template-columns: 28px 1fr 1fr;
-  gap: 0.5rem;
   align-items: flex-start;
   padding: 0.35rem 0;
   border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.06);
