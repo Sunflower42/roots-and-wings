@@ -4107,23 +4107,29 @@
   }
 
   function renderMasterSupplyList(curr) {
-    // Aggregate supplies across all lessons. Group by lowercase item_name
-    // so "Clay" and "clay" merge. Each unique (qty, unit, notes) variant
-    // gets one compact line.
+    // Aggregate supplies across all lessons. Match case-insensitively and
+    // collapse extra whitespace so "Brayer" / "brayer" / "Brayer " merge.
+    // Each unique (item, qty, unit, notes) signature gets one line; multiple
+    // lessons with the same signature collapse to "L1,2,3".
+    function norm(s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+
     var lessons = curr.lessons || [];
     var rows = []; // flat list of { name, qty, unit, notes, lessons[] }
     var keyToRow = {};
     lessons.forEach(function (ls) {
       (ls.supplies || []).forEach(function (s) {
-        var name = (s.item_name || '').trim();
+        var name = String(s.item_name || '').trim().replace(/\s+/g, ' ');
         if (!name) return;
-        var qty = s.qty || '';
+        var qty = String(s.qty || '').trim();
         var unit = s.qty_unit || '';
-        var notes = s.notes || '';
-        var sig = name.toLowerCase() + '|' + qty + '|' + unit + '|' + notes;
+        var notes = String(s.notes || '').trim().replace(/\s+/g, ' ');
+        var sig = norm(name) + '|' + norm(qty) + '|' + unit + '|' + norm(notes);
         if (keyToRow[sig]) {
-          keyToRow[sig].lessons.push(ls.lesson_number);
+          if (keyToRow[sig].lessons.indexOf(ls.lesson_number) === -1) {
+            keyToRow[sig].lessons.push(ls.lesson_number);
+          }
         } else {
+          // Use the first-seen casing as the canonical display name
           var row = { name: name, qty: qty, unit: unit, notes: notes, lessons: [ls.lesson_number] };
           keyToRow[sig] = row;
           rows.push(row);
@@ -4131,6 +4137,7 @@
       });
     });
     if (rows.length === 0) return '';
+    rows.forEach(function (r) { r.lessons.sort(function (a, b) { return a - b; }); });
 
     var html = '<div class="cl-master-supplies">';
     html += '<details class="cl-master-details" open>';
@@ -4252,6 +4259,7 @@
 
     // Actions
     html += '<div class="cl-detail-actions">';
+    html += '<button class="cl-action-btn" id="cl-print-btn">Print</button>';
     html += '<button class="cl-action-btn" id="cl-copy-btn" data-id="' + curr.id + '">Copy &amp; Modify</button>';
     if (canEdit) {
       html += '<button class="cl-action-btn" id="cl-edit-btn" data-id="' + curr.id + '">Edit</button>';
@@ -4322,6 +4330,20 @@
     var copyBtn = personDetailCard.querySelector('#cl-copy-btn');
     if (copyBtn) {
       copyBtn.addEventListener('click', copyAndEditCurriculum);
+    }
+    var printBtn = personDetailCard.querySelector('#cl-print-btn');
+    if (printBtn) {
+      printBtn.addEventListener('click', function () {
+        // Make sure the master supply list <details> is open before printing
+        var d = personDetailCard.querySelector('.cl-master-details');
+        if (d) d.open = true;
+        document.body.classList.add('printing-curriculum');
+        // Brief delay so the layout updates before the print dialog
+        setTimeout(function () {
+          window.print();
+          setTimeout(function () { document.body.classList.remove('printing-curriculum'); }, 500);
+        }, 50);
+      });
     }
     var editBtn = personDetailCard.querySelector('#cl-edit-btn');
     if (editBtn) {
