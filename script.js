@@ -3833,7 +3833,10 @@
 
     html += '<label class="cl-label cl-label-sm">Lesson overview<textarea class="cl-input cl-textarea" data-field="overview" rows="2" placeholder="What will kids learn this lesson?">' + escapeAttr(lesson.overview) + '</textarea></label>';
 
-    // ── Supplies (top — gathered first) ──
+    // ── Room setup ──
+    html += '<label class="cl-label cl-label-sm">Room setup<textarea class="cl-input cl-textarea" data-field="room_setup" rows="2" placeholder="How to arrange the room before kids arrive (tables, stations, materials laid out, etc.)">' + escapeAttr(lesson.room_setup || '') + '</textarea></label>';
+
+    // ── Supplies ──
     html += '<div class="cl-dyn-section"><div class="cl-dyn-label">Supplies</div>';
     if (lesson.supplies.length === 0) {
       html += '<div class="cl-dyn-empty">No supplies yet.</div>';
@@ -3852,6 +3855,7 @@
       html += '</div>';
     });
     html += '<button class="cl-dyn-add" data-dyn-add="supplies" type="button">+ Add supply</button>';
+    // (room setup moved above supplies)
 
     // Copy supplies from another lesson (only show if there is one)
     var otherLessons = [];
@@ -3872,9 +3876,6 @@
       html += '</select>';
     }
     html += '</div>';
-
-    // ── Room setup ──
-    html += '<label class="cl-label cl-label-sm">Room setup<textarea class="cl-input cl-textarea" data-field="room_setup" rows="2" placeholder="How to arrange the room before kids arrive (tables, stations, materials laid out, etc.)">' + escapeAttr(lesson.room_setup || '') + '</textarea></label>';
 
     // ── Activity & Instruction (parallel numbered rows) ──
     html += '<div class="cl-dyn-section">';
@@ -4197,7 +4198,12 @@
       html += '</div>';
       if (ls.overview) html += '<p class="cl-lesson-overview">' + escapeAttr(ls.overview) + '</p>';
 
-      // Supplies first — they're gathered first
+      // Room setup
+      if (ls.room_setup) {
+        html += '<div class="cl-lesson-section"><strong>Room setup</strong><p class="cl-room-setup">' + escapeAttr(ls.room_setup) + '</p></div>';
+      }
+
+      // Supplies
       if (ls.supplies && ls.supplies.length) {
         html += '<div class="cl-lesson-section"><strong>Supplies</strong><ul class="cl-supply-list">';
         ls.supplies.forEach(function (s) {
@@ -4211,11 +4217,6 @@
           html += '<li>' + line + '</li>';
         });
         html += '</ul></div>';
-      }
-
-      // Room setup
-      if (ls.room_setup) {
-        html += '<div class="cl-lesson-section"><strong>Room setup</strong><p class="cl-room-setup">' + escapeAttr(ls.room_setup) + '</p></div>';
       }
 
       // Activity & Instruction as parallel numbered steps
