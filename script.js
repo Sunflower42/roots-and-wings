@@ -2954,7 +2954,7 @@
 
     var html = '<div class="sc-row">';
     html += '<div>';
-    html += '<div class="sc-name">' + escapeAttr(item.item_name) + '</div>';
+    html += '<div class="sc-name"><a href="https://www.amazon.com/s?k=' + encodeURIComponent(item.item_name) + '" target="_blank" rel="noopener noreferrer">' + escapeAttr(item.item_name) + '</a></div>';
     if (item.location) html += '<div class="sc-loc">' + escapeAttr(item.location) + '</div>';
     if (item.notes) html += '<div class="sc-notes">' + escapeAttr(item.notes) + '</div>';
     html += '</div>';

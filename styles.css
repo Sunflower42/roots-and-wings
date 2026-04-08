@@ -5182,8 +5182,12 @@ button.staff-role:hover {
 .sc-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--color-text);
 }
+.sc-name a {
+  color: var(--color-accent, #6a3d8a);
+  text-decoration: underline;
+}
+.sc-name a:hover { text-decoration: none; }
 .sc-loc {
   font-size: 0.75rem;
   color: var(--color-text-light);
