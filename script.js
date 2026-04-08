@@ -2761,10 +2761,10 @@
   // Supply Closet Inventory
   // ──────────────────────────────────────────────
   var SUPPLY_CATEGORIES = [
-    { key: 'permanent',           label: 'Permanent',    short: 'Permanent',  sub: 'Always available',            color: '#4a7c59' },
-    { key: 'currently_available', label: 'Currently',    short: 'Currently',  sub: 'May not always be available', color: '#c78a47' },
-    { key: 'classroom_cabinet',   label: 'Classroom',    short: 'Classroom',  sub: 'Each AM classroom',           color: '#5b7db8' },
-    { key: 'game_closet',         label: 'Games',        short: 'Games',      sub: 'Shared with the church',      color: '#9b6b9e' }
+    { key: 'permanent',           label: 'Permanent',    short: 'Permanent',  sub: 'Always available' },
+    { key: 'currently_available', label: 'Currently',    short: 'Currently',  sub: 'May not always be available' },
+    { key: 'classroom_cabinet',   label: 'Classroom',    short: 'Classroom',  sub: 'Each AM classroom' },
+    { key: 'game_closet',         label: 'Games',        short: 'Games',      sub: 'Shared with the church' }
   ];
 
   function supplyCategoryMeta(key) {
@@ -2861,55 +2861,12 @@
     return rows;
   }
 
-  function supplyClosetStyleBlock() {
-    return [
-      '<style>',
-      '.sc-modal{max-width:820px;width:100%;}',
-      '.sc-modal h3{margin:0 0 0.25rem 0;}',
-      '.sc-modal .sc-intro{font-size:0.8rem;color:var(--color-text-light);margin:0 0 1rem 0;}',
-      '.sc-controls{display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem;}',
-      '.sc-search{flex:1 1 220px;padding:8px 12px;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;background:#fff;}',
-      '.sc-sort{padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;background:#fff;}',
-      '.sc-cat-filters{display:flex;gap:0.35rem;flex-wrap:wrap;margin-bottom:0.75rem;}',
-      '.sc-cat-chip{border:1.5px solid transparent;border-radius:999px;padding:4px 12px;font-size:0.75rem;cursor:pointer;font-weight:500;transition:opacity 0.15s;user-select:none;}',
-      '.sc-cat-chip.sc-off{opacity:0.35;background:transparent!important;color:inherit!important;border-color:#ccc;}',
-      '.sc-count{font-size:0.75rem;color:var(--color-text-light);margin-bottom:0.5rem;}',
-      '.sc-list{max-height:440px;overflow-y:auto;border:1px solid #e5e5e5;border-radius:8px;background:#fff;}',
-      '.sc-empty{padding:2.5rem 1rem;text-align:center;color:var(--color-text-light);font-size:0.85rem;}',
-      '.sc-row{display:grid;grid-template-columns:1fr auto auto;gap:0.75rem;align-items:center;padding:0.6rem 0.85rem;border-bottom:1px solid #f0f0f0;}',
-      '.sc-row:last-child{border-bottom:none;}',
-      '.sc-row:hover{background:#fafafa;}',
-      '.sc-name{font-size:0.9rem;font-weight:500;color:var(--color-text,#333);}',
-      '.sc-loc{font-size:0.75rem;color:var(--color-text-light);margin-top:2px;}',
-      '.sc-notes{font-size:0.7rem;color:var(--color-text-light);font-style:italic;margin-top:2px;}',
-      '.sc-badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:0.68rem;font-weight:600;color:#fff;text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap;}',
-      '.sc-actions{display:flex;gap:0.35rem;}',
-      '.sc-btn{background:transparent;border:1px solid #ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;color:var(--color-text,#333);}',
-      '.sc-btn:hover{background:#f0f0f0;}',
-      '.sc-btn-del{border-color:#d66;color:#d66;}',
-      '.sc-btn-del:hover{background:#fde;}',
-      '.sc-edit-form{padding:0.85rem;background:#fafafa;border-bottom:1px solid #f0f0f0;}',
-      '.sc-edit-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:0.5rem;margin-bottom:0.5rem;}',
-      '.sc-edit-form input,.sc-edit-form select{padding:7px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;background:#fff;}',
-      '.sc-edit-form .sc-edit-notes{width:100%;box-sizing:border-box;margin-bottom:0.6rem;}',
-      '.sc-edit-actions{display:flex;gap:0.5rem;justify-content:flex-end;}',
-      '.sc-footer{display:flex;justify-content:space-between;align-items:center;margin-top:1rem;gap:1rem;flex-wrap:wrap;}',
-      '.sc-add{background:var(--color-primary,#4a7c59);color:#fff;border:none;padding:9px 18px;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:500;}',
-      '.sc-add:hover{opacity:0.9;}',
-      '.sc-save{background:var(--color-primary,#4a7c59);color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:0.8rem;}',
-      '.sc-coord{font-size:0.72rem;color:var(--color-text-light);}',
-      '@media(max-width:540px){.sc-row{grid-template-columns:1fr;gap:0.35rem;}.sc-actions{justify-content:flex-start;}.sc-edit-grid{grid-template-columns:1fr;}}',
-      '</style>'
-    ].join('');
-  }
-
   function renderSupplyClosetModal() {
     if (!personDetail || !personDetailCard) return;
     var state = supplyClosetState;
     var rows = filterAndSortSupplyItems();
 
     var html = '<button class="detail-close" aria-label="Close">&times;</button>';
-    html += supplyClosetStyleBlock();
     html += '<div class="elective-detail sc-modal">';
     html += '<h3>Supply Closet Inventory</h3>';
     html += '<p class="sc-intro">Search what\'s available in the co-op\'s closets and cabinets. If something is missing or running low, post in the Supplies chat.</p>';
@@ -2934,10 +2891,8 @@
     html += '<div class="sc-cat-filters">';
     SUPPLY_CATEGORIES.forEach(function (cat) {
       var on = state.enabledCats[cat.key];
-      var style = on
-        ? 'background:' + cat.color + ';color:#fff;border-color:' + cat.color + ';'
-        : '';
-      html += '<button class="sc-cat-chip' + (on ? '' : ' sc-off') + '" data-cat="' + cat.key + '" style="' + style + '">' + cat.short + '</button>';
+      var classes = 'sc-cat-chip sc-cat-' + cat.key + (on ? '' : ' sc-off');
+      html += '<button class="' + classes + '" data-cat="' + cat.key + '">' + cat.short + '</button>';
     });
     html += '</div>';
 
@@ -2982,22 +2937,11 @@
     document.body.style.overflow = 'hidden';
 
     wireSupplyClosetEvents();
-
-    // Restore focus to search input after re-render if it was focused
-    if (state.searchFocused) {
-      var si = personDetailCard.querySelector('#sc-search-input');
-      if (si) {
-        si.focus();
-        var v = si.value;
-        si.setSelectionRange(v.length, v.length);
-      }
-    }
   }
 
   function renderReadRow(item) {
     var canEdit = supplyClosetState.canEdit;
     var cat = supplyCategoryMeta(item.category);
-    var badgeStyle = cat ? 'background:' + cat.color + ';' : '';
     var badgeLabel = cat ? cat.short : item.category;
 
     var html = '<div class="sc-row">';
@@ -3006,7 +2950,7 @@
     if (item.location) html += '<div class="sc-loc">' + escapeAttr(item.location) + '</div>';
     if (item.notes) html += '<div class="sc-notes">' + escapeAttr(item.notes) + '</div>';
     html += '</div>';
-    html += '<span class="sc-badge" style="' + badgeStyle + '">' + escapeAttr(badgeLabel) + '</span>';
+    html += '<span class="sc-badge sc-badge-' + item.category + '">' + escapeAttr(badgeLabel) + '</span>';
     html += '<div class="sc-actions">';
     if (canEdit) {
       html += '<button class="sc-btn sc-edit-btn" data-id="' + item.id + '">Edit</button>';
@@ -3053,16 +2997,12 @@
       if (e.target === personDetail) closeDetail();
     };
 
-    // Search input (debounced re-render while typing)
+    // Search input — update list in place so the input keeps focus
     var searchInput = personDetailCard.querySelector('#sc-search-input');
     if (searchInput) {
       searchInput.addEventListener('input', function () {
         supplyClosetState.searchQuery = searchInput.value;
-        supplyClosetState.searchFocused = true;
-        renderSupplyClosetModal();
-      });
-      searchInput.addEventListener('blur', function () {
-        supplyClosetState.searchFocused = false;
+        updateSupplyClosetListOnly();
       });
     }
 
@@ -3175,6 +3115,118 @@
           .catch(function (err) { alert('Network error: ' + err.message); });
       });
     });
+  }
+
+  function updateSupplyClosetListOnly() {
+    // Re-render only the list + count when search changes, so the search
+    // input keeps focus and cursor position.
+    var state = supplyClosetState;
+    var rows = filterAndSortSupplyItems();
+    var totalCount = state.items ? state.items.length : 0;
+
+    var countEl = personDetailCard.querySelector('.sc-count');
+    if (countEl) countEl.textContent = 'Showing ' + rows.length + ' of ' + totalCount + ' items';
+
+    var listEl = personDetailCard.querySelector('.sc-list');
+    if (!listEl) return;
+
+    var html = '';
+    if (state.addingNew) html += renderEditRow(null);
+    if (rows.length === 0 && !state.addingNew) {
+      var msg = state.searchQuery ? 'No items match your search.' : 'No items in the selected categories.';
+      html += '<div class="sc-empty">' + msg + '</div>';
+    }
+    rows.forEach(function (item) {
+      if (state.editingId === item.id) {
+        html += renderEditRow(item);
+      } else {
+        html += renderReadRow(item);
+      }
+    });
+    listEl.innerHTML = html;
+
+    // Re-wire only the events inside the list (edit/delete/save/cancel)
+    wireSupplyClosetListEvents();
+  }
+
+  function wireSupplyClosetListEvents() {
+    // Edit
+    personDetailCard.querySelectorAll('.sc-list .sc-edit-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        supplyClosetState.editingId = parseInt(btn.getAttribute('data-id'), 10);
+        supplyClosetState.addingNew = false;
+        renderSupplyClosetModal();
+      });
+    });
+    // Cancel
+    personDetailCard.querySelectorAll('.sc-list .sc-cancel-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        supplyClosetState.editingId = null;
+        supplyClosetState.addingNew = false;
+        renderSupplyClosetModal();
+      });
+    });
+    // Save
+    personDetailCard.querySelectorAll('.sc-list .sc-save-btn').forEach(function (btn) {
+      btn.addEventListener('click', handleSupplyClosetSave);
+    });
+    // Delete
+    personDetailCard.querySelectorAll('.sc-list .sc-del-btn').forEach(function (btn) {
+      btn.addEventListener('click', handleSupplyClosetDelete);
+    });
+  }
+
+  function handleSupplyClosetSave() {
+    var btn = this;
+    var idAttr = btn.getAttribute('data-id');
+    var nameEl = personDetailCard.querySelector('.sc-in-name[data-id="' + idAttr + '"]');
+    var locEl = personDetailCard.querySelector('.sc-in-loc[data-id="' + idAttr + '"]');
+    var notesEl = personDetailCard.querySelector('.sc-in-notes[data-id="' + idAttr + '"]');
+    var catEl = personDetailCard.querySelector('.sc-in-cat[data-id="' + idAttr + '"]');
+    var payload = {
+      item_name: nameEl ? nameEl.value : '',
+      location: locEl ? locEl.value : '',
+      notes: notesEl ? notesEl.value : '',
+      category: catEl ? catEl.value : 'permanent'
+    };
+    if (!payload.item_name.trim()) { alert('Item name is required.'); return; }
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    var cred = sessionStorage.getItem('rw_google_credential');
+    var url = '/api/supply-closet';
+    var method = 'POST';
+    if (idAttr !== 'new') {
+      url += '?id=' + encodeURIComponent(idAttr);
+      method = 'PATCH';
+    }
+    fetch(url, {
+      method: method,
+      headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { alert('Error: ' + (res.data.error || 'save failed')); btn.disabled = false; btn.textContent = 'Save'; return; }
+        supplyClosetState.editingId = null;
+        supplyClosetState.addingNew = false;
+        loadSupplyClosetAndRender();
+      })
+      .catch(function (err) { alert('Network error: ' + err.message); btn.disabled = false; btn.textContent = 'Save'; });
+  }
+
+  function handleSupplyClosetDelete() {
+    if (!confirm('Delete this item from the inventory?')) return;
+    var id = this.getAttribute('data-id');
+    var cred = sessionStorage.getItem('rw_google_credential');
+    fetch('/api/supply-closet?id=' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { alert('Error: ' + (res.data.error || 'delete failed')); return; }
+        loadSupplyClosetAndRender();
+      })
+      .catch(function (err) { alert('Network error: ' + err.message); });
   }
 
   function loadSupplyClosetAndRender() {
