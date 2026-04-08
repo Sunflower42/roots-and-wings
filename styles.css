@@ -5942,8 +5942,15 @@ button.staff-role:hover {
 }
 .cl-master-name {
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--color-accent, #6a3d8a);
+  text-decoration: underline;
 }
+.cl-master-name:hover { text-decoration: none; }
+.cl-supply-list a {
+  color: var(--color-accent, #6a3d8a);
+  text-decoration: underline;
+}
+.cl-supply-list a:hover { text-decoration: none; }
 .cl-master-lessons {
   font-size: 0.7rem;
   color: var(--color-text-light);
