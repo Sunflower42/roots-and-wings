@@ -3541,6 +3541,10 @@
   }
 
   function curriculumFetch(url, options) {
+    return curriculumFetchInner(url, options, false);
+  }
+
+  function curriculumFetchInner(url, options, isRetry) {
     var cred = sessionStorage.getItem('rw_google_credential');
     options = options || {};
     options.headers = Object.assign({
@@ -3551,6 +3555,50 @@
       return r.json().then(function (data) {
         return { ok: r.ok, status: r.status, data: data };
       });
+    }).then(function (res) {
+      // 401 means the Google JWT is expired (they last ~1 hour). Try to
+      // silently refresh once before giving up.
+      if (res.status === 401 && !isRetry) {
+        return refreshGoogleCredential().then(function (refreshed) {
+          if (refreshed) {
+            return curriculumFetchInner(url, options, true);
+          }
+          return res;
+        });
+      }
+      return res;
+    });
+  }
+
+  // Re-prompt Google to issue a new ID token without a full page reload.
+  // Resolves true if a fresh credential is now in sessionStorage.
+  function refreshGoogleCredential() {
+    return new Promise(function (resolve) {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+        resolve(false);
+        return;
+      }
+      var oldCred = sessionStorage.getItem('rw_google_credential');
+      var done = false;
+      function check() {
+        var c = sessionStorage.getItem('rw_google_credential');
+        if (c && c !== oldCred) { done = true; resolve(true); }
+      }
+      // Watch for the existing Google sign-in callback to update sessionStorage
+      var interval = setInterval(check, 200);
+      setTimeout(function () { clearInterval(interval); if (!done) resolve(false); }, 8000);
+      try {
+        google.accounts.id.prompt(function (notification) {
+          // notification.isNotDisplayed/isSkippedMoment etc. may fire
+          if (notification && (notification.isNotDisplayed && notification.isNotDisplayed()) ||
+              (notification && notification.isSkippedMoment && notification.isSkippedMoment())) {
+            // user dismissed; we'll let the timeout resolve(false)
+          }
+        });
+      } catch (e) {
+        clearInterval(interval);
+        resolve(false);
+      }
     });
   }
 
@@ -3603,9 +3651,46 @@
     wireCurriculumEvents();
   }
 
+  // Draft autosave/restore — survives tab refresh and expired tokens.
+  var DRAFT_NEW_KEY = 'rw_curriculum_draft_new';
+  function draftKeyForId(id) { return 'rw_curriculum_draft_edit_' + id; }
+  function currentDraftKey() {
+    return curriculumState.editingId ? draftKeyForId(curriculumState.editingId) : DRAFT_NEW_KEY;
+  }
+  function autosaveDraft() {
+    if (!curriculumState.draft || curriculumState.view !== 'editor') return;
+    try {
+      localStorage.setItem(currentDraftKey(), JSON.stringify({
+        savedAt: Date.now(),
+        editingId: curriculumState.editingId,
+        draft: curriculumState.draft
+      }));
+    } catch (e) { /* quota — ignore */ }
+  }
+  function clearDraftAutosave() {
+    try { localStorage.removeItem(currentDraftKey()); } catch (e) {}
+  }
+  function findRestorableDraft(forEditingId) {
+    try {
+      var raw = localStorage.getItem(forEditingId ? draftKeyForId(forEditingId) : DRAFT_NEW_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || !parsed.draft) return null;
+      // Drafts older than 7 days are stale
+      if (Date.now() - (parsed.savedAt || 0) > 7 * 24 * 60 * 60 * 1000) return null;
+      return parsed;
+    } catch (e) { return null; }
+  }
+
   function startNewCurriculum() {
     loadClosetItemsForEditor().then(function () {
-      curriculumState.draft = blankDraft();
+      var saved = findRestorableDraft(null);
+      if (saved && confirm('Restore your unsaved lesson plan from ' + new Date(saved.savedAt).toLocaleString() + '?')) {
+        curriculumState.draft = saved.draft;
+      } else {
+        if (saved) clearDraftAutosave();
+        curriculumState.draft = blankDraft();
+      }
       curriculumState.editingId = null;
       curriculumState.view = 'editor';
       renderCurriculumModal();
@@ -3615,7 +3700,15 @@
   function startEditCurriculum() {
     if (!curriculumState.current) return;
     loadClosetItemsForEditor().then(function () {
-      curriculumState.draft = draftFromCurriculum(curriculumState.current);
+      var saved = findRestorableDraft(curriculumState.current.id);
+      if (saved && confirm('You have unsaved changes from ' + new Date(saved.savedAt).toLocaleString() + '. Restore them?')) {
+        curriculumState.draft = saved.draft;
+      } else {
+        if (saved) {
+          try { localStorage.removeItem(draftKeyForId(curriculumState.current.id)); } catch (e) {}
+        }
+        curriculumState.draft = draftFromCurriculum(curriculumState.current);
+      }
       curriculumState.editingId = curriculumState.current.id;
       curriculumState.view = 'editor';
       renderCurriculumModal();
@@ -3942,10 +4035,14 @@
       body: JSON.stringify(payload)
     }).then(function (res) {
       if (!res.ok) {
-        alert('Save failed: ' + (res.data.error || 'unknown'));
+        var msg = res.status === 401
+          ? 'Save failed: your sign-in expired. Please refresh and sign in again. Your draft is auto-saved in this browser.'
+          : 'Save failed: ' + (res.data.error || 'unknown');
+        alert(msg);
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = id ? 'Save Changes' : 'Create Plan'; }
         return;
       }
+      clearDraftAutosave();
       curriculumState.current = res.data.curriculum;
       curriculumState.draft = null;
       curriculumState.editingId = null;
@@ -4188,7 +4285,10 @@
     if (closeBtn) {
       closeBtn.addEventListener('click', function () {
         if (curriculumState.view === 'editor') {
-          if (!confirm('Discard changes and close?')) return;
+          // Don't discard the autosaved draft here — user may have hit X to
+          // get away from the expired-token error. The autosave preserves
+          // their work for next time they open the editor.
+          if (!confirm('Close the editor? Your draft is auto-saved in this browser and will be offered when you reopen.')) return;
           curriculumState.draft = null;
           curriculumState.editingId = null;
         }
@@ -4258,10 +4358,24 @@
     }
 
     // ── Editor view wiring ──
+    // Debounced autosave on any input change inside the editor
+    if (curriculumState.view === 'editor') {
+      var autosaveTimer = null;
+      personDetailCard.addEventListener('input', function (e) {
+        if (!e.target.matches('input, textarea, select')) return;
+        clearTimeout(autosaveTimer);
+        autosaveTimer = setTimeout(function () {
+          gatherEditorDraftFromForm();
+          autosaveDraft();
+        }, 500);
+      });
+    }
+
     var editorCancel = personDetailCard.querySelector('#cl-editor-cancel');
     if (editorCancel) {
       editorCancel.addEventListener('click', function () {
         if (!confirm('Discard changes?')) return;
+        clearDraftAutosave();
         curriculumState.draft = null;
         if (curriculumState.editingId && curriculumState.current) {
           curriculumState.view = 'detail';
