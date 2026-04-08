@@ -2761,17 +2761,32 @@
   // Supply Closet Inventory
   // ──────────────────────────────────────────────
   var SUPPLY_CATEGORIES = [
-    { key: 'permanent',          label: 'Permanent',    sub: 'Always available' },
-    { key: 'currently_available', label: 'Currently',    sub: 'May not always be available' },
-    { key: 'classroom_cabinet',  label: 'Classroom',    sub: 'Each AM classroom' },
-    { key: 'game_closet',        label: 'Games',        sub: 'Shared with the church' }
+    { key: 'permanent',           label: 'Permanent',    short: 'Permanent',  sub: 'Always available',            color: '#4a7c59' },
+    { key: 'currently_available', label: 'Currently',    short: 'Currently',  sub: 'May not always be available', color: '#c78a47' },
+    { key: 'classroom_cabinet',   label: 'Classroom',    short: 'Classroom',  sub: 'Each AM classroom',           color: '#5b7db8' },
+    { key: 'game_closet',         label: 'Games',        short: 'Games',      sub: 'Shared with the church',      color: '#9b6b9e' }
   ];
 
+  function supplyCategoryMeta(key) {
+    for (var i = 0; i < SUPPLY_CATEGORIES.length; i++) {
+      if (SUPPLY_CATEGORIES[i].key === key) return SUPPLY_CATEGORIES[i];
+    }
+    return null;
+  }
+
   var supplyClosetState = {
-    items: null,        // { permanent: [], ... }
-    activeTab: 'permanent',
-    editingId: null,    // item id currently being edited
+    items: null,           // flat array of all items
+    searchQuery: '',
+    enabledCats: {         // which categories are visible
+      permanent: true,
+      currently_available: true,
+      classroom_cabinet: true,
+      game_closet: true
+    },
+    sortBy: 'name',        // 'name' | 'location' | 'category'
+    editingId: null,
     addingNew: false,
+    newItemCategory: 'permanent',
     canEdit: false
   };
 
@@ -2817,40 +2832,127 @@
     return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  function filterAndSortSupplyItems() {
+    var state = supplyClosetState;
+    if (!state.items) return [];
+    var q = state.searchQuery.trim().toLowerCase();
+    var rows = state.items.filter(function (item) {
+      if (!state.enabledCats[item.category]) return false;
+      if (!q) return true;
+      return (
+        (item.item_name || '').toLowerCase().indexOf(q) !== -1 ||
+        (item.location || '').toLowerCase().indexOf(q) !== -1 ||
+        (item.notes || '').toLowerCase().indexOf(q) !== -1
+      );
+    });
+    var sortBy = state.sortBy;
+    rows.sort(function (a, b) {
+      if (sortBy === 'location') {
+        var la = (a.location || '\uffff').toLowerCase();
+        var lb = (b.location || '\uffff').toLowerCase();
+        if (la !== lb) return la < lb ? -1 : 1;
+      } else if (sortBy === 'category') {
+        if (a.category !== b.category) return a.category < b.category ? -1 : 1;
+      }
+      var na = (a.item_name || '').toLowerCase();
+      var nb = (b.item_name || '').toLowerCase();
+      return na < nb ? -1 : na > nb ? 1 : 0;
+    });
+    return rows;
+  }
+
+  function supplyClosetStyleBlock() {
+    return [
+      '<style>',
+      '.sc-modal{max-width:820px;width:100%;}',
+      '.sc-modal h3{margin:0 0 0.25rem 0;}',
+      '.sc-modal .sc-intro{font-size:0.8rem;color:var(--color-text-light);margin:0 0 1rem 0;}',
+      '.sc-controls{display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem;}',
+      '.sc-search{flex:1 1 220px;padding:8px 12px;border:1px solid #ccc;border-radius:6px;font-size:0.9rem;background:#fff;}',
+      '.sc-sort{padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:0.85rem;background:#fff;}',
+      '.sc-cat-filters{display:flex;gap:0.35rem;flex-wrap:wrap;margin-bottom:0.75rem;}',
+      '.sc-cat-chip{border:1.5px solid transparent;border-radius:999px;padding:4px 12px;font-size:0.75rem;cursor:pointer;font-weight:500;transition:opacity 0.15s;user-select:none;}',
+      '.sc-cat-chip.sc-off{opacity:0.35;background:transparent!important;color:inherit!important;border-color:#ccc;}',
+      '.sc-count{font-size:0.75rem;color:var(--color-text-light);margin-bottom:0.5rem;}',
+      '.sc-list{max-height:440px;overflow-y:auto;border:1px solid #e5e5e5;border-radius:8px;background:#fff;}',
+      '.sc-empty{padding:2.5rem 1rem;text-align:center;color:var(--color-text-light);font-size:0.85rem;}',
+      '.sc-row{display:grid;grid-template-columns:1fr auto auto;gap:0.75rem;align-items:center;padding:0.6rem 0.85rem;border-bottom:1px solid #f0f0f0;}',
+      '.sc-row:last-child{border-bottom:none;}',
+      '.sc-row:hover{background:#fafafa;}',
+      '.sc-name{font-size:0.9rem;font-weight:500;color:var(--color-text,#333);}',
+      '.sc-loc{font-size:0.75rem;color:var(--color-text-light);margin-top:2px;}',
+      '.sc-notes{font-size:0.7rem;color:var(--color-text-light);font-style:italic;margin-top:2px;}',
+      '.sc-badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:0.68rem;font-weight:600;color:#fff;text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap;}',
+      '.sc-actions{display:flex;gap:0.35rem;}',
+      '.sc-btn{background:transparent;border:1px solid #ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.72rem;color:var(--color-text,#333);}',
+      '.sc-btn:hover{background:#f0f0f0;}',
+      '.sc-btn-del{border-color:#d66;color:#d66;}',
+      '.sc-btn-del:hover{background:#fde;}',
+      '.sc-edit-form{padding:0.85rem;background:#fafafa;border-bottom:1px solid #f0f0f0;}',
+      '.sc-edit-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:0.5rem;margin-bottom:0.5rem;}',
+      '.sc-edit-form input,.sc-edit-form select{padding:7px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;background:#fff;}',
+      '.sc-edit-form .sc-edit-notes{width:100%;box-sizing:border-box;margin-bottom:0.6rem;}',
+      '.sc-edit-actions{display:flex;gap:0.5rem;justify-content:flex-end;}',
+      '.sc-footer{display:flex;justify-content:space-between;align-items:center;margin-top:1rem;gap:1rem;flex-wrap:wrap;}',
+      '.sc-add{background:var(--color-primary,#4a7c59);color:#fff;border:none;padding:9px 18px;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:500;}',
+      '.sc-add:hover{opacity:0.9;}',
+      '.sc-save{background:var(--color-primary,#4a7c59);color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:0.8rem;}',
+      '.sc-coord{font-size:0.72rem;color:var(--color-text-light);}',
+      '@media(max-width:540px){.sc-row{grid-template-columns:1fr;gap:0.35rem;}.sc-actions{justify-content:flex-start;}.sc-edit-grid{grid-template-columns:1fr;}}',
+      '</style>'
+    ].join('');
+  }
+
   function renderSupplyClosetModal() {
     if (!personDetail || !personDetailCard) return;
     var state = supplyClosetState;
+    var rows = filterAndSortSupplyItems();
 
     var html = '<button class="detail-close" aria-label="Close">&times;</button>';
-    html += '<div class="elective-detail" style="max-width:780px;width:100%;">';
+    html += supplyClosetStyleBlock();
+    html += '<div class="elective-detail sc-modal">';
     html += '<h3>Supply Closet Inventory</h3>';
-    html += '<p style="color:var(--color-text-light);font-size:0.85rem;margin-bottom:1rem;">Browse what\'s in the co-op\'s closets. If something is missing, post in the Supplies chat.</p>';
+    html += '<p class="sc-intro">Search what\'s available in the co-op\'s closets and cabinets. If something is missing or running low, post in the Supplies chat.</p>';
 
-    // Tabs
-    html += '<div style="display:flex;gap:0.25rem;border-bottom:2px solid var(--color-border,#e5e5e5);margin-bottom:1rem;flex-wrap:wrap;">';
+    // Controls: search + sort
+    html += '<div class="sc-controls">';
+    html += '<input type="text" class="sc-search" id="sc-search-input" placeholder="Search items, locations, notes..." value="' + escapeAttr(state.searchQuery) + '">';
+    html += '<select class="sc-sort" id="sc-sort-select">';
+    var sortOptions = [
+      { v: 'name', label: 'Sort: Name' },
+      { v: 'location', label: 'Sort: Location' },
+      { v: 'category', label: 'Sort: Category' }
+    ];
+    sortOptions.forEach(function (o) {
+      var sel = state.sortBy === o.v ? ' selected' : '';
+      html += '<option value="' + o.v + '"' + sel + '>' + o.label + '</option>';
+    });
+    html += '</select>';
+    html += '</div>';
+
+    // Category filter chips
+    html += '<div class="sc-cat-filters">';
     SUPPLY_CATEGORIES.forEach(function (cat) {
-      var count = (state.items && state.items[cat.key]) ? state.items[cat.key].length : 0;
-      var isActive = state.activeTab === cat.key;
-      var activeStyle = isActive
-        ? 'background:var(--color-primary);color:#fff;'
-        : 'background:transparent;color:var(--color-text,#333);';
-      html += '<button class="sc-tab" data-sctab="' + cat.key + '" style="' + activeStyle + 'border:none;padding:8px 14px;border-radius:6px 6px 0 0;cursor:pointer;font-size:0.85rem;font-weight:500;">';
-      html += cat.label + ' <span style="opacity:0.7;font-size:0.75rem;">(' + count + ')</span>';
-      html += '</button>';
+      var on = state.enabledCats[cat.key];
+      var style = on
+        ? 'background:' + cat.color + ';color:#fff;border-color:' + cat.color + ';'
+        : '';
+      html += '<button class="sc-cat-chip' + (on ? '' : ' sc-off') + '" data-cat="' + cat.key + '" style="' + style + '">' + cat.short + '</button>';
     });
     html += '</div>';
 
-    // Active category header
-    var catMeta = SUPPLY_CATEGORIES.find(function (c) { return c.key === state.activeTab; });
-    if (catMeta) {
-      html += '<p style="font-size:0.75rem;color:var(--color-text-light);margin-bottom:0.75rem;font-style:italic;">' + catMeta.sub + '</p>';
-    }
+    // Count
+    var totalCount = state.items ? state.items.length : 0;
+    html += '<div class="sc-count">Showing ' + rows.length + ' of ' + totalCount + ' items</div>';
 
-    // Items list
-    var rows = (state.items && state.items[state.activeTab]) || [];
-    html += '<div style="max-height:400px;overflow-y:auto;border:1px solid var(--color-border,#e5e5e5);border-radius:6px;">';
+    // Item list
+    html += '<div class="sc-list">';
+    if (state.addingNew) {
+      html += renderEditRow(null);
+    }
     if (rows.length === 0 && !state.addingNew) {
-      html += '<div style="padding:2rem;text-align:center;color:var(--color-text-light);">No items in this category yet.</div>';
+      var msg = state.searchQuery ? 'No items match your search.' : 'No items in the selected categories.';
+      html += '<div class="sc-empty">' + msg + '</div>';
     }
     rows.forEach(function (item) {
       if (state.editingId === item.id) {
@@ -2859,21 +2961,18 @@
         html += renderReadRow(item);
       }
     });
-    if (state.addingNew) {
-      html += renderEditRow(null);
-    }
     html += '</div>';
 
-    // Footer: Add button + coordinator info
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem;gap:1rem;flex-wrap:wrap;">';
+    // Footer
+    html += '<div class="sc-footer">';
     if (state.canEdit) {
-      html += '<button id="sc-add-btn" style="background:var(--color-primary);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:0.85rem;">+ Add Item</button>';
+      html += '<button id="sc-add-btn" class="sc-add">+ Add Item</button>';
     } else {
       html += '<span></span>';
     }
     var coord = getSupplyCoordinatorName();
     if (coord) {
-      html += '<span style="font-size:0.75rem;color:var(--color-text-light);">Supply Coordinator: <strong>' + escapeAttr(coord) + '</strong></span>';
+      html += '<span class="sc-coord">Supply Coordinator: <strong>' + escapeAttr(coord) + '</strong></span>';
     }
     html += '</div>';
 
@@ -2883,24 +2982,37 @@
     document.body.style.overflow = 'hidden';
 
     wireSupplyClosetEvents();
+
+    // Restore focus to search input after re-render if it was focused
+    if (state.searchFocused) {
+      var si = personDetailCard.querySelector('#sc-search-input');
+      if (si) {
+        si.focus();
+        var v = si.value;
+        si.setSelectionRange(v.length, v.length);
+      }
+    }
   }
 
   function renderReadRow(item) {
     var canEdit = supplyClosetState.canEdit;
-    var html = '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0.75rem;border-bottom:1px solid var(--color-border,#f0f0f0);">';
-    html += '<div style="flex:1;min-width:0;">';
-    html += '<div style="font-size:0.9rem;">' + escapeAttr(item.item_name) + '</div>';
-    if (item.location) {
-      html += '<div style="font-size:0.75rem;color:var(--color-text-light);">' + escapeAttr(item.location) + '</div>';
-    }
-    if (item.notes) {
-      html += '<div style="font-size:0.7rem;color:var(--color-text-light);font-style:italic;">' + escapeAttr(item.notes) + '</div>';
+    var cat = supplyCategoryMeta(item.category);
+    var badgeStyle = cat ? 'background:' + cat.color + ';' : '';
+    var badgeLabel = cat ? cat.short : item.category;
+
+    var html = '<div class="sc-row">';
+    html += '<div>';
+    html += '<div class="sc-name">' + escapeAttr(item.item_name) + '</div>';
+    if (item.location) html += '<div class="sc-loc">' + escapeAttr(item.location) + '</div>';
+    if (item.notes) html += '<div class="sc-notes">' + escapeAttr(item.notes) + '</div>';
+    html += '</div>';
+    html += '<span class="sc-badge" style="' + badgeStyle + '">' + escapeAttr(badgeLabel) + '</span>';
+    html += '<div class="sc-actions">';
+    if (canEdit) {
+      html += '<button class="sc-btn sc-edit-btn" data-id="' + item.id + '">Edit</button>';
+      html += '<button class="sc-btn sc-btn-del sc-del-btn" data-id="' + item.id + '">Delete</button>';
     }
     html += '</div>';
-    if (canEdit) {
-      html += '<button class="sc-edit-btn" data-id="' + item.id + '" style="background:transparent;border:1px solid var(--color-border,#ccc);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.75rem;">Edit</button>';
-      html += '<button class="sc-del-btn" data-id="' + item.id + '" style="background:transparent;border:1px solid #d66;color:#d66;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:0.75rem;">Delete</button>';
-    }
     html += '</div>';
     return html;
   }
@@ -2910,41 +3022,75 @@
     var name = isNew ? '' : escapeAttr(item.item_name);
     var loc = isNew ? '' : escapeAttr(item.location);
     var notes = isNew ? '' : escapeAttr(item.notes);
+    var currentCat = isNew ? supplyClosetState.newItemCategory : item.category;
     var idAttr = isNew ? 'new' : item.id;
 
-    var html = '<div style="padding:0.75rem;border-bottom:1px solid var(--color-border,#f0f0f0);background:#fafafa;">';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.5rem;">';
-    html += '<input class="sc-in-name" data-id="' + idAttr + '" placeholder="Item name" value="' + name + '" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">';
-    html += '<input class="sc-in-loc" data-id="' + idAttr + '" placeholder="Location" value="' + loc + '" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;">';
+    var html = '<div class="sc-edit-form">';
+    html += '<div class="sc-edit-grid">';
+    html += '<input class="sc-in-name" data-id="' + idAttr + '" placeholder="Item name" value="' + name + '">';
+    html += '<input class="sc-in-loc" data-id="' + idAttr + '" placeholder="Location" value="' + loc + '">';
+    html += '<select class="sc-in-cat" data-id="' + idAttr + '">';
+    SUPPLY_CATEGORIES.forEach(function (c) {
+      var sel = c.key === currentCat ? ' selected' : '';
+      html += '<option value="' + c.key + '"' + sel + '>' + c.label + '</option>';
+    });
+    html += '</select>';
     html += '</div>';
-    html += '<input class="sc-in-notes" data-id="' + idAttr + '" placeholder="Notes (optional)" value="' + notes + '" style="width:100%;padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;margin-bottom:0.5rem;box-sizing:border-box;">';
-    html += '<div style="display:flex;gap:0.5rem;justify-content:flex-end;">';
-    html += '<button class="sc-cancel-btn" data-id="' + idAttr + '" style="background:transparent;border:1px solid #ccc;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Cancel</button>';
-    html += '<button class="sc-save-btn" data-id="' + idAttr + '" style="background:var(--color-primary);color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Save</button>';
+    html += '<input class="sc-in-notes sc-edit-notes" data-id="' + idAttr + '" placeholder="Notes (optional)" value="' + notes + '">';
+    html += '<div class="sc-edit-actions">';
+    html += '<button class="sc-btn sc-cancel-btn" data-id="' + idAttr + '">Cancel</button>';
+    html += '<button class="sc-save sc-save-btn" data-id="' + idAttr + '">Save</button>';
     html += '</div>';
     html += '</div>';
     return html;
   }
 
   function wireSupplyClosetEvents() {
-    // Tabs
-    personDetailCard.querySelectorAll('.sc-tab').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        supplyClosetState.activeTab = btn.getAttribute('data-sctab');
-        supplyClosetState.editingId = null;
-        supplyClosetState.addingNew = false;
-        renderSupplyClosetModal();
-      });
-    });
-
-    // Close button
+    // Close button + backdrop
     var closeBtn = personDetailCard.querySelector('.detail-close');
     if (closeBtn) closeBtn.addEventListener('click', closeDetail);
     personDetail.onclick = function (e) {
       if (e.target === personDetail) closeDetail();
     };
 
-    // Add
+    // Search input (debounced re-render while typing)
+    var searchInput = personDetailCard.querySelector('#sc-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', function () {
+        supplyClosetState.searchQuery = searchInput.value;
+        supplyClosetState.searchFocused = true;
+        renderSupplyClosetModal();
+      });
+      searchInput.addEventListener('blur', function () {
+        supplyClosetState.searchFocused = false;
+      });
+    }
+
+    // Sort dropdown
+    var sortSelect = personDetailCard.querySelector('#sc-sort-select');
+    if (sortSelect) {
+      sortSelect.addEventListener('change', function () {
+        supplyClosetState.sortBy = sortSelect.value;
+        renderSupplyClosetModal();
+      });
+    }
+
+    // Category filter chips (toggle)
+    personDetailCard.querySelectorAll('.sc-cat-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var key = chip.getAttribute('data-cat');
+        supplyClosetState.enabledCats[key] = !supplyClosetState.enabledCats[key];
+        // Don't allow all off — re-enable if user toggled the last one
+        var anyOn = false;
+        Object.keys(supplyClosetState.enabledCats).forEach(function (k) {
+          if (supplyClosetState.enabledCats[k]) anyOn = true;
+        });
+        if (!anyOn) supplyClosetState.enabledCats[key] = true;
+        renderSupplyClosetModal();
+      });
+    });
+
+    // Add button
     var addBtn = personDetailCard.querySelector('#sc-add-btn');
     if (addBtn) {
       addBtn.addEventListener('click', function () {
@@ -2979,11 +3125,12 @@
         var nameEl = personDetailCard.querySelector('.sc-in-name[data-id="' + idAttr + '"]');
         var locEl = personDetailCard.querySelector('.sc-in-loc[data-id="' + idAttr + '"]');
         var notesEl = personDetailCard.querySelector('.sc-in-notes[data-id="' + idAttr + '"]');
+        var catEl = personDetailCard.querySelector('.sc-in-cat[data-id="' + idAttr + '"]');
         var payload = {
           item_name: nameEl ? nameEl.value : '',
           location: locEl ? locEl.value : '',
           notes: notesEl ? notesEl.value : '',
-          category: supplyClosetState.activeTab
+          category: catEl ? catEl.value : 'permanent'
         };
         if (!payload.item_name.trim()) { alert('Item name is required.'); return; }
         btn.disabled = true;
@@ -3033,7 +3180,13 @@
   function loadSupplyClosetAndRender() {
     fetchSupplyCloset().then(function (data) {
       if (data.error) { alert('Error loading supply closet: ' + data.error); return; }
-      supplyClosetState.items = data.items;
+      // Flatten the grouped API response into a single array
+      var flat = [];
+      SUPPLY_CATEGORIES.forEach(function (cat) {
+        var rows = (data.items && data.items[cat.key]) || [];
+        rows.forEach(function (r) { flat.push(r); });
+      });
+      supplyClosetState.items = flat;
       renderSupplyClosetModal();
     }).catch(function (err) {
       alert('Could not load supply closet: ' + err.message);
@@ -3042,9 +3195,17 @@
 
   function showSupplyClosetPopup() {
     supplyClosetState.canEdit = computeSupplyClosetCanEdit();
-    supplyClosetState.activeTab = 'permanent';
+    supplyClosetState.searchQuery = '';
+    supplyClosetState.sortBy = 'name';
+    supplyClosetState.enabledCats = {
+      permanent: true,
+      currently_available: true,
+      classroom_cabinet: true,
+      game_closet: true
+    };
     supplyClosetState.editingId = null;
     supplyClosetState.addingNew = false;
+    supplyClosetState.newItemCategory = 'permanent';
     loadSupplyClosetAndRender();
   }
 
