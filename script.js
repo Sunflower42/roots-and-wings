@@ -4363,9 +4363,17 @@
 
     html += '<div class="cl-title-row">';
     html += '<h3>' + escapeAttr(curr.title) + '</h3>';
+    html += '<div class="cl-title-actions">';
     html += '<button class="cl-icon-btn" id="cl-print-btn" aria-label="Print" title="Print">';
     html += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>';
     html += '</button>';
+    html += '<div class="cl-detail-actions cl-detail-actions-top">';
+    html += '<button class="cl-action-btn" id="cl-copy-btn-top" data-id="' + curr.id + '">Copy &amp; Modify</button>';
+    if (canEdit) {
+      html += '<button class="cl-action-btn" id="cl-edit-btn-top" data-id="' + curr.id + '">Edit</button>';
+      html += '<button class="cl-action-btn cl-action-del" id="cl-delete-btn-top" data-id="' + curr.id + '">Delete</button>';
+    }
+    html += '</div>';
     html += '</div>';
     var metaParts = [];
     if (curr.subject) metaParts.push(escapeAttr(curr.subject));
@@ -4523,31 +4531,28 @@
     if (backBtn) {
       backBtn.addEventListener('click', showCurriculumLibrary);
     }
-    var copyBtn = personDetailCard.querySelector('#cl-copy-btn');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', copyAndEditCurriculum);
-    }
+    personDetailCard.querySelectorAll('#cl-copy-btn, #cl-copy-btn-top').forEach(function (b) {
+      b.addEventListener('click', copyAndEditCurriculum);
+    });
     var printBtn = personDetailCard.querySelector('#cl-print-btn');
     if (printBtn) {
       printBtn.addEventListener('click', function () {
         printCurriculumInNewWindow(curriculumState.current);
       });
     }
-    var editBtn = personDetailCard.querySelector('#cl-edit-btn');
-    if (editBtn) {
-      editBtn.addEventListener('click', startEditCurriculum);
-    }
-    var delBtn = personDetailCard.querySelector('#cl-delete-btn');
-    if (delBtn) {
-      delBtn.addEventListener('click', function () {
+    personDetailCard.querySelectorAll('#cl-edit-btn, #cl-edit-btn-top').forEach(function (b) {
+      b.addEventListener('click', startEditCurriculum);
+    });
+    personDetailCard.querySelectorAll('#cl-delete-btn, #cl-delete-btn-top').forEach(function (b) {
+      b.addEventListener('click', function () {
         if (!confirm('Delete this plan? This cannot be undone.')) return;
-        var id = delBtn.getAttribute('data-id');
+        var id = b.getAttribute('data-id');
         curriculumFetch('/api/curriculum?id=' + encodeURIComponent(id), { method: 'DELETE' }).then(function (res) {
           if (!res.ok) { alert('Error: ' + (res.data.error || 'delete failed')); return; }
           showCurriculumLibrary();
         });
       });
-    }
+    });
 
     // ── Editor view wiring ──
     // Debounced autosave on any input change inside the editor
