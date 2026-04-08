@@ -5812,6 +5812,13 @@ button.staff-role:hover {
   white-space: pre-wrap;
 }
 .cl-supply-list { padding-left: 1.25rem; }
+.cl-room-setup {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
 .cl-dyn-remove {
   background: transparent;
   border: 1.5px solid var(--color-border);

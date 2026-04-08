@@ -50,6 +50,7 @@ function normalizeLesson(raw, lessonNumber) {
     lesson_number: lessonNumber,
     title: String(raw.title || '').trim().slice(0, 200),
     overview: String(raw.overview || '').trim().slice(0, 2000),
+    room_setup: String(raw.room_setup || '').trim().slice(0, 2000),
     activity: Array.isArray(raw.activity)
       ? raw.activity.map(s => String(s || '').trim()).filter(Boolean).slice(0, 30)
       : [],
@@ -88,7 +89,7 @@ async function getFullCurriculum(sql, id) {
   if (curr.length === 0) return null;
 
   const lessons = await sql`
-    SELECT id, lesson_number, title, overview, activity, instruction, links
+    SELECT id, lesson_number, title, overview, room_setup, activity, instruction, links
     FROM lessons
     WHERE curriculum_id = ${id}
     ORDER BY lesson_number
@@ -149,8 +150,8 @@ async function createCurriculum(sql, user, body) {
 
   for (const ls of normalizedLessons) {
     const lessonResult = await sql`
-      INSERT INTO lessons (curriculum_id, lesson_number, title, overview, activity, instruction, links)
-      VALUES (${id}, ${ls.lesson_number}, ${ls.title}, ${ls.overview}, ${ls.activity}, ${ls.instruction}, ${JSON.stringify(ls.links)})
+      INSERT INTO lessons (curriculum_id, lesson_number, title, overview, room_setup, activity, instruction, links)
+      VALUES (${id}, ${ls.lesson_number}, ${ls.title}, ${ls.overview}, ${ls.room_setup}, ${ls.activity}, ${ls.instruction}, ${JSON.stringify(ls.links)})
       RETURNING id
     `;
     const lessonId = lessonResult[0].id;
@@ -171,8 +172,8 @@ async function replaceLessons(sql, curriculumId, lessonCount, lessonRows) {
   for (let i = 0; i < lessonCount; i++) {
     const ls = normalizeLesson(lessonRows[i], i + 1);
     const lessonResult = await sql`
-      INSERT INTO lessons (curriculum_id, lesson_number, title, overview, activity, instruction, links)
-      VALUES (${curriculumId}, ${ls.lesson_number}, ${ls.title}, ${ls.overview}, ${ls.activity}, ${ls.instruction}, ${JSON.stringify(ls.links)})
+      INSERT INTO lessons (curriculum_id, lesson_number, title, overview, room_setup, activity, instruction, links)
+      VALUES (${curriculumId}, ${ls.lesson_number}, ${ls.title}, ${ls.overview}, ${ls.room_setup}, ${ls.activity}, ${ls.instruction}, ${JSON.stringify(ls.links)})
       RETURNING id
     `;
     const lessonId = lessonResult[0].id;

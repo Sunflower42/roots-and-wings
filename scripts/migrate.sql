@@ -50,12 +50,16 @@ CREATE TABLE IF NOT EXISTS lessons (
   lesson_number INTEGER NOT NULL CHECK (lesson_number BETWEEN 1 AND 5),
   title TEXT DEFAULT '',
   overview TEXT DEFAULT '',
+  room_setup TEXT DEFAULT '',
   activity TEXT[] DEFAULT '{}',
   instruction TEXT[] DEFAULT '{}',
   links JSONB DEFAULT '[]',
   UNIQUE (curriculum_id, lesson_number)
 );
 CREATE INDEX IF NOT EXISTS lessons_curriculum_idx ON lessons (curriculum_id);
+
+-- Idempotent column add for existing deployments
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS room_setup TEXT DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS curriculum_supplies (
   id SERIAL PRIMARY KEY,

@@ -3357,6 +3357,7 @@
       lesson_number: num,
       title: '',
       overview: '',
+      room_setup: '',
       activity: [''],
       instruction: [''],
       links: [],
@@ -3410,6 +3411,7 @@
           lesson_number: i,
           title: src.title || '',
           overview: src.overview || '',
+          room_setup: src.room_setup || '',
           activity: act,
           instruction: ins,
           links: (src.links || []).map(function (l) { return { label: l.label || '', url: l.url || '' }; }),
@@ -3759,6 +3761,9 @@
     html += '<button class="cl-dyn-add" data-dyn-add="supplies" type="button">+ Add supply</button>';
     html += '</div>';
 
+    // ── Room setup ──
+    html += '<label class="cl-label cl-label-sm">Room setup<textarea class="cl-input cl-textarea" data-field="room_setup" rows="2" placeholder="How to arrange the room before kids arrive (tables, stations, materials laid out, etc.)">' + escapeAttr(lesson.room_setup || '') + '</textarea></label>';
+
     // ── Activity & Instruction (parallel numbered rows) ──
     html += '<div class="cl-dyn-section">';
     html += '<div class="cl-steps-headers">';
@@ -3844,6 +3849,8 @@
       if (titleInput) lesson.title = titleInput.value;
       var overviewInput = lessonEl.querySelector('textarea[data-field="overview"]');
       if (overviewInput) lesson.overview = overviewInput.value;
+      var setupInput = lessonEl.querySelector('textarea[data-field="room_setup"]');
+      if (setupInput) lesson.room_setup = setupInput.value;
 
       // Activity & Instruction (parallel rows by index)
       var stepRows = lessonEl.querySelectorAll('.cl-steps-row');
@@ -4038,6 +4045,11 @@
           html += '<li>' + line + '</li>';
         });
         html += '</ul></div>';
+      }
+
+      // Room setup
+      if (ls.room_setup) {
+        html += '<div class="cl-lesson-section"><strong>Room setup</strong><p class="cl-room-setup">' + escapeAttr(ls.room_setup) + '</p></div>';
       }
 
       // Activity & Instruction as parallel numbered steps
