@@ -3290,7 +3290,6 @@
 
   // Mirrors the co-op's age groups, plus broader buckets and "All ages".
   var AGE_RANGE_OPTIONS = [
-    'All ages',
     'Saplings (3-5)',
     'Sassafras (5-6)',
     'Oaks (7-8)',
@@ -3302,7 +3301,7 @@
     'Mixed: Younger (3-8)',
     'Mixed: Elementary (5-11)',
     'Mixed: Older (8-14)',
-    'Teen (14+)'
+    'All ages'
   ];
 
   var curriculumState = {

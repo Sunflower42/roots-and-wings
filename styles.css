@@ -5062,6 +5062,14 @@ button.staff-role:hover {
 }
 
 /* ==========================================================================
+   Wider modal card when hosting Supply Closet or Curriculum content
+   ========================================================================== */
+.person-detail-card:has(.sc-modal),
+.person-detail-card:has(.cl-modal) {
+  max-width: 880px;
+}
+
+/* ==========================================================================
    Supply Closet Inventory modal
    ========================================================================== */
 .sc-modal {
@@ -5151,8 +5159,6 @@ button.staff-role:hover {
   margin-bottom: 0.5rem;
 }
 .sc-list {
-  max-height: 440px;
-  overflow-y: auto;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-white);
@@ -5385,9 +5391,6 @@ button.staff-role:hover {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 0.75rem;
-  max-height: 480px;
-  overflow-y: auto;
-  padding-right: 0.25rem;
 }
 .cl-empty {
   padding: 2.5rem 1rem;
@@ -5495,9 +5498,6 @@ button.staff-role:hover {
   font-weight: 600;
 }
 .cl-lessons {
-  max-height: 440px;
-  overflow-y: auto;
-  padding-right: 0.25rem;
   margin-bottom: 1rem;
 }
 .cl-lesson {
@@ -5646,6 +5646,13 @@ button.staff-role:hover {
   text-transform: none;
   letter-spacing: normal;
   font-weight: 400;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.cl-editor-row > .cl-label,
+.cl-editor-meta > .cl-label {
+  min-width: 0;
 }
 .cl-input:focus {
   outline: none;
@@ -5657,9 +5664,6 @@ button.staff-role:hover {
   line-height: 1.45;
 }
 .cl-editor-lessons {
-  max-height: 500px;
-  overflow-y: auto;
-  padding-right: 0.25rem;
   margin-bottom: 1rem;
 }
 .cl-lesson-edit {
