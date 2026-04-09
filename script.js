@@ -4026,12 +4026,6 @@
       html += '<option value="student"' + (s.qty_unit === 'student' ? ' selected' : '') + '>per student</option>';
       html += '<option value="class"' + (s.qty_unit === 'class' ? ' selected' : '') + '>per class</option>';
       html += '</select>';
-      html += '<select class="cl-input cl-supply-source" data-sfield="source">';
-      html += '<option value=""' + ((!s.source) ? ' selected' : '') + '>Source…</option>';
-      html += '<option value="supply_closet"' + (s.source === 'supply_closet' ? ' selected' : '') + '>Supply Closet</option>';
-      html += '<option value="buy_find"' + (s.source === 'buy_find' ? ' selected' : '') + '>Buy / Find</option>';
-      html += '<option value="teacher"' + (s.source === 'teacher' ? ' selected' : '') + '>Teacher Provides</option>';
-      html += '</select>';
       html += '<input class="cl-input cl-supply-notes" data-sfield="notes" placeholder="Notes" value="' + escapeAttr(s.notes) + '">';
       html += '<button class="cl-dyn-remove" data-dyn-remove="supplies" data-dyn-idx="' + si + '" type="button" title="Remove">&times;</button>';
       html += '</div>';
@@ -4165,13 +4159,24 @@
       var supplies = [];
       supplyRows.forEach(function (row) {
         var rawName = (row.querySelector('[data-sfield="item_name"]') || {}).value || '';
+        var itemName = capitalizeFirstLetter(rawName);
+        // Auto-link to supply closet by matching item name
+        var closetId = null;
+        if (curriculumState.closetItems && itemName) {
+          var lowerName = itemName.toLowerCase().trim();
+          for (var ci = 0; ci < curriculumState.closetItems.length; ci++) {
+            if ((curriculumState.closetItems[ci].item_name || '').toLowerCase().trim() === lowerName) {
+              closetId = curriculumState.closetItems[ci].id;
+              break;
+            }
+          }
+        }
         supplies.push({
-          item_name: capitalizeFirstLetter(rawName),
+          item_name: itemName,
           qty: (row.querySelector('[data-sfield="qty"]') || {}).value || '',
           qty_unit: (row.querySelector('[data-sfield="qty_unit"]') || {}).value || '',
-          source: (row.querySelector('[data-sfield="source"]') || {}).value || '',
           notes: (row.querySelector('[data-sfield="notes"]') || {}).value || '',
-          closet_item_id: null
+          closet_item_id: closetId
         });
       });
       lesson.supplies = supplies;
@@ -4355,22 +4360,14 @@
     html += '<div class="author">by ' + esc(curr.author_name || curr.author_email) + '</div>';
     if (curr.overview) html += '<div class="overview">' + esc(curr.overview) + '</div>';
 
-    // Master supply list grouped by source
+    // Master supply list grouped by location
     if (rows.length) {
-      var grouped = {};
-      SOURCE_ORDER.forEach(function (k) { grouped[k] = []; });
-      rows.forEach(function (r) {
-        var src = r.source || '';
-        if (!grouped[src]) grouped[src] = [];
-        grouped[src].push(r);
-      });
+      var groups = groupSupplyRowsByLocation(rows);
 
-      html += '<div class="master"><h2>Master Supply List</h2><p class="sub">Everything needed across all lessons — grouped by where to get it.</p>';
-      SOURCE_ORDER.forEach(function (src) {
-        var items = grouped[src];
-        if (!items || items.length === 0) return;
-        html += '<div class="source-group"><div class="source-heading">' + esc(SOURCE_LABELS[src] || src) + '</div><ul>';
-        items.forEach(function (r) {
+      html += '<div class="master"><h2>Master Supply List</h2><p class="sub">Everything needed across all lessons — grouped by where to find it.</p>';
+      groups.forEach(function (g) {
+        html += '<div class="source-group"><div class="source-heading">' + esc(g.heading) + '</div><ul>';
+        g.items.forEach(function (r) {
           var bits = [];
           if (r.qty) bits.push(esc(r.qty));
           if (r.unit === 'student') bits.push('per student');
@@ -4459,13 +4456,7 @@
     }, 300);
   }
 
-  var SOURCE_LABELS = {
-    supply_closet: 'From Supply Closet',
-    buy_find: 'Buy / Find',
-    teacher: 'Teacher Provides',
-    '': 'Other'
-  };
-  var SOURCE_ORDER = ['supply_closet', 'buy_find', 'teacher', ''];
+  var BUY_FIND_KEY = '__buy_find__';
 
   function aggregateSupplyRows(curr) {
     // Aggregate supplies across all lessons. Match case-insensitively and
@@ -4481,15 +4472,16 @@
         if (!name) return;
         var qty = String(s.qty || '').trim();
         var unit = s.qty_unit || '';
-        var source = s.source || '';
         var notes = String(s.notes || '').trim().replace(/\s+/g, ' ');
+        // Location comes from the linked supply closet item
+        var location = s.closet_location || '';
         var sig = norm(name);
         if (keyToRow[sig]) {
           if (keyToRow[sig].lessons.indexOf(ls.lesson_number) === -1) {
             keyToRow[sig].lessons.push(ls.lesson_number);
           }
         } else {
-          var row = { name: name, qty: qty, unit: unit, source: source, notes: notes, lessons: [ls.lesson_number], id: s.id || null };
+          var row = { name: name, qty: qty, unit: unit, location: location, notes: notes, lessons: [ls.lesson_number], id: s.id || null, closet_item_id: s.closet_item_id };
           keyToRow[sig] = row;
           rows.push(row);
         }
@@ -4512,31 +4504,53 @@
     return '<span class="' + (opts && opts.nameClass || 'cl-master-name') + '">' + esc(r.name) + '</span>' + qtyStr + lessonsStr + notesStr;
   }
 
+  function groupSupplyRowsByLocation(rows) {
+    // Group: each unique closet location gets a group, plus "Buy / Find" for non-closet items
+    var locGroups = {};  // location name → array of rows
+    var locOrder = [];   // ordered list of location keys
+    var buyFind = [];
+
+    rows.forEach(function (r) {
+      if (r.closet_item_id && r.location) {
+        if (!locGroups[r.location]) {
+          locGroups[r.location] = [];
+          locOrder.push(r.location);
+        }
+        locGroups[r.location].push(r);
+      } else {
+        buyFind.push(r);
+      }
+    });
+
+    // Sort location groups alphabetically
+    locOrder.sort(function (a, b) { return a.localeCompare(b); });
+
+    var result = [];
+    locOrder.forEach(function (loc) {
+      result.push({ heading: loc, items: locGroups[loc] });
+    });
+    if (buyFind.length) {
+      result.push({ heading: 'Buy / Find', items: buyFind });
+    }
+    return result;
+  }
+
   function renderMasterSupplyList(curr) {
     var rows = aggregateSupplyRows(curr);
     if (rows.length === 0) return '';
 
-    // Group rows by source
-    var grouped = {};
-    SOURCE_ORDER.forEach(function (k) { grouped[k] = []; });
-    rows.forEach(function (r) {
-      var src = r.source || '';
-      if (!grouped[src]) grouped[src] = [];
-      grouped[src].push(r);
-    });
+    var groups = groupSupplyRowsByLocation(rows);
 
     var html = '<div class="cl-master-supplies">';
     html += '<details class="cl-master-details" open>';
     html += '<summary class="cl-master-summary"><span class="cl-master-title">Master Supply List</span> <span class="cl-master-count">' + rows.length + ' item' + (rows.length === 1 ? '' : 's') + '</span></summary>';
-    html += '<p class="cl-master-sub">Everything needed across all lessons — grouped by where to get it.</p>';
+    html += '<p class="cl-master-sub">Everything needed across all lessons — grouped by where to find it.</p>';
 
-    SOURCE_ORDER.forEach(function (src) {
-      var items = grouped[src];
-      if (!items || items.length === 0) return;
+    groups.forEach(function (g) {
       html += '<div class="cl-source-group">';
-      html += '<h4 class="cl-source-heading">' + escapeAttr(SOURCE_LABELS[src] || src) + '</h4>';
+      html += '<h4 class="cl-source-heading">' + escapeAttr(g.heading) + '</h4>';
       html += '<ul class="cl-master-list">';
-      items.forEach(function (r) {
+      g.items.forEach(function (r) {
         html += '<li class="cl-master-item">' + renderSupplyItem(r) + '</li>';
       });
       html += '</ul></div>';
@@ -4619,7 +4633,7 @@
           if (s.qty_unit === 'student') qtyParts.push('per student');
           else if (s.qty_unit === 'class') qtyParts.push('per class');
           if (qtyParts.length) line += ' <span class="cl-qty">(' + qtyParts.join(' ') + ')</span>';
-          if (s.source) line += ' <span class="cl-source-badge cl-source-' + s.source + '">' + escapeAttr(SOURCE_LABELS[s.source] || s.source) + '</span>';
+          if (s.closet_location) line += ' <span class="cl-source-badge cl-source-closet">' + escapeAttr(s.closet_location) + '</span>';
           if (s.notes) line += ' <span class="cl-notes">&mdash; ' + linkify(s.notes) + '</span>';
           html += '<li>' + line + '</li>';
         });
@@ -4667,92 +4681,6 @@
     html += '</div>';
 
     return html;
-  }
-
-  function showManageSourcesPanel(curr) {
-    if (!curr) return;
-
-    // Collect all supplies with their IDs
-    var allSupplies = [];
-    (curr.lessons || []).forEach(function (ls) {
-      (ls.supplies || []).forEach(function (s) {
-        if (s.item_name) {
-          allSupplies.push({
-            id: s.id,
-            item_name: s.item_name,
-            qty: s.qty,
-            qty_unit: s.qty_unit,
-            source: s.source || '',
-            lesson_number: ls.lesson_number
-          });
-        }
-      });
-    });
-    if (allSupplies.length === 0) return;
-
-    var html = '<div class="cl-detail-header">';
-    html += '<button class="cl-back" id="cl-sources-back-btn">&larr; Back to Plan</button>';
-    html += '</div>';
-    html += '<h3>Manage Supply Sources</h3>';
-    html += '<p class="cl-master-sub">Set where each supply comes from for <strong>' + escapeAttr(curr.title) + '</strong>.</p>';
-    html += '<div class="cl-sources-table">';
-    html += '<div class="cl-sources-header"><span class="cl-sources-col-name">Item</span><span class="cl-sources-col-lesson">Lesson</span><span class="cl-sources-col-source">Source</span></div>';
-    allSupplies.forEach(function (s, i) {
-      html += '<div class="cl-sources-row" data-supply-id="' + s.id + '">';
-      html += '<span class="cl-sources-col-name">' + escapeAttr(s.item_name) + '</span>';
-      html += '<span class="cl-sources-col-lesson">L' + s.lesson_number + '</span>';
-      html += '<select class="cl-input cl-sources-select" data-idx="' + i + '">';
-      html += '<option value=""' + (!s.source ? ' selected' : '') + '>—</option>';
-      html += '<option value="supply_closet"' + (s.source === 'supply_closet' ? ' selected' : '') + '>Supply Closet</option>';
-      html += '<option value="buy_find"' + (s.source === 'buy_find' ? ' selected' : '') + '>Buy / Find</option>';
-      html += '<option value="teacher"' + (s.source === 'teacher' ? ' selected' : '') + '>Teacher Provides</option>';
-      html += '</select>';
-      html += '</div>';
-    });
-    html += '</div>';
-    html += '<div class="cl-detail-actions" style="margin-top:1rem;">';
-    html += '<button class="cl-action-btn cl-sources-save-btn" id="cl-sources-save-btn">Save Sources</button>';
-    html += '</div>';
-
-    var body = personDetailCard.querySelector('.detail-body');
-    body.innerHTML = html;
-
-    // Wire back button
-    body.querySelector('#cl-sources-back-btn').addEventListener('click', function () {
-      body.innerHTML = renderCurriculumDetailBody();
-      wireCurriculumEvents();
-    });
-
-    // Wire save button
-    body.querySelector('#cl-sources-save-btn').addEventListener('click', function () {
-      var sources = [];
-      body.querySelectorAll('.cl-sources-row').forEach(function (row, i) {
-        var supplyId = parseInt(row.getAttribute('data-supply-id'), 10);
-        var sel = row.querySelector('.cl-sources-select');
-        if (supplyId && sel) {
-          sources.push({ supply_id: supplyId, source: sel.value });
-        }
-      });
-
-      var saveBtn = body.querySelector('#cl-sources-save-btn');
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
-
-      curriculumFetch('/api/curriculum?id=' + encodeURIComponent(curr.id) + '&action=update_sources', {
-        method: 'PATCH',
-        body: JSON.stringify({ sources: sources })
-      }).then(function (res) {
-        if (!res.ok) {
-          alert('Error: ' + (res.data.error || 'save failed'));
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Save Sources';
-          return;
-        }
-        curriculumState.current = res.data.curriculum;
-        body.innerHTML = renderCurriculumDetailBody();
-        wireCurriculumEvents();
-      });
-    });
   }
 
   function wireCurriculumEvents() {
@@ -4921,7 +4849,7 @@
         var idx = parseInt(lessonEl.getAttribute('data-lesson-idx'), 10);
         var lesson = curriculumState.draft.lessons[idx];
         if (field === 'supplies') {
-          lesson.supplies.push({ item_name: '', qty: '', qty_unit: '', source: '', notes: '', closet_item_id: null });
+          lesson.supplies.push({ item_name: '', qty: '', qty_unit: '', notes: '', closet_item_id: null });
         } else if (field === 'links') {
           lesson.links.push({ label: '', url: '' });
         } else if (field === 'step-pair') {
@@ -4953,7 +4881,6 @@
             item_name: s.item_name,
             qty: s.qty,
             qty_unit: s.qty_unit,
-            source: s.source || '',
             notes: s.notes,
             closet_item_id: s.closet_item_id || null
           });
