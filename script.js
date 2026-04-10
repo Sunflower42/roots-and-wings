@@ -2178,6 +2178,8 @@
         html += '</div>';
       });
     }
+    // Coverage notes area (populated after absences load)
+    html += '<div id="coverageNotesArea" class="coverage-notes-area"></div>';
     // "I'll Be Out" button — store hasCleaning for the modal
     html += '<button class="btn btn-absence" id="reportAbsenceBtn" data-has-cleaning="' + (hasCleaning ? '1' : '0') + '">I\'ll Be Out</button>';
     html += '</div>';
@@ -5584,7 +5586,11 @@
     .catch(function () { var el = document.getElementById('coverageBoardContent'); if (el) el.innerHTML = '<p>Could not load coverage data.</p>'; });
   }
 
+  // Store loaded absences so responsibilities card can reference them
+  var loadedAbsences = [];
+
   function renderCoverageBoard(absences) {
+    loadedAbsences = absences;
     var el = document.getElementById('coverageBoardContent');
     var card = document.getElementById('coverageBoardCard');
     if (!el) return;
@@ -5604,13 +5610,11 @@
       byDate[dateKey].push(a);
     });
 
-    // Get all Tuesdays in session for tabs
     var tuesdays = getTuesdaysInSession(currentSession);
-    // Only show tabs for dates that have absences
     var activeDates = tuesdays.filter(function (d) { return byDate[d] && byDate[d].length > 0; });
     if (activeDates.length === 0) { if (card) card.style.display = 'none'; return; }
 
-    // Find the best default tab — first date with open slots, or first date
+    // Find default tab — first date with open slots
     var defaultDate = activeDates[0];
     for (var i = 0; i < activeDates.length; i++) {
       var hasOpen = false;
@@ -5632,23 +5636,57 @@
     });
     html += '</div>';
 
-    // Build panels
+    // Build panels — primary view: open slots only, detail view: all coverage
     activeDates.forEach(function (date) {
       var dateAbsences = byDate[date] || [];
       var isActive = date === defaultDate;
-      html += '<div class="coverage-panel' + (isActive ? ' active' : '') + '" data-cov-panel="' + date + '">';
+
+      // Collect open and covered slots
+      var openSlots = [];
+      var allSlotsByPerson = [];
       dateAbsences.forEach(function (a) {
-        html += '<div class="coverage-absence"><div class="coverage-person"><strong>' + a.absent_person + '</strong> <span class="coverage-person-note">is out' + (a.notes ? ' \u2014 ' + a.notes : '') + '</span></div>';
+        var personSlots = { person: a.absent_person, notes: a.notes, slots: [] };
         (a.slots || []).forEach(function (slot) {
+          slot._person = a.absent_person;
+          if (!slot.claimed_by_email) openSlots.push(slot);
+          personSlots.slots.push(slot);
+        });
+        allSlotsByPerson.push(personSlots);
+      });
+
+      html += '<div class="coverage-panel' + (isActive ? ' active' : '') + '" data-cov-panel="' + date + '">';
+
+      // ── Primary: open slots needing coverage ──
+      if (openSlots.length > 0) {
+        html += '<div class="coverage-open-section">';
+        html += '<div class="coverage-section-label">Needs Coverage</div>';
+        openSlots.forEach(function (slot) {
+          html += '<div class="coverage-slot coverage-slot-open">';
+          html += '<span class="coverage-slot-block">' + slot.block + '</span>';
+          html += '<span class="coverage-slot-desc">' + slot.role_description + ' <span class="coverage-slot-for">(' + slot._person + ')</span></span>';
+          html += '<button class="btn btn-sm btn-cover" data-slot-id="' + slot.id + '">I\'ll Cover This</button>';
+          html += '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="coverage-all-covered">All slots covered for this day!</div>';
+      }
+
+      // ── Secondary: full detail (collapsed by default) ──
+      html += '<details class="coverage-details">';
+      html += '<summary class="coverage-details-toggle">See all absences &amp; coverage (' + dateAbsences.length + ' out)</summary>';
+      allSlotsByPerson.forEach(function (p) {
+        html += '<div class="coverage-absence"><div class="coverage-person"><strong>' + p.person + '</strong> <span class="coverage-person-note">is out' + (p.notes ? ' \u2014 ' + p.notes : '') + '</span></div>';
+        p.slots.forEach(function (slot) {
           var isClaimed = !!slot.claimed_by_email;
           html += '<div class="coverage-slot ' + (isClaimed ? 'coverage-slot-covered' : 'coverage-slot-open') + '">';
           html += '<span class="coverage-slot-block">' + slot.block + '</span><span class="coverage-slot-desc">' + slot.role_description + '</span>';
-          html += isClaimed ? '<span class="coverage-slot-claimer">Covered by ' + (slot.claimed_by_name || slot.claimed_by_email) + '</span>' : '<button class="btn btn-sm btn-cover" data-slot-id="' + slot.id + '">I\'ll Cover This</button>';
+          html += isClaimed ? '<span class="coverage-slot-claimer">Covered by ' + (slot.claimed_by_name || slot.claimed_by_email) + '</span>' : '<span class="coverage-slot-uncovered">Uncovered</span>';
           html += '</div>';
         });
         html += '</div>';
       });
-      if (dateAbsences.length === 0) html += '<p class="coverage-empty">No absences this day.</p>';
+      html += '</details>';
       html += '</div>';
     });
 
@@ -5677,6 +5715,64 @@
         .then(function (res) { if (!res.ok) { alert('Error: ' + (res.data.error || 'claim failed')); btn.disabled = false; btn.textContent = 'I\'ll Cover This'; return; } loadCoverageBoard(); loadNotifications(); });
       });
     });
+
+    // Update responsibility coverage notes
+    updateCoverageNotes();
+  }
+
+  // Add coverage notes to the responsibilities card
+  // If someone in your class/elective is out, show who's covering
+  function updateCoverageNotes() {
+    if (!loadedAbsences || loadedAbsences.length === 0) return;
+    var notesContainer = document.getElementById('coverageNotesArea');
+    if (!notesContainer) return;
+
+    var email = sessionStorage.getItem('rw_user_email');
+    var me = null;
+    for (var i = 0; i < FAMILIES.length; i++) { if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; } }
+    if (!me) return;
+    var parentFullNames = me.parents.split(' & ').map(function (p) { return p.trim() + ' ' + me.name; });
+
+    // Find which classes/electives I teach or assist
+    var myClasses = []; // { groupName, role }
+    Object.keys(AM_CLASSES).forEach(function (groupName) {
+      var sess = (AM_CLASSES[groupName].sessions || {})[currentSession];
+      if (!sess) return;
+      parentFullNames.forEach(function (full) {
+        if (nameMatchAbsence(sess.teacher, full) || (sess.assistants || []).some(function (a) { return nameMatchAbsence(a, full); })) {
+          myClasses.push(groupName);
+        }
+      });
+    });
+    var myElectives = [];
+    (PM_ELECTIVES[currentSession] || []).forEach(function (elec) {
+      parentFullNames.forEach(function (full) {
+        if (nameMatchAbsence(elec.leader, full) || (elec.assistants || []).some(function (a) { return nameMatchAbsence(a, full); })) {
+          myElectives.push(elec.name);
+        }
+      });
+    });
+
+    if (myClasses.length === 0 && myElectives.length === 0) { notesContainer.innerHTML = ''; return; }
+
+    // Check if any absent person has a slot matching my classes/electives
+    var notes = [];
+    loadedAbsences.forEach(function (a) {
+      (a.slots || []).forEach(function (slot) {
+        var match = false;
+        if (myClasses.indexOf(slot.group_or_class) !== -1) match = true;
+        if (myElectives.indexOf(slot.group_or_class) !== -1) match = true;
+        if (!match) return;
+        var dateLabel = formatDateLabel(a.absence_date);
+        if (slot.claimed_by_email) {
+          notes.push('<span class="cov-note cov-note-ok">' + dateLabel + ': ' + a.absent_person + ' is out from ' + slot.group_or_class + ' \u2014 covered by <strong>' + (slot.claimed_by_name || slot.claimed_by_email) + '</strong></span>');
+        } else {
+          notes.push('<span class="cov-note cov-note-open">' + dateLabel + ': ' + a.absent_person + ' is out from ' + slot.group_or_class + ' \u2014 <strong>needs coverage</strong></span>');
+        }
+      });
+    });
+
+    notesContainer.innerHTML = notes.length > 0 ? notes.join('') : '';
   }
 
   var notifState = { notifications: [], unreadCount: 0, dropdownOpen: false };

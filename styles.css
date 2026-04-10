@@ -6681,6 +6681,68 @@ button.staff-role:hover {
   font-style: italic;
   padding: 1rem 0;
 }
+.coverage-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #d97706;
+  margin-bottom: 0.35rem;
+}
+.coverage-open-section {
+  margin-bottom: 0.75rem;
+}
+.coverage-all-covered {
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.75rem 0;
+}
+.coverage-details {
+  border-top: 1px solid var(--color-border);
+  margin-top: 0.25rem;
+}
+.coverage-details-toggle {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  cursor: pointer;
+  padding: 0.5rem 0;
+  font-weight: 600;
+}
+.coverage-details-toggle:hover {
+  color: var(--color-primary);
+}
+.coverage-slot-for {
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+}
+.coverage-slot-uncovered {
+  font-size: 0.72rem;
+  color: #d97706;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Coverage notes in responsibilities card */
+.coverage-notes-area {
+  margin-top: 0.5rem;
+}
+.cov-note {
+  display: block;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.25rem;
+  border-radius: 3px;
+  line-height: 1.4;
+}
+.cov-note-ok {
+  background: rgba(var(--color-primary-rgb), 0.06);
+  color: var(--color-text);
+}
+.cov-note-open {
+  background: #fef3cd;
+  color: #856404;
+}
 .coverage-absence {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid rgba(0,0,0,0.04);
