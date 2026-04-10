@@ -377,6 +377,24 @@ p + p { margin-top: 1rem; }
   background: rgba(var(--color-primary-rgb), 0.1);
 }
 
+/* Lightning bug feedback button */
+.firefly-btn {
+  color: var(--color-text-light);
+  position: relative;
+}
+.firefly-btn svg circle[opacity] {
+  fill: #e8d44d;
+  animation: firefly-glow 3s ease-in-out infinite;
+}
+.firefly-btn:hover {
+  color: #b8860b;
+  background: rgba(232, 212, 77, 0.12);
+}
+@keyframes firefly-glow {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.45; }
+}
+
 .nav-links {
   display: flex;
   align-items: center;
