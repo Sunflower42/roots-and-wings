@@ -5304,9 +5304,35 @@ button.staff-role:hover {
 .sc-add:hover {
   background: var(--color-primary-dark);
 }
+.sc-locations-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+  font-size: 0.75rem;
+}
+.sc-locations-label {
+  font-weight: 600;
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+}
+.sc-loc-chip {
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary-dark);
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.72rem;
+}
+.sc-loc-none {
+  color: var(--color-text-light);
+  font-style: italic;
+  background: transparent;
+}
 .sc-manage-locs-btn {
   white-space: nowrap;
   flex-shrink: 0;
+  margin-left: auto;
 }
 /* Location manager */
 .sc-locs-list {

@@ -2919,9 +2919,6 @@
       html += '<option value="' + o.v + '"' + sel + '>' + o.label + '</option>';
     });
     html += '</select>';
-    if (state.canEdit) {
-      html += '<button class="sc-btn sc-manage-locs-btn" id="sc-manage-locs-btn">Manage Locations</button>';
-    }
     html += '</div>';
 
     // Category filter chips
@@ -2931,6 +2928,20 @@
       var classes = 'sc-cat-chip sc-cat-' + cat.key + (on ? '' : ' sc-off');
       html += '<button class="' + classes + '" data-cat="' + cat.key + '">' + cat.short + '</button>';
     });
+    html += '</div>';
+
+    // Locations row
+    html += '<div class="sc-locations-row">';
+    html += '<span class="sc-locations-label">Locations:</span>';
+    SUPPLY_LOCATIONS.forEach(function (loc) {
+      html += '<span class="sc-loc-chip">' + escapeAttr(loc) + '</span>';
+    });
+    if (SUPPLY_LOCATIONS.length === 0) {
+      html += '<span class="sc-loc-chip sc-loc-none">None yet</span>';
+    }
+    if (state.canEdit) {
+      html += '<button class="sc-btn sc-manage-locs-btn" id="sc-manage-locs-btn">Manage Locations</button>';
+    }
     html += '</div>';
 
     // Count
