@@ -1995,79 +1995,100 @@
     var duties = [];
     var parentFullNames = fam.parents.split(' & ').map(function(p) { return p.trim() + ' ' + fam.name; });
 
-    // Teaching / assisting (morning classes)
-    var groups = Object.keys(AM_CLASSES);
-    groups.forEach(function (groupName) {
-      var staff = AM_CLASSES[groupName];
-      var sess = staff.sessions[currentSession];
-      if (!sess) return;
-
-      // Liaison
-      parentFullNames.forEach(function (full) {
-        if (nameMatch(staff.liaison, full)) {
-          duties.push({icon: 'star', text: groupWithAge(groupName) + ' Class Liaison', detail: 'Year-long role', popup: {type: 'amClass', group: groupName, session: currentSession}});
-        }
-        if (nameMatch(sess.teacher, full)) {
-          duties.push({icon: 'teach', text: 'Leading ' + groupWithAge(groupName), detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
-        }
-        sess.assistants.forEach(function (a) {
-          if (nameMatch(a, full)) {
-            duties.push({icon: 'assist', text: 'Assisting ' + groupWithAge(groupName), detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
-          }
-        });
-      });
-    });
-
-    // Teaching/assisting afternoon electives
-    var sessElectives = PM_ELECTIVES[currentSession] || [];
-    sessElectives.forEach(function (elec) {
-      parentFullNames.forEach(function (full) {
-        if (nameMatch(elec.leader, full)) {
-          duties.push({icon: 'teach', text: 'Leading ' + elec.name, detail: electiveTime(elec.hour) + ' \u00b7 Afternoon elective', popup: {type: 'elective', name: elec.name}});
-        }
-        if (elec.assistants) {
-          elec.assistants.forEach(function(a) {
-            if (nameMatch(a, full)) {
-              duties.push({icon: 'assist', text: 'Assisting ' + elec.name, detail: electiveTime(elec.hour) + ' \u00b7 Afternoon elective', popup: {type: 'elective', name: elec.name}});
-            }
-          });
-        }
-      });
-    });
-
-    // Board role
-    if (fam.boardRole) {
-      duties.push({icon: 'board', text: fam.boardRole, detail: 'Board of Directors &middot; 2-year term', popup: {type: 'board', role: fam.boardRole}});
-    }
-
-    // Volunteer committees (year-long) — fuzzy match to handle live data name variations
     function nameMatch(a, b) {
       if (!a || !b) return false;
       return a.trim().toLowerCase() === b.trim().toLowerCase();
     }
-    VOLUNTEER_COMMITTEES.forEach(function (committee) {
-      if (committee.chair && committee.chair.person) {
-        // Skip if this chair role is already listed as a board role
-        // Handle abbreviated titles (e.g., "Communications Dir." vs "Communications Director")
-        var chairTitle = committee.chair.title.replace(/\bDir\.\s*$/, 'Director');
-        if (!fam.boardRole || !nameMatch(chairTitle, fam.boardRole)) {
-          parentFullNames.forEach(function (full) {
-            if (nameMatch(committee.chair.person, full)) {
-              duties.push({icon: 'volunteer', text: committee.chair.title + ' (' + committee.name + ')', detail: 'Board &middot; Year-long', popup: {type: 'committee', name: committee.name}});
-            }
-          });
+
+    // ── AM duties ──
+    Object.keys(AM_CLASSES).forEach(function (groupName) {
+      var staff = AM_CLASSES[groupName];
+      var sess = staff.sessions[currentSession];
+      if (!sess) return;
+      parentFullNames.forEach(function (full) {
+        if (nameMatch(staff.liaison, full)) {
+          duties.push({block: 'annual', icon: 'star', text: groupWithAge(groupName) + ' Class Liaison', detail: 'Year-long role', popup: {type: 'amClass', group: groupName, session: currentSession}});
         }
-      }
-      committee.roles.forEach(function (r) {
-        parentFullNames.forEach(function (full) {
-          if (nameMatch(r.person, full)) {
-            duties.push({icon: 'volunteer', text: r.title, detail: committee.name + ' &middot; Year-long', popup: {type: 'committee', name: committee.name}});
+        if (nameMatch(sess.teacher, full)) {
+          duties.push({block: 'AM', icon: 'teach', text: 'Leading ' + groupWithAge(groupName), detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
+        }
+        sess.assistants.forEach(function (a) {
+          if (nameMatch(a, full)) {
+            duties.push({block: 'AM', icon: 'assist', text: 'Assisting ' + groupWithAge(groupName), detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
           }
         });
       });
     });
 
-    // Cleaning crew — match by family last name or any parent full name
+    // AM support roles (floater, prep, board duties)
+    var amSupport = AM_SUPPORT_ROLES[currentSession];
+    if (amSupport) {
+      ['10-11', '11-12'].forEach(function (slot) {
+        if (amSupport.floaters && amSupport.floaters[slot]) {
+          amSupport.floaters[slot].forEach(function (name) {
+            parentFullNames.forEach(function (full) {
+              if (nameMatch(name, full)) duties.push({block: 'AM', icon: 'assist', text: 'Floater ' + slot, detail: 'Available to cover classes', popup: null});
+            });
+          });
+        }
+        if (amSupport.prepPeriod && amSupport.prepPeriod[slot]) {
+          amSupport.prepPeriod[slot].forEach(function (name) {
+            parentFullNames.forEach(function (full) {
+              if (nameMatch(name, full)) duties.push({block: 'AM', icon: 'assist', text: 'Prep Period ' + slot, detail: 'Room setup', popup: null});
+            });
+          });
+        }
+        if (amSupport.boardDuties && amSupport.boardDuties[slot]) {
+          amSupport.boardDuties[slot].forEach(function (name) {
+            parentFullNames.forEach(function (full) {
+              if (nameMatch(name, full)) duties.push({block: 'AM', icon: 'board', text: 'Board Duties ' + slot, detail: 'Board work time', popup: null});
+            });
+          });
+        }
+      });
+    }
+
+    // ── PM duties ──
+    var sessElectives = PM_ELECTIVES[currentSession] || [];
+    sessElectives.forEach(function (elec) {
+      var isPM1 = elec.hour === 1 || elec.hour === 'both';
+      var isPM2 = elec.hour === 2 || elec.hour === 'both';
+      parentFullNames.forEach(function (full) {
+        if (nameMatch(elec.leader, full)) {
+          if (isPM1) duties.push({block: 'PM1', icon: 'teach', text: 'Leading ' + elec.name, detail: '1:00\u20131:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+          if (isPM2) duties.push({block: 'PM2', icon: 'teach', text: 'Leading ' + elec.name, detail: '2:00\u20132:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+        }
+        if (elec.assistants) elec.assistants.forEach(function(a) {
+          if (nameMatch(a, full)) {
+            if (isPM1) duties.push({block: 'PM1', icon: 'assist', text: 'Assisting ' + elec.name, detail: '1:00\u20131:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+            if (isPM2) duties.push({block: 'PM2', icon: 'assist', text: 'Assisting ' + elec.name, detail: '2:00\u20132:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+          }
+        });
+      });
+    });
+
+    // PM support roles
+    var pmSupport = PM_SUPPORT_ROLES[currentSession];
+    if (pmSupport) {
+      if (pmSupport.floaters) pmSupport.floaters.forEach(function (name) {
+        parentFullNames.forEach(function (full) {
+          if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'assist', text: 'PM Floater', detail: 'Available to cover classes', popup: null});
+        });
+      });
+      if (pmSupport.boardDuties) pmSupport.boardDuties.forEach(function (name) {
+        parentFullNames.forEach(function (full) {
+          if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'board', text: 'PM Board Duties', detail: 'Board work time', popup: null});
+        });
+      });
+      if (pmSupport.supplyCloset) pmSupport.supplyCloset.forEach(function (name) {
+        parentFullNames.forEach(function (full) {
+          if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'assist', text: 'Supply Closet', detail: 'Manage supplies', popup: null});
+        });
+      });
+    }
+
+    // ── Cleaning ──
+    var hasCleaning = false;
     var sessClean = CLEANING_CREW.sessions[currentSession];
     if (sessClean) {
       var cleanAreas = ['mainFloor', 'upstairs', 'outside'];
@@ -2081,42 +2102,77 @@
       }
       cleanAreas.forEach(function (floor) {
         if (!sessClean[floor]) return;
-        var areas = Object.keys(sessClean[floor]);
-        areas.forEach(function (area) {
+        Object.keys(sessClean[floor]).forEach(function (area) {
           if (matchesCleaning(sessClean[floor][area])) {
-            duties.push({icon: 'clean', text: 'Cleaning: ' + area, detail: 'Session ' + currentSession, popup: {type: 'cleaning', area: area, floor: floor, session: currentSession}});
+            hasCleaning = true;
+            duties.push({block: 'Cleaning', icon: 'clean', text: 'Cleaning: ' + area, detail: 'Session ' + currentSession, popup: {type: 'cleaning', area: area, floor: floor, session: currentSession}});
           }
         });
       });
       if (sessClean.floater && matchesCleaning(sessClean.floater)) {
-        duties.push({icon: 'clean', text: 'Cleaning Floater', detail: 'Session ' + currentSession, popup: {type: 'cleaning', area: 'Floater', floor: 'floater', session: currentSession}});
+        hasCleaning = true;
+        duties.push({block: 'Cleaning', icon: 'clean', text: 'Cleaning Floater', detail: 'Session ' + currentSession, popup: {type: 'cleaning', area: 'Floater', floor: 'floater', session: currentSession}});
       }
     }
 
-    // Special events
+    // ── Annual roles (board, committees, events) ──
+    if (fam.boardRole) {
+      duties.push({block: 'annual', icon: 'board', text: fam.boardRole, detail: 'Board of Directors &middot; 2-year term', popup: {type: 'board', role: fam.boardRole}});
+    }
+    VOLUNTEER_COMMITTEES.forEach(function (committee) {
+      if (committee.chair && committee.chair.person) {
+        var chairTitle = committee.chair.title.replace(/\bDir\.\s*$/, 'Director');
+        if (!fam.boardRole || !nameMatch(chairTitle, fam.boardRole)) {
+          parentFullNames.forEach(function (full) {
+            if (nameMatch(committee.chair.person, full))
+              duties.push({block: 'annual', icon: 'volunteer', text: committee.chair.title + ' (' + committee.name + ')', detail: 'Board &middot; Year-long', popup: {type: 'committee', name: committee.name}});
+          });
+        }
+      }
+      committee.roles.forEach(function (r) {
+        parentFullNames.forEach(function (full) {
+          if (nameMatch(r.person, full))
+            duties.push({block: 'annual', icon: 'volunteer', text: r.title, detail: committee.name + ' &middot; Year-long', popup: {type: 'committee', name: committee.name}});
+        });
+      });
+    });
     SPECIAL_EVENTS.forEach(function (ev) {
       var isCoord = ev.coordinator && parentFullNames.some(function(full) {
         return ev.coordinator.indexOf(fam.parents.split(' & ')[0].split(' ')[0]) !== -1;
       });
-      var statusClass = ev.status === 'Complete' ? 'mf-status-done' : ev.status === 'Needs Volunteers' ? 'mf-status-open' : 'mf-status-upcoming';
       if (isCoord) {
-        duties.push({icon: 'event', text: ev.name + ' Coordinator', detail: ev.date + ' &middot; <span class="' + statusClass + '">' + ev.status + '</span>', popup: {type: 'event', name: ev.name}});
+        var statusClass = ev.status === 'Complete' ? 'mf-status-done' : ev.status === 'Needs Volunteers' ? 'mf-status-open' : 'mf-status-upcoming';
+        duties.push({block: 'annual', icon: 'event', text: ev.name + ' Coordinator', detail: ev.date + ' &middot; <span class="' + statusClass + '">' + ev.status + '</span>', popup: {type: 'event', name: ev.name}});
       }
     });
+
+    // ── Render by section ──
+    var blockOrder = ['AM', 'PM1', 'PM2'];
+    if (hasCleaning) blockOrder.push('Cleaning');
+    blockOrder.push('annual');
+
+    var blockLabels = { AM: 'AM (10:00\u201312:00)', PM1: 'PM Hour 1 (1:00\u20131:55)', PM2: 'PM Hour 2 (2:00\u20132:55)', Cleaning: 'Cleaning', annual: 'Annual Roles' };
 
     if (duties.length === 0) {
       html += '<p class="mf-empty">No assignments found for this session.</p>';
     } else {
-      duties.forEach(function (d, di) {
-        html += '<div class="mf-duty mf-duty-clickable" data-duty-idx="' + di + '" style="cursor:pointer;">';
-        html += '<div class="mf-duty-icon">' + (DUTY_ICONS[d.icon] || '') + '</div>';
-        html += '<div class="mf-duty-info"><strong>' + d.text + '</strong><span>' + d.detail + '</span></div>';
-        html += '<div class="mf-duty-arrow" style="margin-left:auto;opacity:0.4;font-size:1.1rem;">&rsaquo;</div>';
+      blockOrder.forEach(function (blk) {
+        var blockDuties = duties.filter(function (d) { return d.block === blk; });
+        if (blockDuties.length === 0) return;
+        html += '<div class="mf-block-section"><div class="mf-block-label">' + blockLabels[blk] + '</div>';
+        blockDuties.forEach(function (d, di) {
+          var globalIdx = duties.indexOf(d);
+          html += '<div class="mf-duty' + (d.popup ? ' mf-duty-clickable' : '') + '" data-duty-idx="' + globalIdx + '"' + (d.popup ? ' style="cursor:pointer;"' : '') + '>';
+          html += '<div class="mf-duty-icon">' + (DUTY_ICONS[d.icon] || '') + '</div>';
+          html += '<div class="mf-duty-info"><strong>' + d.text + '</strong><span>' + d.detail + '</span></div>';
+          if (d.popup) html += '<div class="mf-duty-arrow" style="margin-left:auto;opacity:0.4;font-size:1.1rem;">&rsaquo;</div>';
+          html += '</div>';
+        });
         html += '</div>';
       });
     }
-    // "I'll Be Out" button
-    html += '<button class="btn btn-absence" id="reportAbsenceBtn">I\'ll Be Out</button>';
+    // "I'll Be Out" button — store hasCleaning for the modal
+    html += '<button class="btn btn-absence" id="reportAbsenceBtn" data-has-cleaning="' + (hasCleaning ? '1' : '0') + '">I\'ll Be Out</button>';
     html += '</div>';
 
     // ──── Billing card ────
@@ -5410,6 +5466,10 @@
     var tuesdays = getTuesdaysInSession(currentSession);
     if (tuesdays.length === 0) { alert('No session dates available.'); return; }
 
+    // Check if this person has cleaning duties
+    var absBtn = document.getElementById('reportAbsenceBtn');
+    var hasCleaning = absBtn && absBtn.getAttribute('data-has-cleaning') === '1';
+
     var parentNames = me.parents.split(' & ').map(function (p) { return p.trim() + ' ' + me.name; });
     var html = '<div class="absence-overlay" id="absenceOverlay"><div class="absence-modal">';
     html += '<button class="detail-close absence-close" id="absenceCloseBtn">&times;</button>';
@@ -5425,7 +5485,9 @@
     html += '<label class="absence-block-label"><input type="checkbox" class="absence-block-cb" value="AM" checked> AM (10:00\u201312:00)</label>';
     html += '<label class="absence-block-label"><input type="checkbox" class="absence-block-cb" value="PM1" checked> PM1 (1:00\u20131:55)</label>';
     html += '<label class="absence-block-label"><input type="checkbox" class="absence-block-cb" value="PM2" checked> PM2 (2:00\u20132:55)</label>';
-    html += '<label class="absence-block-label"><input type="checkbox" class="absence-block-cb" value="Cleaning" checked> Cleaning</label>';
+    if (hasCleaning) {
+      html += '<label class="absence-block-label"><input type="checkbox" class="absence-block-cb" value="Cleaning" checked> Cleaning</label>';
+    }
     html += '</div></div>';
     html += '<div class="absence-field"><label>Responsibilities needing coverage:</label><div class="absence-preview" id="absencePreview"></div></div>';
     html += '<div class="absence-field"><label>Notes (optional)</label><input class="cl-input" id="absenceNotes" placeholder="e.g. sick kids, appointment..."></div>';

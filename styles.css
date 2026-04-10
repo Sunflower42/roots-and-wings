@@ -6468,6 +6468,24 @@ button.staff-role:hover {
   margin-left: auto;
 }
 
+/* Responsibility block sections */
+.mf-block-section {
+  margin-bottom: 0.6rem;
+}
+.mf-block-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-light);
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0.25rem;
+}
+.mf-block-section:last-child {
+  margin-bottom: 0;
+}
+
 /* "I'll Be Out" button */
 .btn-absence {
   display: block;
