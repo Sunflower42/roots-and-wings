@@ -6257,8 +6257,7 @@
         var maxSteps = Math.max(actArr.length, insArr.length);
         if (maxSteps > 0) {
           html += '<div class="section" style="margin-top:10pt;"><div class="steps">';
-          html += '<div class="header" style="grid-column:1/-1;font-size:9pt;text-transform:uppercase;letter-spacing:0.05em;border-bottom:none;padding-bottom:2pt;">Steps</div>';
-          html += '<div class="header"></div><div class="header">Activity</div><div class="header">Leader notes</div>';
+          html += '<div class="header">Steps</div><div class="header">Activity</div><div class="header">Leader notes</div>';
           for (var si = 0; si < maxSteps; si++) {
             var aText = actArr[si] || '';
             var iText = insArr[si] || '';
