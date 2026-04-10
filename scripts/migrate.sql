@@ -85,6 +85,64 @@ CREATE TABLE IF NOT EXISTS supply_locations (
   sort_order INTEGER DEFAULT 0
 );
 
+-- ──────────────────────────────────────────────
+-- Absence & Coverage System
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS absences (
+  id SERIAL PRIMARY KEY,
+  family_email TEXT NOT NULL,
+  family_name TEXT NOT NULL,
+  absent_person TEXT NOT NULL,
+  session_number INTEGER NOT NULL,
+  absence_date DATE NOT NULL,
+  blocks TEXT[] NOT NULL DEFAULT '{}',
+  notes TEXT DEFAULT '',
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  cancelled_at TIMESTAMPTZ,
+  UNIQUE (absent_person, absence_date)
+);
+CREATE INDEX IF NOT EXISTS absences_date_idx ON absences (absence_date);
+CREATE INDEX IF NOT EXISTS absences_session_idx ON absences (session_number);
+
+CREATE TABLE IF NOT EXISTS coverage_slots (
+  id SERIAL PRIMARY KEY,
+  absence_id INTEGER NOT NULL REFERENCES absences(id) ON DELETE CASCADE,
+  block TEXT NOT NULL,
+  role_type TEXT NOT NULL,
+  role_description TEXT NOT NULL,
+  group_or_class TEXT DEFAULT '',
+  claimed_by_email TEXT,
+  claimed_by_name TEXT,
+  claimed_at TIMESTAMPTZ,
+  assigned_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS coverage_slots_absence_idx ON coverage_slots (absence_id);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id SERIAL PRIMARY KEY,
+  recipient_email TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  link_url TEXT DEFAULT '',
+  related_absence_id INTEGER REFERENCES absences(id) ON DELETE SET NULL,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS notifications_recipient_idx ON notifications (recipient_email, is_read);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id SERIAL PRIMARY KEY,
+  user_email TEXT NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS push_sub_email_idx ON push_subscriptions (user_email);
+
 CREATE TABLE IF NOT EXISTS class_curriculum_links (
   id SERIAL PRIMARY KEY,
   session_number INTEGER NOT NULL,

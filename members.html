@@ -12,6 +12,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="R&W Members">
   <link rel="apple-touch-icon" href="logo-new.png">
+  <meta name="vapid-public-key" content="BLKvH-nXiUoXkB43VArPa_4Smlm98Crh_3kvWBup3k0F2-9gQz0UZbzNiKvQqOeJySoVhkAzA2QDg5e5fMjGKwE">
   <title>Members Portal — Roots & Wings Indy</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -80,6 +81,10 @@
           <button class="nav-icon-btn" id="wifiNavBtn" aria-label="WiFi Info" title="WiFi Info" style="background:none;border:none;cursor:pointer;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
           </button>
+          <button class="nav-icon-btn notif-bell-btn" id="notifBellBtn" aria-label="Notifications" title="Notifications" style="background:none;border:none;cursor:pointer;position:relative;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+          </button>
           <a href="mailto:communications@rootsandwingsindy.com?subject=Bug%20Report%20%2F%20Idea" class="nav-icon-btn firefly-btn" aria-label="Report a bug or share an idea" title="Report a bug or share an idea">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <ellipse cx="12" cy="14" rx="4" ry="5"/>
@@ -97,6 +102,7 @@
           <a href="#quick-links" role="menuitem">Resources</a>
           <a href="#directory" role="menuitem">Directory</a>
           <a href="#calendar" role="menuitem">Calendar</a>
+          <a href="#coverage" role="menuitem">Coverage</a>
           <a href="#coordination" role="menuitem">Schedules</a>
           <a href="index.html" role="menuitem">Public Site</a>
           <button class="btn btn-outline-dark btn-sm" id="logoutBtn" type="button">Log Out</button>
@@ -109,6 +115,10 @@
             </a>
             <button class="nav-icon-btn" onclick="document.getElementById('wifiNavBtn').click()" aria-label="WiFi Info" title="WiFi Info" style="background:none;border:none;cursor:pointer;">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            </button>
+            <button class="nav-icon-btn notif-bell-btn" onclick="document.getElementById('notifBellBtn').click()" aria-label="Notifications" title="Notifications" style="background:none;border:none;cursor:pointer;position:relative;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span class="notif-badge notif-badge-mobile" style="display:none;">0</span>
             </button>
             <a href="mailto:communications@rootsandwingsindy.com?subject=Bug%20Report%20%2F%20Idea" class="nav-icon-btn firefly-btn" aria-label="Report a bug or share an idea" title="Report a bug or share an idea">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -141,6 +151,15 @@
     <section class="my-family-section" id="myFamily" style="display:none;">
       <div class="container">
         <div class="my-family-grid" id="myFamilyGrid"></div>
+      </div>
+    </section>
+
+    <!-- ====== Coverage Board ====== -->
+    <section class="portal-coverage" id="coverage" style="display:none;">
+      <div class="container">
+        <h2 class="section-title fade-in">Coverage Board</h2>
+        <p class="coverage-intro">See who needs coverage and volunteer to help.</p>
+        <div id="coverageBoardContent"></div>
       </div>
     </section>
 
