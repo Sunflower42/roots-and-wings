@@ -1933,12 +1933,12 @@
 
     var html = '';
 
-    // ──── Coverage Board (full width, top of dashboard) ────
-    html += '<div class="mf-card mf-card-full" id="coverageBoardCard" style="display:none;">';
-    html += '<h3 class="mf-card-title">Coverage Board</h3>';
+    // ──── Coverage Board (full width, collapsible) ────
+    html += '<details class="mf-card mf-card-full mf-coverage-details" id="coverageBoardCard" style="display:none;" open>';
+    html += '<summary class="mf-card-title mf-coverage-summary">Coverage Board <span class="coverage-summary-badge" id="coverageSummaryBadge"></span></summary>';
     html += '<p class="coverage-intro">See who needs coverage and volunteer to help.</p>';
     html += '<div id="coverageBoardContent"></div>';
-    html += '</div>';
+    html += '</details>';
 
     // ──── Kids' schedule card ────
     html += '<div class="mf-card">';
@@ -2169,9 +2169,16 @@
         html += '<div class="mf-block-section"><div class="mf-block-label">' + blockLabels[blk] + '</div>';
         blockDuties.forEach(function (d, di) {
           var globalIdx = duties.indexOf(d);
+          var classKey = getClassKey(d);
+          var isTeacher = d.icon === 'teach';
           html += '<div class="mf-duty' + (d.popup ? ' mf-duty-clickable' : '') + '" data-duty-idx="' + globalIdx + '"' + (d.popup ? ' style="cursor:pointer;"' : '') + '>';
           html += '<div class="mf-duty-icon">' + (DUTY_ICONS[d.icon] || '') + '</div>';
-          html += '<div class="mf-duty-info"><strong>' + d.text + '</strong><span>' + d.detail + '</span></div>';
+          html += '<div class="mf-duty-info"><strong>' + d.text + '</strong><span>' + d.detail + '</span>';
+          // Lesson plan link area (for teaching/assisting duties with a class)
+          if (classKey && (isTeacher || d.icon === 'assist')) {
+            html += '<div class="mf-duty-link-area" data-class-key="' + classKey + '" data-is-teacher="' + (isTeacher ? '1' : '0') + '"></div>';
+          }
+          html += '</div>';
           if (d.popup) html += '<div class="mf-duty-arrow" style="margin-left:auto;opacity:0.4;font-size:1.1rem;">&rsaquo;</div>';
           html += '</div>';
         });
@@ -4066,6 +4073,21 @@
 
     html += '<label class="cl-label">Tags (comma-separated)<input class="cl-input" id="cl-f-tags" value="' + escapeAttr((d.tags || []).join(', ')) + '" placeholder="art, clay, sculpture"></label>';
 
+    // "For which class?" picker
+    var assignments = (typeof getMyTeachingAssignments === 'function') ? getMyTeachingAssignments() : [];
+    var pendingLink = sessionStorage.getItem('rw_pending_class_link') || '';
+    if (assignments.length > 0 || pendingLink) {
+      html += '<label class="cl-label">For which class? (optional)<select class="cl-input" id="cl-f-class-key">';
+      html += '<option value="">— Not linked to a class —</option>';
+      assignments.forEach(function (a) {
+        var key = a.kind === 'AM' ? a.name : 'PM:' + a.name;
+        var label = a.name + (a.kind === 'PM' ? ' (PM)' : '') + ' \u2014 Session ' + a.sessionNum;
+        var sel = (pendingLink && pendingLink === key) ? ' selected' : '';
+        html += '<option value="' + key + ':' + a.sessionNum + '"' + sel + '>' + label + '</option>';
+      });
+      html += '</select></label>';
+    }
+
     html += '<div class="cl-editor-row">';
     html += '<label class="cl-label">Number of Lessons<select class="cl-input" id="cl-f-lesson-count">';
     for (var i = 1; i <= 5; i++) {
@@ -4334,6 +4356,26 @@
       curriculumState.draft = null;
       curriculumState.editingId = null;
       curriculumState.view = 'detail';
+
+      // Auto-link to class if one was selected
+      var classKeyEl = personDetailCard.querySelector('#cl-f-class-key');
+      var classVal = classKeyEl ? classKeyEl.value : '';
+      var pendingLink = sessionStorage.getItem('rw_pending_class_link');
+      sessionStorage.removeItem('rw_pending_class_link');
+      if (classVal && res.data.curriculum) {
+        var parts = classVal.split(':');
+        var linkSession = parseInt(parts[parts.length - 1], 10);
+        var linkKey = parts.slice(0, -1).join(':');
+        if (linkKey && linkSession) {
+          var cred = sessionStorage.getItem('rw_google_credential');
+          fetch('/api/curriculum?action=link', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_number: linkSession, class_key: linkKey, curriculum_id: res.data.curriculum.id })
+          }).then(function () { if (typeof loadClassLinks === 'function') loadClassLinks(); }).catch(function () {});
+        }
+      }
+
       renderCurriculumModal();
     });
   }
@@ -5610,6 +5652,15 @@
     }
     if (card) card.style.display = '';
 
+    // Count total open slots for the summary badge
+    var totalOpenAll = 0;
+    absences.forEach(function (a) { (a.slots || []).forEach(function (s) { if (!s.claimed_by_email) totalOpenAll++; }); });
+    var summaryBadge = document.getElementById('coverageSummaryBadge');
+    if (summaryBadge) {
+      summaryBadge.textContent = totalOpenAll > 0 ? totalOpenAll + ' open' : 'All covered';
+      summaryBadge.className = 'coverage-summary-badge ' + (totalOpenAll > 0 ? 'coverage-summary-open' : 'coverage-summary-ok');
+    }
+
     var email = sessionStorage.getItem('rw_user_email');
     var me = null;
     for (var i = 0; i < FAMILIES.length; i++) { if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; } }
@@ -5928,10 +5979,159 @@
 
   function urlBase64ToUint8Array(base64String) { var padding = '='.repeat((4 - base64String.length % 4) % 4); var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/'); var rawData = atob(base64); var out = new Uint8Array(rawData.length); for (var i = 0; i < rawData.length; ++i) out[i] = rawData.charCodeAt(i); return out; }
 
+  // ── Class-Curriculum Links ──
+  var classLinks = {}; // class_key → { id, curriculum_id, curriculum_title, ... }
+
+  function loadClassLinks() {
+    var cred = sessionStorage.getItem('rw_google_credential');
+    if (!cred) return;
+    fetch('/api/curriculum?action=links&session=' + currentSession, { headers: { 'Authorization': 'Bearer ' + cred } })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      classLinks = {};
+      (data.links || []).forEach(function (link) {
+        classLinks[link.class_key] = link;
+      });
+      // Re-render responsibilities to show attach/view buttons
+      updateClassLinkButtons();
+    })
+    .catch(function () {});
+  }
+
+  function getClassKey(duty) {
+    if (!duty || !duty.popup) return null;
+    if (duty.popup.type === 'amClass') return duty.popup.group;
+    if (duty.popup.type === 'elective') return 'PM:' + duty.popup.name;
+    return null;
+  }
+
+  function updateClassLinkButtons() {
+    // Update link buttons in the responsibilities card
+    document.querySelectorAll('.mf-duty-link-area').forEach(function (area) {
+      var classKey = area.getAttribute('data-class-key');
+      var isTeacher = area.getAttribute('data-is-teacher') === '1';
+      if (!classKey) return;
+      var link = classLinks[classKey];
+      if (link) {
+        area.innerHTML = '<button class="mf-link-btn mf-link-view" data-curriculum-id="' + link.curriculum_id + '">View Plan: ' + (link.curriculum_title || 'Lesson Plan') + '</button>';
+      } else if (isTeacher) {
+        area.innerHTML = '<button class="mf-link-btn mf-link-attach" data-class-key="' + classKey + '">Attach Lesson Plan</button>';
+      } else {
+        area.innerHTML = '';
+      }
+    });
+    wireClassLinkButtons();
+  }
+
+  function wireClassLinkButtons() {
+    document.querySelectorAll('.mf-link-view').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var currId = parseInt(btn.getAttribute('data-curriculum-id'), 10);
+        if (!currId) return;
+        // Open the curriculum detail
+        var cred = sessionStorage.getItem('rw_google_credential');
+        fetch('/api/curriculum?id=' + currId, { headers: { 'Authorization': 'Bearer ' + cred } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.curriculum) {
+            curriculumState.current = data.curriculum;
+            curriculumState.view = 'detail';
+            renderCurriculumModal();
+          }
+        });
+      });
+    });
+    document.querySelectorAll('.mf-link-attach').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var classKey = btn.getAttribute('data-class-key');
+        showAttachPicker(classKey);
+      });
+    });
+  }
+
+  function showAttachPicker(classKey) {
+    // Load curriculum list if not cached
+    var cred = sessionStorage.getItem('rw_google_credential');
+    fetch('/api/curriculum', { headers: { 'Authorization': 'Bearer ' + cred } })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var curricula = data.curricula || [];
+      var displayKey = classKey.replace('PM:', '') + ' \u2014 Session ' + currentSession;
+
+      var html = '<div class="absence-overlay" id="attachPickerOverlay"><div class="absence-modal">';
+      html += '<button class="detail-close absence-close" id="attachPickerClose">&times;</button>';
+      html += '<h3>Attach Lesson Plan</h3>';
+      html += '<p style="font-size:0.82rem;color:var(--color-text-light);margin-bottom:0.75rem;">Select a lesson plan for <strong>' + displayKey + '</strong></p>';
+      html += '<input class="cl-input" id="attachPickerSearch" placeholder="Search plans..." style="margin-bottom:0.75rem;">';
+      html += '<div id="attachPickerList" class="attach-picker-list">';
+      curricula.forEach(function (c) {
+        html += '<button class="attach-picker-item" data-curriculum-id="' + c.id + '">';
+        html += '<strong>' + c.title + '</strong>';
+        if (c.subject) html += ' <span class="attach-picker-subject">' + c.subject + '</span>';
+        html += '<br><span class="attach-picker-meta">' + c.lesson_count + ' lesson' + (c.lesson_count === 1 ? '' : 's') + ' \u00b7 by ' + (c.author_name || c.author_email) + '</span>';
+        html += '</button>';
+      });
+      if (curricula.length === 0) html += '<p style="color:var(--color-text-light);text-align:center;padding:1rem;">No lesson plans yet.</p>';
+      html += '</div>';
+      html += '<div style="margin-top:0.75rem;text-align:center;">';
+      html += '<button class="btn btn-primary btn-sm" id="attachPickerCreate">Create New Plan</button>';
+      html += '</div>';
+      html += '</div></div>';
+
+      document.body.insertAdjacentHTML('beforeend', html);
+      var overlay = document.getElementById('attachPickerOverlay');
+
+      document.getElementById('attachPickerClose').addEventListener('click', function () { overlay.remove(); });
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+
+      // Search filter
+      document.getElementById('attachPickerSearch').addEventListener('input', function () {
+        var q = this.value.toLowerCase();
+        overlay.querySelectorAll('.attach-picker-item').forEach(function (item) {
+          var text = item.textContent.toLowerCase();
+          item.style.display = text.indexOf(q) !== -1 ? '' : 'none';
+        });
+      });
+
+      // Attach on click
+      overlay.querySelectorAll('.attach-picker-item').forEach(function (item) {
+        item.addEventListener('click', function () {
+          var currId = parseInt(item.getAttribute('data-curriculum-id'), 10);
+          item.disabled = true;
+          fetch('/api/curriculum?action=link', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_number: currentSession, class_key: classKey, curriculum_id: currId })
+          }).then(function (r) { return r.json(); }).then(function (res) {
+            if (res.error) { alert('Error: ' + res.error); item.disabled = false; return; }
+            overlay.remove();
+            loadClassLinks();
+          });
+        });
+      });
+
+      // Create new plan
+      document.getElementById('attachPickerCreate').addEventListener('click', function () {
+        overlay.remove();
+        // Store the class key so the editor can auto-link after save
+        sessionStorage.setItem('rw_pending_class_link', classKey);
+        // Open curriculum library and start new
+        var currBtn = document.getElementById('classIdeasBtn');
+        if (currBtn) currBtn.click();
+        setTimeout(function () {
+          if (typeof startNewCurriculum === 'function') startNewCurriculum();
+        }, 300);
+      });
+    });
+  }
+
   function initAbsenceCoverageSystem() {
     var bellBtn = document.getElementById('notifBellBtn');
     if (bellBtn) { bellBtn.addEventListener('click', function (e) { e.stopPropagation(); if (notifState.dropdownOpen) closeNotifDropdown(); else { notifState.dropdownOpen = true; renderNotifDropdown(); } }); }
     loadCoverageBoard();
+    loadClassLinks();
     loadNotifications();
     setInterval(loadNotifications, 60000);
     initPushSubscription();

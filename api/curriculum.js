@@ -229,6 +229,22 @@ module.exports = async function handler(req, res) {
 
     // ── GET ──
     if (req.method === 'GET') {
+      // Get class-curriculum links for a session
+      if (action === 'links') {
+        const session = parseInt(req.query.session, 10);
+        if (!session) return res.status(400).json({ error: 'session query param required' });
+        const links = await sql`
+          SELECT ccl.id, ccl.session_number, ccl.class_key, ccl.curriculum_id,
+                 ccl.attached_by, ccl.attached_at, c.title AS curriculum_title,
+                 c.subject, c.lesson_count
+          FROM class_curriculum_links ccl
+          JOIN curricula c ON c.id = ccl.curriculum_id
+          WHERE ccl.session_number = ${session}
+          ORDER BY ccl.class_key
+        `;
+        return res.status(200).json({ links });
+      }
+
       if (id) {
         const full = await getFullCurriculum(sql, id);
         if (!full) return res.status(404).json({ error: 'Not found' });
@@ -244,8 +260,27 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ curricula: rows });
     }
 
-    // ── POST create or copy ──
+    // ── POST create, copy, or link ──
     if (req.method === 'POST') {
+      // Link a curriculum to a class
+      if (action === 'link') {
+        const body = req.body || {};
+        const session_number = parseInt(body.session_number, 10);
+        const class_key = String(body.class_key || '').trim();
+        const curriculum_id = parseInt(body.curriculum_id, 10);
+        if (!session_number || !class_key || !curriculum_id) {
+          return res.status(400).json({ error: 'session_number, class_key, and curriculum_id required' });
+        }
+        // Upsert — replace existing link for this class+session
+        await sql`DELETE FROM class_curriculum_links WHERE session_number = ${session_number} AND class_key = ${class_key}`;
+        const inserted = await sql`
+          INSERT INTO class_curriculum_links (session_number, class_key, curriculum_id, attached_by)
+          VALUES (${session_number}, ${class_key}, ${curriculum_id}, ${user.email})
+          RETURNING id, session_number, class_key, curriculum_id, attached_by, attached_at
+        `;
+        return res.status(201).json({ link: inserted[0] });
+      }
+
       if (action === 'copy' && id) {
         const source = await getFullCurriculum(sql, id);
         if (!source) return res.status(404).json({ error: 'Source not found' });
@@ -319,6 +354,12 @@ module.exports = async function handler(req, res) {
 
     // ── DELETE ──
     if (req.method === 'DELETE') {
+      // Unlink a class-curriculum link
+      if (action === 'unlink') {
+        if (!id) return res.status(400).json({ error: 'id query param required' });
+        await sql`DELETE FROM class_curriculum_links WHERE id = ${id}`;
+        return res.status(200).json({ ok: true });
+      }
       if (!id) return res.status(400).json({ error: 'id query param required' });
       const existing = await sql`SELECT id, author_email, edit_policy FROM curricula WHERE id = ${id}`;
       if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
