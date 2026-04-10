@@ -6490,6 +6490,11 @@ button.staff-role:hover {
   color: #fff;
 }
 
+/* Full-width card in My Family grid */
+.mf-card-full {
+  grid-column: 1 / -1;
+}
+
 /* Responsibility block sections */
 .mf-block-section {
   margin-bottom: 0.6rem;

@@ -1933,6 +1933,13 @@
 
     var html = '';
 
+    // ──── Coverage Board (full width, top of dashboard) ────
+    html += '<div class="mf-card mf-card-full" id="coverageBoardCard" style="display:none;">';
+    html += '<h3 class="mf-card-title">Coverage Board</h3>';
+    html += '<p class="coverage-intro">See who needs coverage and volunteer to help.</p>';
+    html += '<div id="coverageBoardContent"></div>';
+    html += '</div>';
+
     // ──── Kids' schedule card ────
     html += '<div class="mf-card">';
     html += '<h3 class="mf-card-title">Kids\' Schedule &mdash; Session ' + currentSession + '</h3>';
@@ -5559,8 +5566,6 @@
         overlay.remove();
         loadCoverageBoard();
         loadNotifications();
-        var coverageSec = document.getElementById('coverage');
-        if (coverageSec) coverageSec.style.display = '';
       });
     });
     updatePreview();
@@ -5577,10 +5582,10 @@
 
   function renderCoverageBoard(absences) {
     var el = document.getElementById('coverageBoardContent');
-    var coverageSec = document.getElementById('coverage');
+    var card = document.getElementById('coverageBoardCard');
     if (!el) return;
-    if (absences.length === 0) { if (coverageSec) coverageSec.style.display = 'none'; return; }
-    if (coverageSec) coverageSec.style.display = '';
+    if (absences.length === 0) { if (card) card.style.display = 'none'; return; }
+    if (card) card.style.display = '';
 
     var email = sessionStorage.getItem('rw_user_email');
     var me = null;
