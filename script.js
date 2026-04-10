@@ -2357,6 +2357,12 @@
       absenceBtn.addEventListener('click', showAbsenceModal);
     }
 
+    // Render my absences if data is already loaded
+    if (loadedAbsences && loadedAbsences.length > 0) {
+      renderMyAbsences();
+      updateCoverageNotes();
+    }
+
     // Wire up PayPal pay buttons (semester fees + deposits)
     function wirePaypalButton(btnId, amount, description, invoiceId, email) {
       var btn = document.getElementById(btnId);
