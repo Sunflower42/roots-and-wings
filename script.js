@@ -4563,8 +4563,7 @@
       var maxSteps = Math.max(actArr.length, insArr.length);
       if (maxSteps > 0) {
         html += '<div class="section" style="margin-top:10pt;"><div class="steps">';
-        html += '<div class="header" style="grid-column:1/-1;font-size:10pt;text-transform:uppercase;letter-spacing:0.05em;border-bottom:none;padding-bottom:4pt;margin-top:4pt;">Steps</div>';
-        html += '<div></div><div class="header">Activity</div><div class="header">Leader notes</div>';
+        html += '<div class="header">Steps</div><div class="header">Activity</div><div class="header">Leader notes</div>';
         for (var i = 0; i < maxSteps; i++) {
           var aText = actArr[i] || '';
           var iText = insArr[i] || '';
@@ -4834,8 +4833,7 @@
       var maxSteps = Math.max(actArr.length, insArr.length);
       if (maxSteps > 0) {
         html += '<div class="cl-lesson-section cl-steps-section"><div class="cl-step-table">';
-        html += '<div class="cl-step-table-title">Steps</div>';
-        html += '<div class="cl-step-table-headers"><span class="cl-dyn-bullet"></span><span class="cl-step-col-label">Activity</span><span class="cl-step-col-label">Leader notes</span></div>';
+        html += '<div class="cl-step-table-headers"><span class="cl-step-col-label" style="min-width:32px;">Steps</span><span class="cl-step-col-label">Activity</span><span class="cl-step-col-label">Leader notes</span></div>';
         for (var s = 0; s < maxSteps; s++) {
           var aText = actArr[s] || '';
           var iText = insArr[s] || '';
