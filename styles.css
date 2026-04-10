@@ -5951,6 +5951,11 @@ button.staff-role:hover {
 }
 
 /* Detail view step table */
+.cl-steps-section {
+  margin-top: 1rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+}
 .cl-step-table-title {
   color: var(--color-primary-dark);
   text-transform: uppercase;
