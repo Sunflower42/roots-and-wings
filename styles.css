@@ -6645,45 +6645,41 @@ button.staff-role:hover {
 }
 
 /* Coverage board */
-.portal-coverage {
-  padding: 2rem 0;
-}
 .coverage-intro {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--color-text-light);
-  margin-bottom: 1rem;
+  margin: 0 0 0.75rem 0;
 }
-.coverage-date-card {
-  background: #fff;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  margin-bottom: 1rem;
-  overflow: hidden;
+.coverage-tab-nav {
+  margin-bottom: 0;
 }
-.coverage-date-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.65rem 1rem;
-  background: rgba(var(--color-primary-rgb), 0.05);
-  border-bottom: 1px solid var(--color-border);
-}
-.coverage-date {
+.coverage-tab-badge {
+  display: inline-block;
+  background: #d97706;
+  color: #fff;
+  font-size: 0.6rem;
   font-weight: 700;
-  font-size: 0.9rem;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 8px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: middle;
 }
-.coverage-open-badge {
-  background: #fef3cd;
-  color: #856404;
-  padding: 0.15rem 0.5rem;
-  border-radius: 3px;
-  font-size: 0.72rem;
-  font-weight: 600;
+.coverage-panel {
+  display: none;
+  padding-top: 0.75rem;
 }
-.coverage-all-good {
-  color: var(--color-primary);
-  font-size: 0.75rem;
-  font-weight: 600;
+.coverage-panel.active {
+  display: block;
+}
+.coverage-empty {
+  color: var(--color-text-light);
+  font-size: 0.82rem;
+  font-style: italic;
+  padding: 1rem 0;
 }
 .coverage-absence {
   padding: 0.75rem 1rem;

@@ -5366,7 +5366,11 @@
   }
 
   function formatDateLabel(isoDate) {
-    return new Date(isoDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    // Handle both 'YYYY-MM-DD' and full ISO timestamps
+    var dateStr = String(isoDate || '').slice(0, 10);
+    var d = new Date(dateStr + 'T12:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   }
 
   function nameMatchAbsence(a, b) {
@@ -5592,17 +5596,47 @@
     for (var i = 0; i < FAMILIES.length; i++) { if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; } }
     var myName = me ? me.parents.split(' & ')[0].trim() + ' ' + me.name : '';
 
+    // Group absences by date
     var byDate = {};
-    absences.forEach(function (a) { if (!byDate[a.absence_date]) byDate[a.absence_date] = []; byDate[a.absence_date].push(a); });
-    var dates = Object.keys(byDate).sort();
-    var html = '';
-    dates.forEach(function (date) {
-      var dateAbsences = byDate[date];
-      var totalOpen = 0;
-      dateAbsences.forEach(function (a) { (a.slots || []).forEach(function (s) { if (!s.claimed_by_email) totalOpen++; }); });
-      html += '<div class="coverage-date-card"><div class="coverage-date-header"><span class="coverage-date">' + formatDateLabel(date) + '</span>';
-      html += totalOpen > 0 ? '<span class="coverage-open-badge">' + totalOpen + ' open</span>' : '<span class="coverage-all-good">All covered!</span>';
-      html += '</div>';
+    absences.forEach(function (a) {
+      var dateKey = String(a.absence_date || '').slice(0, 10);
+      if (!byDate[dateKey]) byDate[dateKey] = [];
+      byDate[dateKey].push(a);
+    });
+
+    // Get all Tuesdays in session for tabs
+    var tuesdays = getTuesdaysInSession(currentSession);
+    // Only show tabs for dates that have absences
+    var activeDates = tuesdays.filter(function (d) { return byDate[d] && byDate[d].length > 0; });
+    if (activeDates.length === 0) { if (card) card.style.display = 'none'; return; }
+
+    // Find the best default tab — first date with open slots, or first date
+    var defaultDate = activeDates[0];
+    for (var i = 0; i < activeDates.length; i++) {
+      var hasOpen = false;
+      (byDate[activeDates[i]] || []).forEach(function (a) { (a.slots || []).forEach(function (s) { if (!s.claimed_by_email) hasOpen = true; }); });
+      if (hasOpen) { defaultDate = activeDates[i]; break; }
+    }
+
+    // Build tabs
+    var html = '<div class="portal-tab-nav coverage-tab-nav">';
+    activeDates.forEach(function (date) {
+      var openCount = 0;
+      (byDate[date] || []).forEach(function (a) { (a.slots || []).forEach(function (s) { if (!s.claimed_by_email) openCount++; }); });
+      var isActive = date === defaultDate;
+      var shortLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      html += '<button class="portal-tab coverage-tab' + (isActive ? ' active' : '') + '" data-cov-date="' + date + '">';
+      html += shortLabel;
+      if (openCount > 0) html += ' <span class="coverage-tab-badge">' + openCount + '</span>';
+      html += '</button>';
+    });
+    html += '</div>';
+
+    // Build panels
+    activeDates.forEach(function (date) {
+      var dateAbsences = byDate[date] || [];
+      var isActive = date === defaultDate;
+      html += '<div class="coverage-panel' + (isActive ? ' active' : '') + '" data-cov-panel="' + date + '">';
       dateAbsences.forEach(function (a) {
         html += '<div class="coverage-absence"><div class="coverage-person"><strong>' + a.absent_person + '</strong> <span class="coverage-person-note">is out' + (a.notes ? ' \u2014 ' + a.notes : '') + '</span></div>';
         (a.slots || []).forEach(function (slot) {
@@ -5614,10 +5648,25 @@
         });
         html += '</div>';
       });
+      if (dateAbsences.length === 0) html += '<p class="coverage-empty">No absences this day.</p>';
       html += '</div>';
     });
+
     el.innerHTML = html;
 
+    // Wire tabs
+    el.querySelectorAll('.coverage-tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var date = tab.getAttribute('data-cov-date');
+        el.querySelectorAll('.coverage-tab').forEach(function (t) { t.classList.remove('active'); });
+        el.querySelectorAll('.coverage-panel').forEach(function (p) { p.classList.remove('active'); });
+        tab.classList.add('active');
+        var panel = el.querySelector('[data-cov-panel="' + date + '"]');
+        if (panel) panel.classList.add('active');
+      });
+    });
+
+    // Wire claim buttons
     el.querySelectorAll('.btn-cover').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var slotId = parseInt(btn.getAttribute('data-slot-id'), 10);
