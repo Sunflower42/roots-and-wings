@@ -217,6 +217,9 @@ async function main() {
 
   // Seed supply_closet
   console.log(`Wiping supply_closet and seeding ${ITEMS.length} items...`);
+  // Clear closet_item_id refs in curriculum_supplies before truncating,
+  // so CASCADE doesn't wipe curriculum supply data
+  await sql`UPDATE curriculum_supplies SET closet_item_id = NULL WHERE closet_item_id IS NOT NULL`;
   await sql`TRUNCATE supply_closet RESTART IDENTITY CASCADE`;
 
   for (let i = 0; i < ITEMS.length; i++) {
