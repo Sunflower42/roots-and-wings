@@ -797,7 +797,8 @@
   };
 
   var PM_SUPPORT_ROLES = {
-    4: { floaters: ['Brittany Coleman', 'Tanya Barnes'], boardDutiesPM1: ['Molly Bellner', 'LeAnn Newlin', 'Tiffany Smith'], boardDutiesPM2: ['Erin Bogan'], supplyCloset: ['Monica Crawford'] }
+    4: { floaters: ['Brittany Coleman', 'Tanya Barnes'], boardDutiesPM1: ['Molly Bellner', 'LeAnn Newlin', 'Tiffany Smith'], boardDutiesPM2: ['Erin Bogan'], supplyCloset: ['Monica Crawford'] },
+    5: { floaters: [], boardDutiesPM1: ['Molly Bellner', 'LeAnn Newlin', 'Tiffany Smith'], boardDutiesPM2: ['Erin Bogan'], supplyCloset: ['Monica Crawford'] }
   };
 
   // ── Cleaning crew assignments (structured by area) ──
