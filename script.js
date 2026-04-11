@@ -243,11 +243,17 @@
           for (var s in data.pmSupportRoles) {
             var incoming = data.pmSupportRoles[s];
             var existing = PM_SUPPORT_ROLES[s] || {};
-            // Merge: prefer live data but keep hardcoded board duty splits if API returns old flat field
-            if (incoming.boardDuties && !incoming.boardDutiesPM1 && !incoming.boardDutiesPM2) {
-              // API returned old flat format — put them all under PM1, keep existing PM2
+            // Keep hardcoded board duty values when live data is empty
+            if (incoming.boardDutiesPM2 && incoming.boardDutiesPM2.length === 0 && existing.boardDutiesPM2 && existing.boardDutiesPM2.length > 0) {
+              incoming.boardDutiesPM2 = existing.boardDutiesPM2;
+            }
+            if (incoming.boardDutiesPM1 && incoming.boardDutiesPM1.length === 0 && existing.boardDutiesPM1 && existing.boardDutiesPM1.length > 0) {
+              incoming.boardDutiesPM1 = existing.boardDutiesPM1;
+            }
+            // Handle old flat boardDuties field from cached API responses
+            if (incoming.boardDuties && !incoming.boardDutiesPM1) {
               incoming.boardDutiesPM1 = incoming.boardDuties;
-              incoming.boardDutiesPM2 = existing.boardDutiesPM2 || [];
+              if (!incoming.boardDutiesPM2) incoming.boardDutiesPM2 = existing.boardDutiesPM2 || [];
               delete incoming.boardDuties;
             }
             PM_SUPPORT_ROLES[s] = incoming;
