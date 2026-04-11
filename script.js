@@ -241,7 +241,16 @@
         // ── PM Support Roles ──
         if (data.pmSupportRoles) {
           for (var s in data.pmSupportRoles) {
-            PM_SUPPORT_ROLES[s] = data.pmSupportRoles[s];
+            var incoming = data.pmSupportRoles[s];
+            var existing = PM_SUPPORT_ROLES[s] || {};
+            // Merge: prefer live data but keep hardcoded board duty splits if API returns old flat field
+            if (incoming.boardDuties && !incoming.boardDutiesPM1 && !incoming.boardDutiesPM2) {
+              // API returned old flat format — put them all under PM1, keep existing PM2
+              incoming.boardDutiesPM1 = incoming.boardDuties;
+              incoming.boardDutiesPM2 = existing.boardDutiesPM2 || [];
+              delete incoming.boardDuties;
+            }
+            PM_SUPPORT_ROLES[s] = incoming;
           }
         }
 
