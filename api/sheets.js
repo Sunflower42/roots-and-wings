@@ -593,7 +593,7 @@ function parsePMElectives(rows) {
   h2Cols.forEach(function(c) { parseElective(c, 2); });
 
   // Parse support roles (floaters, board duties, supply closet)
-  var supportRoles = { floaters: [], boardDuties: [], supplyCloset: [] };
+  var supportRoles = { floaters: [], boardDutiesPM1: [], boardDutiesPM2: [], supplyCloset: [] };
 
   // Floaters are in the column next to "Student Names" label (col 6 for H1, col 19 for H2)
   for (var r = 0; r < rows.length; r++) {
@@ -613,17 +613,18 @@ function parsePMElectives(rows) {
     }
   }
 
-  // Board duties
+  // Board duties — col 6 = PM Hour 1, col 19 = PM Hour 2
   for (var r = 0; r < rows.length; r++) {
     if (cell(rows[r], 6) === 'Board Duties' || cell(rows[r], 19) === 'Board Duties') {
-      var bdCols = [6, 19];
-      for (var bi = 0; bi < bdCols.length; bi++) {
-        if (cell(rows[r], bdCols[bi]) === 'Board Duties') {
+      var bdColMap = [[6, 'boardDutiesPM1'], [19, 'boardDutiesPM2']];
+      for (var bi = 0; bi < bdColMap.length; bi++) {
+        var bdCol = bdColMap[bi][0], bdKey = bdColMap[bi][1];
+        if (cell(rows[r], bdCol) === 'Board Duties') {
           for (var br = r + 1; br < Math.min(r + 5, rows.length); br++) {
-            var bv = cell(rows[br], bdCols[bi]);
+            var bv = cell(rows[br], bdCol);
             if (!bv || bv === '|') continue;
             if (bv.match(/^(Student|Class)/i)) break;
-            supportRoles.boardDuties.push(bv);
+            supportRoles[bdKey].push(bv);
           }
         }
       }

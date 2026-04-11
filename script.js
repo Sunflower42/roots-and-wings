@@ -782,7 +782,7 @@
   };
 
   var PM_SUPPORT_ROLES = {
-    4: { floaters: ['Brittany Coleman', 'Tanya Barnes'], boardDuties: ['Molly Bellner', 'LeAnn Newlin', 'Tiffany Smith'], supplyCloset: ['Monica Crawford'] }
+    4: { floaters: ['Brittany Coleman', 'Tanya Barnes'], boardDutiesPM1: ['Molly Bellner', 'LeAnn Newlin', 'Tiffany Smith'], boardDutiesPM2: ['Erin Bogan'], supplyCloset: ['Monica Crawford'] }
   };
 
   // ── Cleaning crew assignments (structured by area) ──
@@ -1940,65 +1940,9 @@
     html += '<div id="coverageBoardContent"></div>';
     html += '</details>';
 
-    // ──── Kids' schedule card ────
+    // ──── Responsibilities card (first on mobile) ────
     html += '<div class="mf-card">';
-    html += '<h3 class="mf-card-title">Kids\' Schedule &mdash; Session ' + currentSession + '</h3>';
-    fam.kids.forEach(function (kid) {
-      var staff = AM_CLASSES[kid.group];
-      var sess = staff ? staff.sessions[currentSession] : null;
-      var room = sess ? sess.room : '';
-      var teacher = sess ? sess.teacher : 'TBD';
-      var topic = sess ? sess.topic : '';
-      var displayLast = kid.lastName || fam.name;
-      var kidFull = kid.name + ' ' + displayLast;
-
-      // Get afternoon electives
-      var electives = getKidElectives(kidFull);
-
-      html += '<div class="mf-kid">';
-      // Kid header bar
-      html += '<div class="mf-kid-bar">';
-      html += '<div class="mf-kid-photo" style="background:' + faceColor(kid.name) + '"><span>' + kid.name.charAt(0) + '</span></div>';
-      html += '<strong class="mf-kid-name">' + kid.name + '</strong>';
-      html += '<button class="mf-class-link" data-group="' + kid.group + '">View Classmates &rarr;</button>';
-      html += '</div>';
-
-      // Schedule table
-      html += '<div class="mf-schedule">';
-
-      // Morning
-      html += '<div class="mf-sched-row">';
-      html += '<span class="mf-sched-time">AM</span>';
-      html += '<span class="mf-sched-class">' + groupWithAge(kid.group) + (topic ? '<br><em style="font-weight:400;">' + topic + '</em>' : '') + '</span>';
-      html += '<span class="mf-sched-room">' + room + '</span>';
-      html += '<span class="mf-sched-teacher">' + teacher + '</span>';
-      html += '</div>';
-
-      // Afternoon electives
-      if (electives.length > 0) {
-        electives.forEach(function (e) {
-          var label = e.hour === 'both' ? 'PM' : e.hour === 1 ? 'PM 1' : 'PM 2';
-          html += '<div class="mf-sched-row">';
-          html += '<span class="mf-sched-time">' + label + '</span>';
-          html += '<button class="mf-elective-link mf-sched-class" data-elective="' + e.name + '">' + e.name + '</button>';
-          html += '<span class="mf-sched-room">' + e.room + '</span>';
-          html += '<span class="mf-sched-teacher">' + e.leader + '</span>';
-          html += '</div>';
-        });
-      } else {
-        html += '<div class="mf-sched-row mf-sched-empty">';
-        html += '<span class="mf-sched-time">PM</span>';
-        html += '<span class="mf-sched-class mf-empty-text">No electives yet</span>';
-        html += '</div>';
-      }
-
-      html += '</div></div>';
-    });
-    html += '</div>';
-
-    // ──── Responsibilities card ────
-    html += '<div class="mf-card">';
-    html += '<h3 class="mf-card-title">Your Responsibilities</h3>';
+    html += '<h3 class="mf-card-title">My Responsibilities</h3>';
     var duties = [];
     var parentFullNames = fam.parents.split(' & ').map(function(p) { return p.trim() + ' ' + fam.name; });
 
@@ -2017,11 +1961,11 @@
           duties.push({block: 'annual', icon: 'star', text: groupWithAge(groupName) + ' Class Liaison', detail: 'Year-long role', popup: {type: 'amClass', group: groupName, session: currentSession}});
         }
         if (nameMatch(sess.teacher, full)) {
-          duties.push({block: 'AM', icon: 'teach', text: 'Leading ' + groupWithAge(groupName), detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
+          duties.push({block: 'AM', icon: 'teach', text: groupWithAge(groupName) + ' \u2014 Leading', detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
         }
         sess.assistants.forEach(function (a) {
           if (nameMatch(a, full)) {
-            duties.push({block: 'AM', icon: 'assist', text: 'Assisting ' + groupWithAge(groupName), detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
+            duties.push({block: 'AM', icon: 'assist', text: groupWithAge(groupName) + ' \u2014 Assisting', detail: '10:00\u201312:00 \u00b7 ' + (sess.room || ''), popup: {type: 'amClass', group: groupName, session: currentSession}});
           }
         });
       });
@@ -2062,13 +2006,13 @@
       var isPM2 = elec.hour === 2 || elec.hour === 'both';
       parentFullNames.forEach(function (full) {
         if (nameMatch(elec.leader, full)) {
-          if (isPM1) duties.push({block: 'PM1', icon: 'teach', text: 'Leading ' + elec.name, detail: '1:00\u20131:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
-          if (isPM2) duties.push({block: 'PM2', icon: 'teach', text: 'Leading ' + elec.name, detail: '2:00\u20132:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+          if (isPM1) duties.push({block: 'PM1', icon: 'teach', text: elec.name + ' \u2014 Leading', detail: '1:00\u20131:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+          if (isPM2) duties.push({block: 'PM2', icon: 'teach', text: elec.name + ' \u2014 Leading', detail: '2:00\u20132:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
         }
         if (elec.assistants) elec.assistants.forEach(function(a) {
           if (nameMatch(a, full)) {
-            if (isPM1) duties.push({block: 'PM1', icon: 'assist', text: 'Assisting ' + elec.name, detail: '1:00\u20131:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
-            if (isPM2) duties.push({block: 'PM2', icon: 'assist', text: 'Assisting ' + elec.name, detail: '2:00\u20132:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+            if (isPM1) duties.push({block: 'PM1', icon: 'assist', text: elec.name + ' \u2014 Assisting', detail: '1:00\u20131:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
+            if (isPM2) duties.push({block: 'PM2', icon: 'assist', text: elec.name + ' \u2014 Assisting', detail: '2:00\u20132:55 \u00b7 ' + (elec.room || ''), popup: {type: 'elective', name: elec.name}});
           }
         });
       });
@@ -2082,9 +2026,14 @@
           if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'assist', text: 'PM Floater', detail: 'Available to cover classes', popup: null});
         });
       });
-      if (pmSupport.boardDuties) pmSupport.boardDuties.forEach(function (name) {
+      if (pmSupport.boardDutiesPM1) pmSupport.boardDutiesPM1.forEach(function (name) {
         parentFullNames.forEach(function (full) {
-          if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'board', text: 'PM Board Duties', detail: 'Board work time', popup: null});
+          if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'board', text: 'Board Duties', detail: '1:00\u20131:55 \u00b7 Board work time', popup: null});
+        });
+      });
+      if (pmSupport.boardDutiesPM2) pmSupport.boardDutiesPM2.forEach(function (name) {
+        parentFullNames.forEach(function (full) {
+          if (nameMatch(name, full)) duties.push({block: 'PM2', icon: 'board', text: 'Board Duties', detail: '2:00\u20132:55 \u00b7 Board work time', popup: null});
         });
       });
       if (pmSupport.supplyCloset) pmSupport.supplyCloset.forEach(function (name) {
@@ -2191,6 +2140,62 @@
     html += '<button class="btn btn-absence" id="reportAbsenceBtn" data-has-cleaning="' + (hasCleaning ? '1' : '0') + '">I\'ll Be Out</button>';
     // My absences area (populated after absences load)
     html += '<div id="myAbsencesArea"></div>';
+    html += '</div>';
+
+    // ──── Kids' schedule card ────
+    html += '<div class="mf-card">';
+    html += '<h3 class="mf-card-title">Kids\' Schedule &mdash; Session ' + currentSession + '</h3>';
+    fam.kids.forEach(function (kid) {
+      var staff = AM_CLASSES[kid.group];
+      var sess = staff ? staff.sessions[currentSession] : null;
+      var room = sess ? sess.room : '';
+      var teacher = sess ? sess.teacher : 'TBD';
+      var topic = sess ? sess.topic : '';
+      var displayLast = kid.lastName || fam.name;
+      var kidFull = kid.name + ' ' + displayLast;
+
+      // Get afternoon electives
+      var electives = getKidElectives(kidFull);
+
+      html += '<div class="mf-kid">';
+      // Kid header bar
+      html += '<div class="mf-kid-bar">';
+      html += '<div class="mf-kid-photo" style="background:' + faceColor(kid.name) + '"><span>' + kid.name.charAt(0) + '</span></div>';
+      html += '<strong class="mf-kid-name">' + kid.name + '</strong>';
+      html += '<button class="mf-class-link" data-group="' + kid.group + '">View Classmates &rarr;</button>';
+      html += '</div>';
+
+      // Schedule table
+      html += '<div class="mf-schedule">';
+
+      // Morning
+      html += '<div class="mf-sched-row">';
+      html += '<span class="mf-sched-time">AM</span>';
+      html += '<span class="mf-sched-class">' + groupWithAge(kid.group) + (topic ? '<br><em style="font-weight:400;">' + topic + '</em>' : '') + '</span>';
+      html += '<span class="mf-sched-room">' + room + '</span>';
+      html += '<span class="mf-sched-teacher">' + teacher + '</span>';
+      html += '</div>';
+
+      // Afternoon electives
+      if (electives.length > 0) {
+        electives.forEach(function (e) {
+          var label = e.hour === 'both' ? 'PM' : e.hour === 1 ? 'PM 1' : 'PM 2';
+          html += '<div class="mf-sched-row">';
+          html += '<span class="mf-sched-time">' + label + '</span>';
+          html += '<button class="mf-elective-link mf-sched-class" data-elective="' + e.name + '">' + e.name + '</button>';
+          html += '<span class="mf-sched-room">' + e.room + '</span>';
+          html += '<span class="mf-sched-teacher">' + e.leader + '</span>';
+          html += '</div>';
+        });
+      } else {
+        html += '<div class="mf-sched-row mf-sched-empty">';
+        html += '<span class="mf-sched-time">PM</span>';
+        html += '<span class="mf-sched-class mf-empty-text">No electives yet</span>';
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+    });
     html += '</div>';
 
     // ──── Billing card ────

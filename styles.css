@@ -2410,18 +2410,18 @@ p + p { margin-top: 1rem; }
   }
 
   .nav-icon-btn {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 
-  /* Show quick icons inside the mobile menu */
-  .nav-links .nav-quick-icons-mobile {
+  /* Show quick icons in the navbar bar, before the hamburger */
+  .nav-quick-icons-mobile {
     display: flex;
-    justify-content: center;
-    gap: 12px;
-    padding: 12px 0;
-    border-top: 1px solid var(--color-border);
-    margin-top: 8px;
+    align-items: center;
+    gap: 2px;
+    order: 2;
+    margin-left: auto;
+    margin-right: 4px;
   }
 
   .nav-icon-btn svg {
@@ -2551,6 +2551,15 @@ p + p { margin-top: 1rem; }
 
   .age-groups-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .nav-quick-icons-mobile .nav-icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+  .nav-quick-icons-mobile .nav-icon-btn svg {
+    width: 16px;
+    height: 16px;
   }
 }
 
