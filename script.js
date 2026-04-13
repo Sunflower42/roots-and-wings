@@ -1861,9 +1861,9 @@
       if (yourTasks) {
         html += '<div style="background:var(--color-primary-ghost);border-radius:12px;padding:1rem;margin-bottom:1rem;">';
         html += '<h4 style="margin:0 0 0.75rem;font-size:0.95rem;">Your Assignment: ' + p.area + '</h4>';
-        html += '<ul style="margin:0;padding-left:1.25rem;font-size:0.85rem;line-height:1.6;">';
+        html += '<ul style="margin:0;padding-left:1.5rem;font-size:0.85rem;line-height:1.7;list-style:disc;">';
         yourTasks.forEach(function(task) {
-          html += '<li>' + task + '</li>';
+          html += '<li style="margin-bottom:4px;padding-left:4px;">' + task + '</li>';
         });
         html += '</ul></div>';
       }
@@ -1935,7 +1935,7 @@
       // Find the committee this board member chairs
       var committee = null;
       VOLUNTEER_COMMITTEES.forEach(function(c) {
-        if (c.chair && nameMatch(c.chair.title, p.role)) committee = c;
+        if (c.chair && c.chair.title && p.role && c.chair.title.trim().toLowerCase() === p.role.trim().toLowerCase()) committee = c;
       });
       html += '<h3>' + p.role + '</h3>';
       html += '<p style="color:var(--color-text-light);margin-bottom:1rem;">Board of Directors &middot; 2-year term</p>';
