@@ -393,10 +393,13 @@
   };
 
   function getRoleKeyForDuty(dutyText) {
+    // Normalize abbreviations
+    var normalized = dutyText.replace(/\bDir\.\s*$/i, 'Director').replace(/\bDir\.\s/i, 'Director ');
     // Direct match
+    if (DUTY_TO_ROLE_KEY[normalized]) return DUTY_TO_ROLE_KEY[normalized];
     if (DUTY_TO_ROLE_KEY[dutyText]) return DUTY_TO_ROLE_KEY[dutyText];
     // Strip trailing parenthetical like "(Finance Committee)"
-    var base = dutyText.replace(/\s*\(.*\)\s*$/, '').trim();
+    var base = normalized.replace(/\s*\(.*\)\s*$/, '').trim();
     if (DUTY_TO_ROLE_KEY[base]) return DUTY_TO_ROLE_KEY[base];
     // Check if duty text contains a known role name
     for (var key in DUTY_TO_ROLE_KEY) {
