@@ -274,10 +274,18 @@
 
         // ── Cleaning Crew ──
         if (data.cleaningCrew) {
-          // Don't overwrite liaison/sessions if DB data is loaded (DB is authoritative)
+          // DB liaison is authoritative if loaded; otherwise use sheets
           if (!cleaningDB.loaded) {
             CLEANING_CREW.liaison = data.cleaningCrew.liaison;
-            CLEANING_CREW.sessions = data.cleaningCrew.sessions;
+          }
+          // For sessions: use sheets data for any session the DB doesn't have assignments for
+          if (data.cleaningCrew.sessions) {
+            for (var cs in data.cleaningCrew.sessions) {
+              var dbHasSession = cleaningDB.assignments && cleaningDB.assignments.some(function (a) { return a.session_number === parseInt(cs); });
+              if (!dbHasSession) {
+                CLEANING_CREW.sessions[cs] = data.cleaningCrew.sessions[cs];
+              }
+            }
           }
         }
 
