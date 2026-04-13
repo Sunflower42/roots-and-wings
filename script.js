@@ -829,7 +829,7 @@
 
   // ── Cleaning crew assignments (structured by area) ──
   var CLEANING_CREW = {
-    liaison: 'Erin Bogan',
+    liaison: 'Parn Sudmee',
     sessions: {
       4: {
         mainFloor: {
@@ -861,7 +861,7 @@
         { title: 'Opener & Morning Set-Up', person: 'Kristen Henderson' },
         { title: 'Closer/Lost & Found', person: 'Erica Patterson' },
         { title: 'Safety Coordinator', person: 'Colleen Raymont' },
-        { title: 'Cleaning Crew Liaison', person: 'Erin Bogan' }
+        { title: 'Cleaning Crew Liaison', person: 'Parn Sudmee' }
       ]
     },
     {
@@ -2141,6 +2141,17 @@
         });
       });
     });
+    // ── Dynamic Cleaning Crew Liaison (from DB) ──
+    if (CLEANING_CREW.liaison) {
+      var liaisonAlreadyShown = duties.some(function (d) { return d.text === 'Cleaning Crew Liaison'; });
+      if (!liaisonAlreadyShown) {
+        parentFullNames.forEach(function (full) {
+          if (nameMatch(CLEANING_CREW.liaison, full)) {
+            duties.push({block: 'annual', icon: 'volunteer', text: 'Cleaning Crew Liaison', detail: 'Facility Committee &middot; Year-long', popup: {type: 'committee', name: 'Facility Committee'}});
+          }
+        });
+      }
+    }
     SPECIAL_EVENTS.forEach(function (ev) {
       var isCoord = ev.coordinator && parentFullNames.some(function(full) {
         return ev.coordinator.indexOf(fam.parents.split(' & ')[0].split(' ')[0]) !== -1;
