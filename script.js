@@ -2845,7 +2845,7 @@
     }
 
     // Build PayPal note with family details
-    function buildPaypalNote(fam, semKey) {
+    function buildPaypalNote(fam, semKey, paymentType) {
       var sem = BILLING_CONFIG.semesters[semKey];
       var semesterNum = semKey === 'fall' ? '1' : '2';
       var programmingKids = fam.kids.filter(function(k) { return k.group !== 'Greenhouse'; });
@@ -2862,7 +2862,7 @@
       var schedule = (hasAM && hasPM) ? 'Both' : hasAM ? 'AM' : 'PM';
 
       return fam.name + ' family | ' + numKids + (numKids === 1 ? ' kid' : ' kids') +
-        ' | ' + schedule + ' | Semester ' + semesterNum + ' (Sessions ' + sem.sessions.join(', ') + ')';
+        ' | ' + schedule + ' | Semester ' + semesterNum + ' (Sessions ' + sem.sessions.join(', ') + ') | ' + paymentType;
     }
 
     // Wire up PayPal pay buttons (semester fees + deposits)
@@ -2904,15 +2904,14 @@
       var sem = calculateSemesterFees(fam, semKey);
       if (!sem) return;
       var capKey = semKey.charAt(0).toUpperCase() + semKey.slice(1);
-      var note = buildPaypalNote(fam, semKey);
       // Deposit button
       wirePaypalButton('paypal-dep-' + semKey, sem.deposit.toFixed(2),
         sem.name + ' deposit — ' + fam.name + ' family',
-        'RW-' + capKey + '-Dep-' + fam.name + '-' + new Date().getFullYear(), fam.email, note);
+        'RW-' + capKey + '-Dep-' + fam.name + '-' + new Date().getFullYear(), fam.email, buildPaypalNote(fam, semKey, 'Deposit'));
       // Semester fees button
       wirePaypalButton('paypal-btn-' + semKey, sem.total.toFixed(2),
         sem.name + ' fees — ' + fam.name + ' family',
-        'RW-' + capKey + '-' + fam.name + '-' + new Date().getFullYear(), fam.email, note);
+        'RW-' + capKey + '-' + fam.name + '-' + new Date().getFullYear(), fam.email, buildPaypalNote(fam, semKey, 'Class Fee'));
     });
   }
 
