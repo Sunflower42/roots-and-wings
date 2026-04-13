@@ -2789,7 +2789,7 @@
         e.stopPropagation();
         var roleKey = this.getAttribute('data-role-key');
         // Board-only roles: classroom instructor & assistant can only be edited by board members
-        var boardOnlyRoles = ['classroom_instructor', 'classroom_assistant'];
+        var boardOnlyRoles = ['classroom_instructor', 'classroom_assistant', 'floater'];
         var canEdit = boardOnlyRoles.indexOf(roleKey) !== -1 ? !!(fam && fam.boardRole) : true;
         if (isCommsUser()) canEdit = true;
         showRoleDescriptionModal(roleKey, canEdit);
@@ -3173,12 +3173,14 @@
     var sessClean = CLEANING_CREW.sessions[viewSess];
 
     var html = buildSessionPager(viewSess, 'cleaning');
-    html += '<p style="color:var(--color-text-light);margin-bottom:16px;">Liaison: <strong>' + CLEANING_CREW.liaison + '</strong></p>';
+    var liaisonRoleInfo = (getRoleByKey('cleaning_crew_liaison')) ? ' <button class="rd-info-btn rd-info-inline" data-role-key="cleaning_crew_liaison" title="View role description"><span class="rd-info-icon">i</span></button>' : '';
+    html += '<p style="color:var(--color-text-light);margin-bottom:16px;">Liaison' + liaisonRoleInfo + ': <strong>' + CLEANING_CREW.liaison + '</strong></p>';
 
     if (!sessClean) {
       html += '<p style="color:var(--color-text-light);"><em>Cleaning assignments not yet available for this session.</em></p>';
       container.innerHTML = html;
       wirePager(container);
+      wireCleaningTabInfoButtons(container);
       return;
     }
 
@@ -3199,7 +3201,11 @@
         var families = sessClean[floor.key][area];
         var isMyArea = families.some(function (f) { return f.trim().toLowerCase() === myNames.familyName.toLowerCase(); });
         html += '<div class="cleaning-role' + (isMyArea ? ' coord-my-row' : '') + '">';
-        html += '<span class="cleaning-area">' + area + '</span>';
+        // Area name with info icon for task description
+        var areaTaskCount = findAreaTasks(floor.key, area).length;
+        var areaId = findAreaId(floor.key, area);
+        var areaInfo = (areaId && areaTaskCount > 0) ? ' <button class="rd-info-btn rd-info-inline cleaning-area-info" data-floor="' + floor.key + '" data-area="' + area + '" title="View tasks"><span class="rd-info-icon">i</span></button>' : '';
+        html += '<span class="cleaning-area">' + area + areaInfo + '</span>';
         html += '<span class="cleaning-families">' + families.map(function (f) { return highlightFamilyIfMe(f, myNames) + ' family'; }).join(', ') + '</span>';
         html += '</div>';
       });
@@ -3217,6 +3223,38 @@
 
     container.innerHTML = html;
     wirePager(container);
+    wireCleaningTabInfoButtons(container);
+  }
+
+  function wireCleaningTabInfoButtons(container) {
+    // Role description info buttons (e.g. Cleaning Crew Liaison)
+    container.querySelectorAll('.rd-info-btn[data-role-key]').forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        showRoleDescriptionModal(this.getAttribute('data-role-key'), false);
+      };
+    });
+    // Cleaning area task info buttons
+    container.querySelectorAll('.cleaning-area-info').forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        var floorKey = this.getAttribute('data-floor');
+        var areaName = this.getAttribute('data-area');
+        var tasks = findAreaTasks(floorKey, areaName);
+        if (!tasks.length || !personDetail || !personDetailCard) return;
+        var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+        html += '<div class="elective-detail">';
+        html += '<h3>' + areaName + '</h3>';
+        html += '<p style="color:var(--color-text-light);margin-bottom:1rem;">Cleaning tasks for this area</p>';
+        html += '<ul style="margin:0;padding-left:1.5rem;font-size:0.88rem;line-height:1.7;list-style:disc;">';
+        tasks.forEach(function (t) { html += '<li style="margin-bottom:4px;padding-left:4px;">' + t + '</li>'; });
+        html += '</ul></div>';
+        personDetailCard.innerHTML = html;
+        personDetail.style.display = 'flex';
+        personDetailCard.querySelector('.detail-close').onclick = function () { personDetail.style.display = 'none'; };
+        personDetail.onclick = function (ev) { if (ev.target === personDetail) personDetail.style.display = 'none'; };
+      };
+    });
   }
 
   // ──────────────────────────────────────────────
