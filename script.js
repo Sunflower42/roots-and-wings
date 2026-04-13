@@ -262,8 +262,11 @@
 
         // ── Cleaning Crew ──
         if (data.cleaningCrew) {
-          CLEANING_CREW.liaison = data.cleaningCrew.liaison;
-          CLEANING_CREW.sessions = data.cleaningCrew.sessions;
+          // Don't overwrite liaison/sessions if DB data is loaded (DB is authoritative)
+          if (!cleaningDB.loaded) {
+            CLEANING_CREW.liaison = data.cleaningCrew.liaison;
+            CLEANING_CREW.sessions = data.cleaningCrew.sessions;
+          }
         }
 
         // ── Volunteer Committees ──
