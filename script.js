@@ -2158,12 +2158,20 @@
         });
       });
     });
-    // ── Dynamic Cleaning Crew Liaison (from DB) ──
-    if (CLEANING_CREW.liaison) {
+    // ── Dynamic Cleaning Crew Liaison (from DB or cache) ──
+    var dbLiaison = CLEANING_CREW.liaison;
+    // Also check localStorage cache directly in case DB fetch hasn't completed
+    if (!cleaningDB.loaded) {
+      try {
+        var cc = localStorage.getItem(CACHE_CLEANING_KEY);
+        if (cc) { var ccd = JSON.parse(cc); if (ccd.liaison) dbLiaison = ccd.liaison; }
+      } catch (e) { /* ignore */ }
+    }
+    if (dbLiaison) {
       var liaisonAlreadyShown = duties.some(function (d) { return d.text === 'Cleaning Crew Liaison'; });
       if (!liaisonAlreadyShown) {
         parentFullNames.forEach(function (full) {
-          if (nameMatch(CLEANING_CREW.liaison, full)) {
+          if (nameMatch(dbLiaison, full)) {
             duties.push({block: 'annual', icon: 'volunteer', text: 'Cleaning Crew Liaison', detail: 'Facility Committee &middot; Year-long', popup: {type: 'committee', name: 'Facility Committee'}});
           }
         });
