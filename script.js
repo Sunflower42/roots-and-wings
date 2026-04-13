@@ -3251,13 +3251,6 @@
     }
     html += '</div>';
 
-    // Liaison
-    html += '<div class="cle-liaison-row">';
-    html += '<label>Liaison:</label>';
-    html += '<input class="cle-input" id="clmLiaisonInput" value="' + escapeAttr(CLEANING_CREW.liaison) + '">';
-    html += '<button class="cle-btn cle-btn-save" id="clmSaveLiaison">Save</button>';
-    html += '</div>';
-
     // Floor sections
     var floors = [
       { key: 'mainFloor', label: 'Main Floor' },
@@ -3328,6 +3321,14 @@
     html += '<button class="cle-btn cle-btn-save" id="clmCopyBtn">Copy to Session ' + viewSess + '</button>';
     html += '</div>';
 
+    // Footer with liaison name (read-only, matches supply closet pattern)
+    html += '<div class="sc-footer" style="margin-top:1rem;">';
+    html += '<span></span>';
+    if (CLEANING_CREW.liaison) {
+      html += '<span class="sc-coord">Cleaning Crew Liaison: <strong>' + escapeAttr(CLEANING_CREW.liaison) + '</strong></span>';
+    }
+    html += '</div>';
+
     html += '</div>';
 
     personDetailCard.innerHTML = html;
@@ -3345,16 +3346,7 @@
       };
     });
 
-    // Wire save liaison
-    document.getElementById('clmSaveLiaison').onclick = function () {
-      var val = document.getElementById('clmLiaisonInput').value.trim();
-      cleaningApiCall('PATCH', 'action=config', { liaison_name: val }).then(function () {
-        CLEANING_CREW.liaison = val;
-        try { var cc = JSON.parse(localStorage.getItem(CACHE_CLEANING_KEY) || '{}'); cc.liaison = val; localStorage.setItem(CACHE_CLEANING_KEY, JSON.stringify(cc)); } catch (e) {}
-        renderCleaningModal();
-        if (typeof renderMyFamily === 'function') renderMyFamily();
-      });
-    };
+
 
     // Wire remove assignment
     personDetailCard.querySelectorAll('.cle-chip-x').forEach(function (btn) {
