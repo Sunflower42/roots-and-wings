@@ -446,6 +446,26 @@
       .catch(function () { /* fall back to cached */ });
   }
 
+  function renderRoleDescriptionSection(roleKey) {
+    var role = getRoleByKey(roleKey);
+    if (!role) return '';
+    var h = '<div class="rd-section">';
+    h += '<div class="rd-section-divider"></div>';
+    h += '<h4 class="rd-section-title">Role Description</h4>';
+    if (role.overview) h += '<p class="rd-overview">' + role.overview + '</p>';
+    if (role.duties && role.duties.length) {
+      h += '<ul class="rd-duties">';
+      role.duties.forEach(function (d) { h += '<li>' + d + '</li>'; });
+      h += '</ul>';
+    }
+    if (role.job_length) h += '<p style="font-size:0.8rem;color:var(--color-text-light);margin:0;">Term: ' + role.job_length + '</p>';
+    if (role.last_reviewed_by) {
+      h += '<p class="rd-footer">Last reviewed ' + (role.last_reviewed_date || '') + ' by ' + role.last_reviewed_by + '</p>';
+    }
+    h += '</div>';
+    return h;
+  }
+
   function showRoleDescriptionModal(roleKey, canEdit) {
     var role = getRoleByKey(roleKey);
     if (!role || !personDetail || !personDetailCard) return;
@@ -1953,6 +1973,10 @@
       }
     }
 
+    // Append role description if available
+    var popupRoleKey = getRoleKeyForDuty(duty.text);
+    if (popupRoleKey) html += renderRoleDescriptionSection(popupRoleKey);
+
     html += '</div>';
     personDetailCard.innerHTML = html;
     personDetail.style.display = 'flex';
@@ -2500,12 +2524,7 @@
       var isTeacher = d.icon === 'teach';
       var h = '<div class="mf-duty' + (d.popup ? ' mf-duty-clickable' : '') + '" data-duty-idx="' + globalIdx + '"' + (d.popup ? ' style="cursor:pointer;"' : '') + '>';
       h += '<div class="mf-duty-icon">' + (DUTY_ICONS[d.icon] || '') + '</div>';
-      var dutyRoleKey = getRoleKeyForDuty(d.text);
-      var infoBtn = '';
-      if (dutyRoleKey && getRoleByKey(dutyRoleKey)) {
-        infoBtn = ' <button class="rd-info-btn rd-info-inline" data-role-key="' + dutyRoleKey + '" title="View role description" aria-label="View role description"><span class="rd-info-icon">i</span></button>';
-      }
-      h += '<div class="mf-duty-info"><strong>' + d.text + infoBtn + '</strong><span>' + d.detail + '</span>';
+      h += '<div class="mf-duty-info"><strong>' + d.text + '</strong><span>' + d.detail + '</span>';
       if (classKey && (isTeacher || d.icon === 'assist')) {
         h += '<div class="mf-duty-link-area" data-class-key="' + classKey + '" data-is-teacher="' + (isTeacher ? '1' : '0') + '"></div>';
       }
@@ -2767,7 +2786,6 @@
       row.addEventListener('click', function (e) {
         // Don't trigger detail if Manage button or info button was clicked
         if (e.target.closest('.mf-manage-btn')) return;
-        if (e.target.closest('.rd-info-btn')) return;
         var idx = parseInt(this.getAttribute('data-duty-idx'), 10);
         if (duties[idx]) showDutyDetail(duties[idx]);
       });
@@ -2780,19 +2798,6 @@
         var type = this.getAttribute('data-manage');
         if (type === 'cleaningCrew') showCleaningManagementModal();
         if (type === 'supplyCloset') showSupplyClosetPopup();
-      });
-    });
-
-    // Wire up role description info buttons
-    grid.querySelectorAll('.rd-info-btn').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var roleKey = this.getAttribute('data-role-key');
-        // Board-only roles: classroom instructor & assistant can only be edited by board members
-        var boardOnlyRoles = ['classroom_instructor', 'classroom_assistant', 'floater'];
-        var canEdit = boardOnlyRoles.indexOf(roleKey) !== -1 ? !!(fam && fam.boardRole) : true;
-        if (isCommsUser()) canEdit = true;
-        showRoleDescriptionModal(roleKey, canEdit);
       });
     });
 
@@ -3173,8 +3178,8 @@
     var sessClean = CLEANING_CREW.sessions[viewSess];
 
     var html = buildSessionPager(viewSess, 'cleaning');
-    var liaisonRoleInfo = (getRoleByKey('cleaning_crew_liaison')) ? ' <button class="rd-info-btn rd-info-inline" data-role-key="cleaning_crew_liaison" title="View role description"><span class="rd-info-icon">i</span></button>' : '';
-    html += '<p style="color:var(--color-text-light);margin-bottom:16px;">Liaison' + liaisonRoleInfo + ': <strong>' + CLEANING_CREW.liaison + '</strong></p>';
+    var liaisonLabel = getRoleByKey('cleaning_crew_liaison') ? '<a class="rd-role-link" data-role-key="cleaning_crew_liaison" href="#" onclick="return false;">Liaison</a>' : 'Liaison';
+    html += '<p style="color:var(--color-text-light);margin-bottom:16px;">' + liaisonLabel + ': <strong>' + CLEANING_CREW.liaison + '</strong></p>';
 
     if (!sessClean) {
       html += '<p style="color:var(--color-text-light);"><em>Cleaning assignments not yet available for this session.</em></p>';
@@ -3201,11 +3206,13 @@
         var families = sessClean[floor.key][area];
         var isMyArea = families.some(function (f) { return f.trim().toLowerCase() === myNames.familyName.toLowerCase(); });
         html += '<div class="cleaning-role' + (isMyArea ? ' coord-my-row' : '') + '">';
-        // Area name with info icon for task description
+        // Area name — clickable if tasks exist
         var areaTaskCount = findAreaTasks(floor.key, area).length;
-        var areaId = findAreaId(floor.key, area);
-        var areaInfo = (areaId && areaTaskCount > 0) ? ' <button class="rd-info-btn rd-info-inline cleaning-area-info" data-floor="' + floor.key + '" data-area="' + area + '" title="View tasks"><span class="rd-info-icon">i</span></button>' : '';
-        html += '<span class="cleaning-area">' + area + areaInfo + '</span>';
+        if (areaTaskCount > 0) {
+          html += '<a class="cleaning-area cleaning-area-link" data-floor="' + floor.key + '" data-area="' + area + '" href="#" onclick="return false;">' + area + '</a>';
+        } else {
+          html += '<span class="cleaning-area">' + area + '</span>';
+        }
         html += '<span class="cleaning-families">' + families.map(function (f) { return highlightFamilyIfMe(f, myNames) + ' family'; }).join(', ') + '</span>';
         html += '</div>';
       });
@@ -3227,17 +3234,17 @@
   }
 
   function wireCleaningTabInfoButtons(container) {
-    // Role description info buttons (e.g. Cleaning Crew Liaison)
-    container.querySelectorAll('.rd-info-btn[data-role-key]').forEach(function (btn) {
-      btn.onclick = function (e) {
-        e.stopPropagation();
+    // Role description links
+    container.querySelectorAll('.rd-role-link').forEach(function (link) {
+      link.onclick = function (e) {
+        e.preventDefault();
         showRoleDescriptionModal(this.getAttribute('data-role-key'), false);
       };
     });
-    // Cleaning area task info buttons
-    container.querySelectorAll('.cleaning-area-info').forEach(function (btn) {
-      btn.onclick = function (e) {
-        e.stopPropagation();
+    // Cleaning area name links → task popup
+    container.querySelectorAll('.cleaning-area-link').forEach(function (link) {
+      link.onclick = function (e) {
+        e.preventDefault();
         var floorKey = this.getAttribute('data-floor');
         var areaName = this.getAttribute('data-area');
         var tasks = findAreaTasks(floorKey, areaName);
@@ -3493,33 +3500,33 @@
       html += '<h4>' + committee.name + '</h4>';
       if (committee.chair) {
         var chairRoleKey = getRoleKeyForDuty(committee.chair.title);
-        var chairInfo = '';
+        var chairTitle = committee.chair.title;
         if (chairRoleKey && getRoleByKey(chairRoleKey)) {
-          chairInfo = ' <button class="rd-info-btn rd-info-inline" data-role-key="' + chairRoleKey + '" title="View role description"><span class="rd-info-icon">i</span></button>';
+          chairTitle = '<a class="rd-role-link" data-role-key="' + chairRoleKey + '" href="#" onclick="return false;">' + committee.chair.title + '</a>';
         }
-        html += '<div class="committee-chair"><strong>' + committee.chair.title + chairInfo + ':</strong> ' + highlightIfMe(committee.chair.person, myNames) + '</div>';
+        html += '<div class="committee-chair"><strong>' + chairTitle + ':</strong> ' + highlightIfMe(committee.chair.person, myNames) + '</div>';
       }
       html += '<ul>';
       committee.roles.forEach(function (r) {
         var personText = r.person ? highlightIfMe(r.person, myNames) : '<em>Open</em>';
         var roleKey = getRoleKeyForDuty(r.title);
-        var roleInfo = '';
+        var roleTitle = r.title;
         if (roleKey && getRoleByKey(roleKey)) {
-          roleInfo = ' <button class="rd-info-btn rd-info-inline" data-role-key="' + roleKey + '" title="View role description"><span class="rd-info-icon">i</span></button>';
+          roleTitle = '<a class="rd-role-link" data-role-key="' + roleKey + '" href="#" onclick="return false;">' + r.title + '</a>';
         }
-        html += '<li><strong>' + r.title + roleInfo + ':</strong> ' + personText + '</li>';
+        html += '<li><strong>' + roleTitle + ':</strong> ' + personText + '</li>';
       });
       html += '</ul></div>';
     });
     html += '</div>';
 
     container.innerHTML = html;
-    // Wire role description info buttons
-    container.querySelectorAll('.rd-info-btn').forEach(function (btn) {
-      btn.onclick = function (e) {
+    // Wire role description links
+    container.querySelectorAll('.rd-role-link').forEach(function (link) {
+      link.onclick = function (e) {
+        e.preventDefault();
         e.stopPropagation();
-        var roleKey = this.getAttribute('data-role-key');
-        showRoleDescriptionModal(roleKey, false);
+        showRoleDescriptionModal(this.getAttribute('data-role-key'), false);
       };
     });
   }
