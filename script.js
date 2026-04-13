@@ -2159,7 +2159,7 @@
       });
       if (pmSupport.supplyCloset) pmSupport.supplyCloset.forEach(function (name) {
         parentFullNames.forEach(function (full) {
-          if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'assist', text: 'Supply Closet', detail: 'Manage supplies', popup: null});
+          if (nameMatch(name, full)) duties.push({block: 'PM1', icon: 'assist', text: 'Supply Closet', detail: 'Manage supplies', popup: null, manage: 'supplyCloset'});
         });
       });
     }
@@ -2208,8 +2208,12 @@
       }
       committee.roles.forEach(function (r) {
         parentFullNames.forEach(function (full) {
-          if (nameMatch(r.person, full))
-            duties.push({block: 'annual', icon: 'volunteer', text: r.title, detail: committee.name + ' &middot; Year-long', popup: {type: 'committee', name: committee.name}});
+          if (nameMatch(r.person, full)) {
+            var duty = {block: 'annual', icon: 'volunteer', text: r.title, detail: committee.name + ' &middot; Year-long', popup: {type: 'committee', name: committee.name}};
+            if (r.title === 'Cleaning Crew Liaison') duty.manage = 'cleaningCrew';
+            if (r.title === 'Supply Coordinator') duty.manage = 'supplyCloset';
+            duties.push(duty);
+          }
         });
       });
     });
@@ -2227,7 +2231,7 @@
       if (!liaisonAlreadyShown) {
         parentFullNames.forEach(function (full) {
           if (nameMatch(dbLiaison, full)) {
-            duties.push({block: 'annual', icon: 'volunteer', text: 'Cleaning Crew Liaison', detail: 'Facility Committee &middot; Year-long', popup: {type: 'committee', name: 'Facility Committee'}});
+            duties.push({block: 'annual', icon: 'volunteer', text: 'Cleaning Crew Liaison', detail: 'Facility Committee &middot; Year-long', popup: {type: 'committee', name: 'Facility Committee'}, manage: 'cleaningCrew'});
           }
         });
       }
@@ -2268,7 +2272,13 @@
             html += '<div class="mf-duty-link-area" data-class-key="' + classKey + '" data-is-teacher="' + (isTeacher ? '1' : '0') + '"></div>';
           }
           html += '</div>';
-          if (d.popup) html += '<div class="mf-duty-arrow" style="margin-left:auto;opacity:0.4;font-size:1.1rem;">&rsaquo;</div>';
+          if (d.manage) {
+            html += '<button class="mf-manage-btn" data-manage="' + d.manage + '">';
+            html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
+            html += ' Manage</button>';
+          } else if (d.popup) {
+            html += '<div class="mf-duty-arrow" style="margin-left:auto;opacity:0.4;font-size:1.1rem;">&rsaquo;</div>';
+          }
           html += '</div>';
         });
         html += '</div>';
@@ -2497,9 +2507,21 @@
 
     // Wire up duty detail popups
     grid.querySelectorAll('.mf-duty-clickable').forEach(function (row) {
-      row.addEventListener('click', function () {
+      row.addEventListener('click', function (e) {
+        // Don't trigger detail if Manage button was clicked
+        if (e.target.closest('.mf-manage-btn')) return;
         var idx = parseInt(this.getAttribute('data-duty-idx'), 10);
         if (duties[idx]) showDutyDetail(duties[idx]);
+      });
+    });
+
+    // Wire up Manage buttons
+    grid.querySelectorAll('.mf-manage-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var type = this.getAttribute('data-manage');
+        if (type === 'cleaningCrew') showCleaningManagementModal();
+        if (type === 'supplyCloset') showSupplyClosetPopup();
       });
     });
 
@@ -2878,35 +2900,14 @@
     if (!container) return;
     var viewSess = cleaningTabView;
     var sessClean = CLEANING_CREW.sessions[viewSess];
-    var editing = cleaningDB.editMode && cleaningDB.loaded;
 
     var html = buildSessionPager(viewSess, 'cleaning');
+    html += '<p style="color:var(--color-text-light);margin-bottom:16px;">Liaison: <strong>' + CLEANING_CREW.liaison + '</strong></p>';
 
-    // Liaison row
-    if (editing) {
-      html += '<div class="cle-liaison-row"><label>Liaison:</label>';
-      html += '<input class="cle-input" id="cleLiaisonInput" value="' + escapeAttr(CLEANING_CREW.liaison) + '" placeholder="Liaison name">';
-      html += '<button class="cle-btn cle-btn-save" id="cleSaveLiaison">Save</button>';
-      html += '</div>';
-    } else {
-      html += '<p style="color:var(--color-text-light);margin-bottom:16px;">Liaison: <strong>' + CLEANING_CREW.liaison + '</strong></p>';
-    }
-
-    // Edit toggle (always show if DB loaded)
-    if (cleaningDB.loaded) {
-      html += '<button class="cle-edit-toggle" id="cleEditToggle">';
-      html += editing ? 'Done Editing' : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit Assignments';
-      html += '</button>';
-    }
-
-    if (!sessClean && !editing) {
+    if (!sessClean) {
       html += '<p style="color:var(--color-text-light);"><em>Cleaning assignments not yet available for this session.</em></p>';
-      if (editing) {
-        html += '<p style="color:var(--color-text-light);font-size:0.85rem;">Use the edit controls to add assignments for this session.</p>';
-      }
       container.innerHTML = html;
       wirePager(container);
-      wireCleaningEditEvents(container);
       return;
     }
 
@@ -2918,230 +2919,259 @@
 
     var myNames = getMyNames();
     html += '<div class="cleaning-grid">';
-
-    // Regular floor cards
     floors.forEach(function (floor) {
-      var floorAreas = cleaningDB.areas.filter(function (a) { return a.floor_key === floor.key; });
-      var areaNames = (sessClean && sessClean[floor.key]) ? Object.keys(sessClean[floor.key]) : [];
-      // In edit mode, show all defined areas even if no assignments
-      if (editing) {
-        floorAreas.forEach(function (a) {
-          if (areaNames.indexOf(a.area_name) === -1) areaNames.push(a.area_name);
-        });
-      }
-      if (areaNames.length === 0 && !editing) return;
-
+      if (!sessClean[floor.key]) return;
       html += '<div class="cleaning-floor-card">';
       html += '<h4>' + floor.label + '</h4>';
-      areaNames.forEach(function (area) {
-        var families = (sessClean && sessClean[floor.key] && sessClean[floor.key][area]) || [];
+      var areas = Object.keys(sessClean[floor.key]);
+      areas.forEach(function (area) {
+        var families = sessClean[floor.key][area];
         var isMyArea = families.some(function (f) { return f.trim().toLowerCase() === myNames.familyName.toLowerCase(); });
         html += '<div class="cleaning-role' + (isMyArea ? ' coord-my-row' : '') + '">';
         html += '<span class="cleaning-area">' + area + '</span>';
-
-        if (editing) {
-          // Editable family chips
-          html += '<div class="cle-family-chips">';
-          families.forEach(function (f) {
-            var aId = findAssignmentId(viewSess, floor.key, area, f);
-            html += '<span class="cle-chip">' + f;
-            html += '<button class="cle-chip-x" data-assign-id="' + aId + '" title="Remove">&times;</button>';
-            html += '</span>';
-          });
-          html += '</div>';
-          // Add family input
-          var areaId = findAreaId(floor.key, area);
-          html += '<div class="cle-add-row">';
-          html += '<input class="cle-input cle-add-input" placeholder="Family name" data-area-id="' + areaId + '" data-session="' + viewSess + '">';
-          html += '<button class="cle-btn cle-btn-add" data-area-id="' + areaId + '" data-session="' + viewSess + '">Add</button>';
-          html += '</div>';
-          // View/edit tasks link
-          var tasks = findAreaTasks(floor.key, area);
-          html += '<button class="cle-tasks-toggle" data-area-id="' + areaId + '" data-floor="' + floor.key + '" data-area="' + area + '">' + tasks.length + ' task' + (tasks.length !== 1 ? 's' : '') + ' &mdash; edit</button>';
-          html += '<div class="cle-tasks-editor" id="cleTasksEditor-' + areaId + '" style="display:none;"></div>';
-        } else {
-          html += '<span class="cleaning-families">' + families.map(function (f) { return highlightFamilyIfMe(f, myNames) + ' family'; }).join(', ') + '</span>';
-        }
+        html += '<span class="cleaning-families">' + families.map(function (f) { return highlightFamilyIfMe(f, myNames) + ' family'; }).join(', ') + '</span>';
         html += '</div>';
       });
       html += '</div>';
     });
 
-    // Floater card
-    var floaterFamilies = (sessClean && sessClean.floater) || [];
-    var floaterAreaId = findAreaId('floater', 'Floater');
-    if (floaterFamilies.length > 0 || editing) {
-      var isMyFloater = floaterFamilies.some(function (f) { return f.trim().toLowerCase() === myNames.familyName.toLowerCase(); });
+    if (sessClean.floater && sessClean.floater.length > 0) {
+      var isMyFloater = sessClean.floater.some(function (f) { return f.trim().toLowerCase() === myNames.familyName.toLowerCase(); });
       html += '<div class="cleaning-floor-card">';
       html += '<h4>Floater</h4>';
-      html += '<div class="cleaning-role' + (isMyFloater ? ' coord-my-row' : '') + '">';
-      if (editing) {
-        html += '<div class="cle-family-chips">';
-        floaterFamilies.forEach(function (f) {
-          var aId = findAssignmentId(viewSess, 'floater', 'Floater', f);
-          html += '<span class="cle-chip">' + f;
-          html += '<button class="cle-chip-x" data-assign-id="' + aId + '" title="Remove">&times;</button>';
-          html += '</span>';
-        });
-        html += '</div>';
-        html += '<div class="cle-add-row">';
-        html += '<input class="cle-input cle-add-input" placeholder="Family name" data-area-id="' + floaterAreaId + '" data-session="' + viewSess + '">';
-        html += '<button class="cle-btn cle-btn-add" data-area-id="' + floaterAreaId + '" data-session="' + viewSess + '">Add</button>';
-        html += '</div>';
-      } else {
-        html += '<span class="cleaning-families">' + floaterFamilies.map(function (f) { return highlightFamilyIfMe(f, myNames) + ' family'; }).join(', ') + '</span>';
-      }
-      html += '</div>';
+      html += '<div class="cleaning-role' + (isMyFloater ? ' coord-my-row' : '') + '"><span class="cleaning-families">' + sessClean.floater.map(function (f) { return highlightFamilyIfMe(f, myNames) + ' family'; }).join(', ') + '</span></div>';
       html += '</div>';
     }
     html += '</div>';
 
-    // Copy session button (edit mode only)
-    if (editing) {
-      html += '<div class="cle-copy-row">';
-      html += '<span>Copy assignments from:</span>';
-      html += '<select class="cle-input" id="cleCopyFrom">';
-      for (var cs = 1; cs <= 5; cs++) {
-        if (cs !== viewSess) html += '<option value="' + cs + '">Session ' + cs + '</option>';
-      }
-      html += '</select>';
-      html += '<button class="cle-btn cle-btn-save" id="cleCopyBtn">Copy to Session ' + viewSess + '</button>';
+    container.innerHTML = html;
+    wirePager(container);
+  }
+
+  // ──────────────────────────────────────────────
+  // Cleaning Management Modal (from My Responsibilities)
+  // ──────────────────────────────────────────────
+  var cleaningModalSession = currentSession;
+
+  function showCleaningManagementModal() {
+    if (!personDetail || !personDetailCard) return;
+    if (!cleaningDB.loaded) {
+      loadCleaningData();
+      return;
+    }
+    cleaningModalSession = currentSession;
+    renderCleaningModal();
+  }
+
+  function renderCleaningModal() {
+    var viewSess = cleaningModalSession;
+    var sessClean = CLEANING_CREW.sessions[viewSess];
+
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail sc-modal">';
+    html += '<h3>Cleaning Crew Management</h3>';
+
+    // Session selector
+    html += '<div class="cle-modal-session-row">';
+    html += '<label>Session:</label>';
+    for (var s = 1; s <= 5; s++) {
+      html += '<button class="cle-sess-btn' + (s === viewSess ? ' cle-sess-active' : '') + '" data-sess="' + s + '">' + s + '</button>';
+    }
+    html += '</div>';
+
+    // Liaison
+    html += '<div class="cle-liaison-row">';
+    html += '<label>Liaison:</label>';
+    html += '<input class="cle-input" id="clmLiaisonInput" value="' + escapeAttr(CLEANING_CREW.liaison) + '">';
+    html += '<button class="cle-btn cle-btn-save" id="clmSaveLiaison">Save</button>';
+    html += '</div>';
+
+    // Floor sections
+    var floors = [
+      { key: 'mainFloor', label: 'Main Floor' },
+      { key: 'upstairs', label: 'Upstairs' },
+      { key: 'outside', label: 'Outside' }
+    ];
+
+    floors.forEach(function (floor) {
+      var floorAreas = cleaningDB.areas.filter(function (a) { return a.floor_key === floor.key; });
+      html += '<div class="clm-floor-section">';
+      html += '<h4>' + floor.label + '</h4>';
+
+      floorAreas.forEach(function (area) {
+        var families = (sessClean && sessClean[floor.key] && sessClean[floor.key][area.area_name]) || [];
+        html += '<div class="clm-area">';
+        html += '<div class="clm-area-header">';
+        html += '<span class="clm-area-name">' + area.area_name + '</span>';
+        html += '<button class="cle-tasks-toggle" data-area-id="' + area.id + '" data-floor="' + floor.key + '" data-area="' + area.area_name + '">' + (area.tasks || []).length + ' task' + ((area.tasks || []).length !== 1 ? 's' : '') + '</button>';
+        html += '</div>';
+        // Family chips
+        html += '<div class="cle-family-chips">';
+        families.forEach(function (f) {
+          var aId = findAssignmentId(viewSess, floor.key, area.area_name, f);
+          html += '<span class="cle-chip">' + f + '<button class="cle-chip-x" data-assign-id="' + aId + '">&times;</button></span>';
+        });
+        html += '</div>';
+        // Add family input
+        html += '<div class="cle-add-row">';
+        html += '<input class="cle-input cle-add-input" placeholder="Add family name" data-area-id="' + area.id + '" data-session="' + viewSess + '">';
+        html += '<button class="cle-btn cle-btn-add" data-area-id="' + area.id + '" data-session="' + viewSess + '">Add</button>';
+        html += '</div>';
+        // Task editor (hidden by default)
+        html += '<div class="cle-tasks-editor" id="clmTasksEditor-' + area.id + '" style="display:none;"></div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+
+    // Floater section
+    var floaterArea = cleaningDB.areas.filter(function (a) { return a.floor_key === 'floater'; })[0];
+    if (floaterArea) {
+      var floaterFamilies = (sessClean && sessClean.floater) || [];
+      html += '<div class="clm-floor-section">';
+      html += '<h4>Floater</h4>';
+      html += '<div class="clm-area">';
+      html += '<div class="cle-family-chips">';
+      floaterFamilies.forEach(function (f) {
+        var aId = findAssignmentId(viewSess, 'floater', 'Floater', f);
+        html += '<span class="cle-chip">' + f + '<button class="cle-chip-x" data-assign-id="' + aId + '">&times;</button></span>';
+      });
+      html += '</div>';
+      html += '<div class="cle-add-row">';
+      html += '<input class="cle-input cle-add-input" placeholder="Add family name" data-area-id="' + floaterArea.id + '" data-session="' + viewSess + '">';
+      html += '<button class="cle-btn cle-btn-add" data-area-id="' + floaterArea.id + '" data-session="' + viewSess + '">Add</button>';
+      html += '</div>';
+      html += '</div>';
       html += '</div>';
     }
 
-    container.innerHTML = html;
-    wirePager(container);
-    wireCleaningEditEvents(container);
-  }
-
-  function wireCleaningEditEvents(container) {
-    // Edit toggle
-    var toggleBtn = document.getElementById('cleEditToggle');
-    if (toggleBtn) {
-      toggleBtn.onclick = function () {
-        cleaningDB.editMode = !cleaningDB.editMode;
-        renderCleaningTab();
-      };
+    // Copy session
+    html += '<div class="cle-copy-row">';
+    html += '<span>Copy from:</span>';
+    html += '<select class="cle-input" id="clmCopyFrom">';
+    for (var cs = 1; cs <= 5; cs++) {
+      if (cs !== viewSess) html += '<option value="' + cs + '">Session ' + cs + '</option>';
     }
+    html += '</select>';
+    html += '<button class="cle-btn cle-btn-save" id="clmCopyBtn">Copy to Session ' + viewSess + '</button>';
+    html += '</div>';
 
-    // Save liaison
-    var saveLiaison = document.getElementById('cleSaveLiaison');
-    if (saveLiaison) {
-      saveLiaison.onclick = function () {
-        var val = document.getElementById('cleLiaisonInput').value.trim();
-        cleaningApiCall('PATCH', 'action=config', { liaison_name: val }).then(function () {
-          CLEANING_CREW.liaison = val;
-          renderCleaningTab();
-        });
-      };
-    }
+    html += '</div>';
 
-    // Remove assignment (X buttons)
-    container.querySelectorAll('.cle-chip-x').forEach(function (btn) {
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+
+    // Wire close
+    personDetailCard.querySelector('.detail-close').onclick = function () { personDetail.style.display = 'none'; };
+    personDetail.onclick = function (e) { if (e.target === personDetail) personDetail.style.display = 'none'; };
+
+    // Wire session buttons
+    personDetailCard.querySelectorAll('.cle-sess-btn').forEach(function (btn) {
       btn.onclick = function () {
+        cleaningModalSession = parseInt(this.getAttribute('data-sess'), 10);
+        renderCleaningModal();
+      };
+    });
+
+    // Wire save liaison
+    document.getElementById('clmSaveLiaison').onclick = function () {
+      var val = document.getElementById('clmLiaisonInput').value.trim();
+      cleaningApiCall('PATCH', 'action=config', { liaison_name: val }).then(function () {
+        CLEANING_CREW.liaison = val;
+        try { var cc = JSON.parse(localStorage.getItem(CACHE_CLEANING_KEY) || '{}'); cc.liaison = val; localStorage.setItem(CACHE_CLEANING_KEY, JSON.stringify(cc)); } catch (e) {}
+        renderCleaningModal();
+        if (typeof renderMyFamily === 'function') renderMyFamily();
+      });
+    };
+
+    // Wire remove assignment
+    personDetailCard.querySelectorAll('.cle-chip-x').forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
         var id = btn.getAttribute('data-assign-id');
         if (!id || id === 'null') return;
         cleaningApiCall('DELETE', 'action=assignment&id=' + id).then(function () {
           loadCleaningData();
+          setTimeout(renderCleaningModal, 300);
         });
       };
     });
 
-    // Add assignment
-    container.querySelectorAll('.cle-btn-add').forEach(function (btn) {
+    // Wire add assignment
+    personDetailCard.querySelectorAll('.cle-btn-add').forEach(function (btn) {
       btn.onclick = function () {
-        var row = btn.parentElement;
-        var input = row.querySelector('.cle-add-input');
+        var input = btn.parentElement.querySelector('.cle-add-input');
         var name = input.value.trim();
         if (!name) return;
-        var areaId = parseInt(btn.getAttribute('data-area-id'), 10);
-        var session = parseInt(btn.getAttribute('data-session'), 10);
         cleaningApiCall('POST', 'action=assignment', {
-          session_number: session, cleaning_area_id: areaId, family_name: name
+          session_number: parseInt(btn.getAttribute('data-session'), 10),
+          cleaning_area_id: parseInt(btn.getAttribute('data-area-id'), 10),
+          family_name: name
         }).then(function (r) {
           if (r.error) { alert(r.error); return; }
           loadCleaningData();
+          setTimeout(renderCleaningModal, 300);
         });
       };
     });
 
-    // Task editor toggles
-    container.querySelectorAll('.cle-tasks-toggle').forEach(function (btn) {
+    // Wire task editor toggles
+    personDetailCard.querySelectorAll('.cle-tasks-toggle').forEach(function (btn) {
       btn.onclick = function () {
         var areaId = btn.getAttribute('data-area-id');
-        var editor = document.getElementById('cleTasksEditor-' + areaId);
+        var editor = document.getElementById('clmTasksEditor-' + areaId);
         if (!editor) return;
         if (editor.style.display !== 'none') { editor.style.display = 'none'; return; }
-        // Build task editor
         var floorKey = btn.getAttribute('data-floor');
         var areaName = btn.getAttribute('data-area');
         var tasks = findAreaTasks(floorKey, areaName);
         var h = '<div class="cle-task-list">';
         tasks.forEach(function (t, i) {
-          h += '<div class="cle-task-row">';
-          h += '<textarea class="cle-task-input" data-idx="' + i + '">' + t.replace(/</g, '&lt;') + '</textarea>';
-          h += '<button class="cle-chip-x cle-task-del" data-idx="' + i + '" title="Remove task">&times;</button>';
-          h += '</div>';
+          h += '<div class="cle-task-row"><textarea class="cle-task-input" data-idx="' + i + '">' + t.replace(/</g, '&lt;') + '</textarea>';
+          h += '<button class="cle-chip-x cle-task-del" data-idx="' + i + '">&times;</button></div>';
         });
         h += '</div>';
         h += '<div class="cle-task-actions">';
-        h += '<button class="cle-btn" id="cleAddTask-' + areaId + '">+ Add Task</button>';
-        h += '<button class="cle-btn cle-btn-save" id="cleSaveTasks-' + areaId + '">Save Tasks</button>';
+        h += '<button class="cle-btn" id="clmAddTask-' + areaId + '">+ Add Task</button>';
+        h += '<button class="cle-btn cle-btn-save" id="clmSaveTasks-' + areaId + '">Save Tasks</button>';
         h += '</div>';
         editor.innerHTML = h;
         editor.style.display = 'block';
 
-        // Wire add task
-        document.getElementById('cleAddTask-' + areaId).onclick = function () {
+        document.getElementById('clmAddTask-' + areaId).onclick = function () {
           var list = editor.querySelector('.cle-task-list');
-          var idx = list.querySelectorAll('.cle-task-row').length;
           var row = document.createElement('div');
           row.className = 'cle-task-row';
-          row.innerHTML = '<textarea class="cle-task-input" data-idx="' + idx + '"></textarea><button class="cle-chip-x cle-task-del" data-idx="' + idx + '" title="Remove">&times;</button>';
+          row.innerHTML = '<textarea class="cle-task-input"></textarea><button class="cle-chip-x cle-task-del">&times;</button>';
           list.appendChild(row);
           row.querySelector('.cle-task-del').onclick = function () { row.remove(); };
         };
-
-        // Wire delete task
-        editor.querySelectorAll('.cle-task-del').forEach(function (db) {
-          db.onclick = function () { db.parentElement.remove(); };
-        });
-
-        // Wire save tasks
-        document.getElementById('cleSaveTasks-' + areaId).onclick = function () {
-          var inputs = editor.querySelectorAll('.cle-task-input');
+        editor.querySelectorAll('.cle-task-del').forEach(function (db) { db.onclick = function () { db.parentElement.remove(); }; });
+        document.getElementById('clmSaveTasks-' + areaId).onclick = function () {
           var newTasks = [];
-          inputs.forEach(function (inp) { var v = inp.value.trim(); if (v) newTasks.push(v); });
+          editor.querySelectorAll('.cle-task-input').forEach(function (inp) { var v = inp.value.trim(); if (v) newTasks.push(v); });
           cleaningApiCall('PATCH', 'action=area&id=' + areaId, { tasks: newTasks }).then(function () {
-            // Update local cache
             for (var i = 0; i < cleaningDB.areas.length; i++) {
-              if (cleaningDB.areas[i].id === parseInt(areaId, 10)) {
-                cleaningDB.areas[i].tasks = newTasks;
-                break;
-              }
+              if (cleaningDB.areas[i].id === parseInt(areaId, 10)) { cleaningDB.areas[i].tasks = newTasks; break; }
             }
-            editor.style.display = 'none';
-            renderCleaningTab();
+            renderCleaningModal();
           });
         };
       };
     });
 
-    // Copy session
-    var copyBtn = document.getElementById('cleCopyBtn');
+    // Wire copy session
+    var copyBtn = document.getElementById('clmCopyBtn');
     if (copyBtn) {
       copyBtn.onclick = function () {
-        var fromSess = parseInt(document.getElementById('cleCopyFrom').value, 10);
-        var toSess = cleaningTabView;
+        var fromSess = parseInt(document.getElementById('clmCopyFrom').value, 10);
+        var toSess = cleaningModalSession;
         var fromAssignments = cleaningDB.assignments.filter(function (a) { return a.session_number === fromSess; });
-        if (fromAssignments.length === 0) { alert('No assignments found in session ' + fromSess); return; }
+        if (fromAssignments.length === 0) { alert('No assignments in session ' + fromSess); return; }
         if (!confirm('Copy ' + fromAssignments.length + ' assignments from session ' + fromSess + ' to session ' + toSess + '?')) return;
-        var promises = fromAssignments.map(function (a) {
-          return cleaningApiCall('POST', 'action=assignment', {
-            session_number: toSess, cleaning_area_id: a.cleaning_area_id, family_name: a.family_name
-          });
-        });
-        Promise.all(promises).then(function () { loadCleaningData(); });
+        Promise.all(fromAssignments.map(function (a) {
+          return cleaningApiCall('POST', 'action=assignment', { session_number: toSess, cleaning_area_id: a.cleaning_area_id, family_name: a.family_name });
+        })).then(function () { loadCleaningData(); setTimeout(renderCleaningModal, 300); });
       };
     }
   }
