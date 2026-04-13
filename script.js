@@ -3408,8 +3408,10 @@
   }
 
   function computeSupplyClosetCanEdit() {
-    // True if current user is on the board or is the Supply Coordinator's family.
-    var email = sessionStorage.getItem('rw_user_email');
+    // True if current user is on the board, is the Supply Coordinator, or is communications@
+    var realEmail = sessionStorage.getItem('rw_user_email');
+    if (realEmail === COMMS_EMAIL) return true;
+    var email = getActiveEmail();
     if (!email) return false;
     var me = null;
     for (var i = 0; i < FAMILIES.length; i++) {
@@ -3419,7 +3421,6 @@
     if (me.boardRole) return true;
     var coordName = getSupplyCoordinatorName();
     if (!coordName) return false;
-    // Match coordinator by family last name
     var lastName = coordName.trim().split(/\s+/).pop().toLowerCase();
     return me.name && me.name.toLowerCase() === lastName;
   }
