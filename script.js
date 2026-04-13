@@ -2004,11 +2004,6 @@
     for (var i = 0; i < FAMILIES.length; i++) {
       if (FAMILIES[i].email === email) { fam = FAMILIES[i]; break; }
     }
-    if (!fam) return;
-
-    // Personalize greeting
-    var firstName = fam.parents.split(' & ')[0].split(' ')[0];
-    if (greeting) greeting.textContent = 'Welcome, ' + firstName + '!';
 
     var html = '';
 
@@ -2016,7 +2011,7 @@
     var viewAsEmail = sessionStorage.getItem(VIEW_AS_KEY);
     if (isCommsUser()) {
       html += '<div class="view-as-bar">';
-      if (viewAsEmail) {
+      if (viewAsEmail && fam) {
         html += '<div class="view-as-banner">';
         html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
         html += ' Viewing as <strong>' + fam.parents + ' ' + fam.name + '</strong>';
@@ -2036,6 +2031,28 @@
       html += '</div>';
       html += '</div>';
     }
+
+    // If no matching family (e.g. communications@ with no View As), show picker only
+    if (!fam) {
+      grid.innerHTML = html;
+      section.style.display = '';
+      // Wire View As events
+      var viewAsSelect = document.getElementById('viewAsSelect');
+      if (viewAsSelect) {
+        viewAsSelect.onchange = function () {
+          if (this.value) { sessionStorage.setItem(VIEW_AS_KEY, this.value); }
+          else { sessionStorage.removeItem(VIEW_AS_KEY); }
+          renderMyFamily();
+          if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
+        };
+      }
+      if (greeting) greeting.textContent = 'Welcome!';
+      return;
+    }
+
+    // Personalize greeting
+    var firstName = fam.parents.split(' & ')[0].split(' ')[0];
+    if (greeting) greeting.textContent = 'Welcome, ' + firstName + '!';
 
     // ──── Coverage Board (full width, collapsible) ────
     html += '<details class="mf-card mf-card-full mf-coverage-details" id="coverageBoardCard" style="display:none;" open>';
