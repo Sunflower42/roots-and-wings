@@ -3329,7 +3329,7 @@
   // ──────────────────────────────────────────────
   // Supply Closet Inventory
   // ──────────────────────────────────────────────
-  // Loaded dynamically from /api/supply-locations
+  // Loaded dynamically from /api/supply-closet?action=locations
   var SUPPLY_LOCATIONS = [];
 
   var SUPPLY_CATEGORIES = [
@@ -3405,7 +3405,7 @@
   function fetchSupplyLocations() {
     var cred = sessionStorage.getItem('rw_google_credential');
     if (!cred) return Promise.reject(new Error('Not authenticated'));
-    return fetch('/api/supply-locations', {
+    return fetch('/api/supply-closet?action=locations', {
       headers: { 'Authorization': 'Bearer ' + cred }
     }).then(function (r) { return r.json(); }).then(function (data) {
       var locs = (data && data.locations) || [];
@@ -3681,7 +3681,7 @@
         if (!name) return;
         addBtn.disabled = true;
         addBtn.textContent = 'Adding…';
-        fetch('/api/supply-locations', {
+        fetch('/api/supply-closet?action=locations', {
           method: 'POST',
           headers: headers,
           body: JSON.stringify({ name: name })
@@ -3705,7 +3705,7 @@
         if (!name) { alert('Name cannot be empty.'); return; }
         btn.disabled = true;
         btn.textContent = 'Saving…';
-        fetch('/api/supply-locations?id=' + encodeURIComponent(id), {
+        fetch('/api/supply-closet?action=locations&id=' + encodeURIComponent(id), {
           method: 'PATCH',
           headers: headers,
           body: JSON.stringify({ name: name })
@@ -3725,7 +3725,7 @@
         var locName = input ? input.value : 'this location';
         if (!confirm('Delete "' + locName + '"? Items using this location will have their location cleared.')) return;
         btn.disabled = true;
-        fetch('/api/supply-locations?id=' + encodeURIComponent(id), {
+        fetch('/api/supply-closet?action=locations&id=' + encodeURIComponent(id), {
           method: 'DELETE',
           headers: headers
         }).then(function (r) { return r.json(); }).then(function (data) {
