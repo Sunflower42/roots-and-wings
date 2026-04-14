@@ -5,13 +5,18 @@
 // PATCH /api/supply-closet?id=N         → update an item  (auth required)
 // DELETE /api/supply-closet?id=N        → delete an item  (auth required)
 //
-// v1 authorization: any authenticated @rootsandwingsindy.com Google user
-// can edit. Restriction to the Supply Coordinator role is deferred to v2
-// (requires cross-referencing volunteer committee data in the master sheet).
+// Authorization:
+//   - GET: any authenticated @rootsandwingsindy.com Google user
+//   - POST/PATCH/DELETE: only whoever is named as "Supply Coordinator" in
+//     the volunteer-committees tab of the master sheet, OR the
+//     communications@ super user. See api/_permissions.js — coordinator
+//     identity is looked up live from the sheet (cached 5 min) so no env
+//     var needs updating when the role changes hands.
 
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { ALLOWED_ORIGINS } = require('./_config');
+const { canEditAsRole } = require('./_permissions');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
@@ -55,6 +60,15 @@ module.exports = async function handler(req, res) {
 
   const user = await verifyGoogleAuth(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+  // Write operations are restricted to the Supply Coordinator or the
+  // communications@ super user. GET stays open to any authenticated member.
+  if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+    const allowed = await canEditAsRole(user.email, 'Supply Coordinator');
+    if (!allowed) {
+      return res.status(403).json({ error: 'Only the Supply Coordinator can modify the supply closet.' });
+    }
+  }
 
   try {
     const sql = getSql();

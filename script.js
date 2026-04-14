@@ -3400,7 +3400,8 @@
   }
 
   function computeSupplyClosetCanEdit() {
-    // True if current user is on the board, is the Supply Coordinator, or is communications@
+    // True only for the Supply Coordinator. communications@ is the app-wide
+    // super user and can always edit (including while impersonating via View As).
     var realEmail = sessionStorage.getItem('rw_user_email');
     if (realEmail === COMMS_EMAIL) return true;
     var email = getActiveEmail();
@@ -3410,7 +3411,6 @@
       if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; }
     }
     if (!me) return false;
-    if (me.boardRole) return true;
     var coordName = getSupplyCoordinatorName();
     if (!coordName) return false;
     var lastName = coordName.trim().split(/\s+/).pop().toLowerCase();
