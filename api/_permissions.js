@@ -169,6 +169,37 @@ function invalidateRoleCache() {
   roleCache = null;
 }
 
+// Look up the email of whoever holds `roleTitle` (case-insensitive). Returns
+// null if the role isn't named in the sheet or the person can't be matched to
+// a family in the directory.
+async function getRoleHolderEmail(roleTitle) {
+  if (!roleTitle) return null;
+  try {
+    const holders = await loadRoleHolders();
+    return holders[roleTitle.toLowerCase()] || null;
+  } catch (err) {
+    console.error('getRoleHolderEmail lookup failed:', err);
+    return null;
+  }
+}
+
+// Batch variant: returns { [roleTitle]: email } for all titles that matched.
+async function getRoleHolderEmails(roleTitles) {
+  if (!Array.isArray(roleTitles) || roleTitles.length === 0) return {};
+  try {
+    const holders = await loadRoleHolders();
+    const out = {};
+    for (const title of roleTitles) {
+      const email = holders[String(title).toLowerCase()];
+      if (email) out[title] = email;
+    }
+    return out;
+  } catch (err) {
+    console.error('getRoleHolderEmails lookup failed:', err);
+    return {};
+  }
+}
+
 // True if `userEmail` is authorized to perform actions gated to `roleTitle`,
 // either because they hold that role in the volunteer committees sheet, or
 // because they are the communications@ super user.
@@ -191,6 +222,8 @@ async function canEditAsRole(userEmail, roleTitle) {
 module.exports = {
   SUPER_USER_EMAIL,
   canEditAsRole,
+  getRoleHolderEmail,
+  getRoleHolderEmails,
   invalidateRoleCache,
   // Exported for tests:
   _parseVolunteerRoles: parseVolunteerRoles,

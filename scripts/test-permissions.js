@@ -159,6 +159,28 @@ console.log('\ncanEditAsRole (super-user path — no sheet access needed)');
     assert.strictEqual(ok, false, 'should fail closed when sheet fetch errors');
   });
 
+  // ── getRoleHolderEmails batch lookup: fail-closed when no sheet ────
+  console.log('\ngetRoleHolderEmails (fail-closed)');
+
+  t('returns {} when sheet fetch errors', async () => {
+    const prevMaster = process.env.MASTER_SHEET_ID;
+    const prevDir = process.env.DIRECTORY_SHEET_ID;
+    delete process.env.MASTER_SHEET_ID;
+    delete process.env.DIRECTORY_SHEET_ID;
+    perms.invalidateRoleCache();
+    const out = await perms.getRoleHolderEmails(['President', 'Treasurer']);
+    process.env.MASTER_SHEET_ID = prevMaster;
+    process.env.DIRECTORY_SHEET_ID = prevDir;
+    perms.invalidateRoleCache();
+    assert.deepStrictEqual(out, {});
+  });
+
+  t('returns {} for empty/invalid input', async () => {
+    assert.deepStrictEqual(await perms.getRoleHolderEmails([]), {});
+    assert.deepStrictEqual(await perms.getRoleHolderEmails(null), {});
+    assert.deepStrictEqual(await perms.getRoleHolderEmails(undefined), {});
+  });
+
   // ── Wrap-up ────────────────────────────────────────────────────────
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed > 0 ? 1 : 0);

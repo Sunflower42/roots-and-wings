@@ -203,3 +203,18 @@ CREATE TABLE IF NOT EXISTS role_descriptions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by TEXT DEFAULT ''
 );
+
+-- ──────────────────────────────────────────────
+-- Board photo cache (for the public site)
+-- Populated as a side effect of /api/photos calls from logged-in members.
+-- Served unauthenticated via /api/photos?scope=board so index.html can
+-- render real Workspace profile photos without requiring sign-in.
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS board_photos (
+  email TEXT PRIMARY KEY,
+  photo_url TEXT NOT NULL,
+  role_title TEXT DEFAULT '',
+  full_name TEXT DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS board_photos_role_idx ON board_photos (role_title);

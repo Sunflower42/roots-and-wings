@@ -696,5 +696,50 @@
   </div>
 
   <script src="script.js"></script>
+
+  <!-- Swap hardcoded board photos for real Workspace profile photos when
+       available. The cache is populated every time a logged-in member hits
+       /api/photos; the public ?scope=board endpoint reads it without auth.
+       Hardcoded images remain as fallback if the fetch fails or if a board
+       member hasn't set a Workspace profile photo. -->
+  <script>
+    (function () {
+      fetch('/api/photos?scope=board')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || !Array.isArray(data.board) || data.board.length === 0) return;
+          var byRole = {};
+          data.board.forEach(function (b) {
+            if (b && b.role_title && b.photo_url) byRole[b.role_title] = b;
+          });
+          document.querySelectorAll('.board-member').forEach(function (card) {
+            var roleEl = card.querySelector('.board-role');
+            if (!roleEl) return;
+            var entry = byRole[roleEl.textContent.trim()];
+            if (!entry) return;
+            // Prefer a larger thumbnail when Google offers sizing hints.
+            var url = String(entry.photo_url).replace(/=s\d+-c/, '=s256-c');
+            var existingImg = card.querySelector('img.board-avatar-photo');
+            if (existingImg) {
+              existingImg.src = url;
+              return;
+            }
+            // No hardcoded image (initials avatar): replace the initials div with an <img>.
+            var initials = card.querySelector('.board-avatar');
+            if (initials) {
+              var img = document.createElement('img');
+              img.src = url;
+              img.alt = entry.full_name || (card.querySelector('h4') && card.querySelector('h4').textContent) || '';
+              img.className = 'board-avatar-photo';
+              img.loading = 'lazy';
+              img.onerror = function () { img.remove(); initials.style.display = ''; };
+              initials.style.display = 'none';
+              card.insertBefore(img, initials);
+            }
+          });
+        })
+        .catch(function () { /* keep hardcoded fallbacks */ });
+    })();
+  </script>
 </body>
 </html>
