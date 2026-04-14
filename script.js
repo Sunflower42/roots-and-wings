@@ -2949,8 +2949,23 @@
     var viewSess = cleaningModalSession;
     var sessClean = CLEANING_CREW.sessions[viewSess];
 
+    // Build the shared autocomplete list from the live directory once per
+    // render. Sorted alphabetically; dedup case-insensitively.
+    var familyOptions = '';
+    var seen = {};
+    (FAMILIES || []).map(function (f) { return f && f.name; })
+      .filter(function (n) { return !!n; })
+      .sort(function (a, b) { return a.localeCompare(b); })
+      .forEach(function (n) {
+        var key = n.toLowerCase();
+        if (seen[key]) return;
+        seen[key] = true;
+        familyOptions += '<option value="' + escapeAttr(n) + '"></option>';
+      });
+
     var html = '<button class="detail-close" aria-label="Close">&times;</button>';
     html += '<div class="elective-detail sc-modal">';
+    html += '<datalist id="cle-families-datalist">' + familyOptions + '</datalist>';
     html += '<h3>Cleaning Crew Management</h3>';
 
     // Session selector
@@ -2989,7 +3004,7 @@
         html += '</div>';
         // Add family input
         html += '<div class="cle-add-row">';
-        html += '<input class="cle-input cle-add-input" placeholder="Add family name" data-area-id="' + area.id + '" data-session="' + viewSess + '">';
+        html += '<input class="cle-input cle-add-input" placeholder="Add family name" list="cle-families-datalist" autocomplete="off" data-area-id="' + area.id + '" data-session="' + viewSess + '">';
         html += '<button class="cle-btn cle-btn-add" data-area-id="' + area.id + '" data-session="' + viewSess + '">Add</button>';
         html += '</div>';
         // Task editor (hidden by default)
