@@ -1468,10 +1468,10 @@
     var p = duty.popup;
     var html = '<button class="detail-close" aria-label="Close">&times;</button>';
     html += '<div class="elective-detail">';
-    // Print button — top-left, well clear of the absolute .detail-close X
-    // in the top-right corner. Using flex-start so clicks never land on
-    // the close button's hit area.
-    html += '<div class="detail-actions no-print" style="display:flex;justify-content:flex-start;margin-bottom:0.75rem;">';
+    // Print button — right-aligned but pushed down far enough that the
+    // absolute-positioned close X doesn't cover it. margin-top clears the
+    // X's hit area so clicks land on Print.
+    html += '<div class="detail-actions no-print" style="display:flex;justify-content:flex-end;margin-top:2.25rem;margin-bottom:0.5rem;">';
     html += '<button type="button" class="sc-btn duty-print-btn" aria-label="Print this role and class info">\u2399 Print</button>';
     html += '</div>';
 
