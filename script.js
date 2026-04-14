@@ -3746,17 +3746,82 @@
         var row = btn.closest('.sc-loc-row');
         var input = row ? row.querySelector('.sc-loc-name-input') : null;
         var locName = input ? input.value : 'this location';
-        if (!confirm('Delete "' + locName + '"? Items using this location will have their location cleared.')) return;
-        btn.disabled = true;
-        fetch('/api/supply-closet?action=locations&id=' + encodeURIComponent(id), {
-          method: 'DELETE',
-          headers: headers
-        }).then(function (r) { return r.json(); }).then(function (data) {
-          if (data.error) { alert('Error: ' + data.error); btn.disabled = false; return; }
-          return fetchSupplyLocations().then(function () { renderLocationManager(); });
-        }).catch(function (err) { alert('Network error: ' + err.message); btn.disabled = false; });
+
+        // Count items currently stored at this location so we can ask the
+        // user where they should be moved before the location is deleted.
+        var items = supplyClosetState.items || [];
+        var affected = items.filter(function (it) {
+          return (it.location || '').toLowerCase() === (locName || '').toLowerCase();
+        });
+
+        if (affected.length === 0) {
+          if (!confirm('Delete "' + locName + '"? No items are using this location.')) return;
+          doDeleteLocation(id, '', btn);
+          return;
+        }
+
+        // Replace the row with a Move & Delete form.
+        var otherLocs = (supplyClosetState.locations || []).filter(function (l) {
+          return String(l.id) !== String(id);
+        });
+        var html = '';
+        html += '<div class="sc-loc-delete-prompt" style="display:flex;flex-direction:column;gap:0.5rem;width:100%;padding:0.75rem;background:var(--bg-soft,#faf7f2);border-radius:6px;">';
+        html += '<div><strong>' + affected.length + '</strong> item' + (affected.length === 1 ? '' : 's') + ' at <strong>' + escapeAttr(locName) + '</strong>.</div>';
+        html += '<label style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">';
+        html += '<span>Move to:</span>';
+        html += '<select class="cl-input sc-loc-move-select">';
+        html += '<option value="">(no location)</option>';
+        otherLocs.forEach(function (l) {
+          html += '<option value="' + escapeAttr(l.name) + '">' + escapeAttr(l.name) + '</option>';
+        });
+        html += '</select>';
+        html += '</label>';
+        html += '<div style="display:flex;gap:0.5rem;justify-content:flex-end;">';
+        html += '<button class="sc-btn sc-loc-cancel-delete">Cancel</button>';
+        html += '<button class="sc-btn sc-save sc-loc-confirm-delete" data-loc-id="' + id + '">Move &amp; Delete</button>';
+        html += '</div>';
+        html += '</div>';
+        row.innerHTML = html;
+
+        var cancelBtn = row.querySelector('.sc-loc-cancel-delete');
+        var confirmBtn = row.querySelector('.sc-loc-confirm-delete');
+        var select = row.querySelector('.sc-loc-move-select');
+        if (cancelBtn) cancelBtn.addEventListener('click', function () { renderLocationManager(); });
+        if (confirmBtn) {
+          confirmBtn.addEventListener('click', function () {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Moving…';
+            doDeleteLocation(id, select ? select.value : '', confirmBtn);
+          });
+        }
       });
     });
+  }
+
+  function doDeleteLocation(id, moveTo, btn) {
+    var cred = sessionStorage.getItem('rw_google_credential');
+    var headers = { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' };
+    var url = '/api/supply-closet?action=locations&id=' + encodeURIComponent(id);
+    if (moveTo) url += '&moveTo=' + encodeURIComponent(moveTo);
+    fetch(url, { method: 'DELETE', headers: headers })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { alert('Error: ' + data.error); if (btn) btn.disabled = false; return; }
+        // Refresh both locations and inventory so list + items stay in sync.
+        return Promise.all([
+          fetchSupplyLocations(),
+          fetchSupplyCloset().then(function (invData) {
+            if (invData && invData.items) {
+              var flat = [];
+              SUPPLY_CATEGORIES.forEach(function (cat) {
+                (invData.items[cat.key] || []).forEach(function (r) { flat.push(r); });
+              });
+              supplyClosetState.items = flat;
+            }
+          })
+        ]).then(function () { renderLocationManager(); });
+      })
+      .catch(function (err) { alert('Network error: ' + err.message); if (btn) btn.disabled = false; });
   }
 
   function wireSupplyClosetEvents() {

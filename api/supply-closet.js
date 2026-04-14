@@ -105,10 +105,36 @@ module.exports = async function handler(req, res) {
         const id = parseInt(req.query.id, 10);
         if (!id) return res.status(400).json({ error: 'id required' });
         const toDelete = await sql`SELECT name FROM supply_locations WHERE id = ${id}`;
-        if (toDelete.length) await sql`UPDATE supply_closet SET location = '' WHERE location = ${toDelete[0].name}`;
+        if (toDelete.length === 0) return res.status(404).json({ error: 'Not found' });
+
+        // Optional: reassign items at this location to `moveTo` before
+        // deleting. If omitted (or empty), items get their location cleared.
+        // Validate moveTo against the set of known locations so we don't
+        // quietly land items in a typo'd spot.
+        const rawMoveTo = (req.query.moveTo === undefined || req.query.moveTo === null)
+          ? ''
+          : String(req.query.moveTo);
+        let moveTo = rawMoveTo.trim();
+        if (moveTo) {
+          const match = await sql`SELECT name FROM supply_locations WHERE LOWER(name) = LOWER(${moveTo}) AND id <> ${id} LIMIT 1`;
+          if (match.length === 0) {
+            return res.status(400).json({ error: 'moveTo is not a valid location' });
+          }
+          moveTo = match[0].name;
+        }
+
+        const reassigned = await sql`
+          UPDATE supply_closet
+          SET location = ${moveTo}
+          WHERE location = ${toDelete[0].name}
+          RETURNING id
+        `;
         const deleted = await sql`DELETE FROM supply_locations WHERE id = ${id} RETURNING id`;
-        if (deleted.length === 0) return res.status(404).json({ error: 'Not found' });
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({
+          ok: true,
+          moved_count: reassigned.length,
+          moved_to: moveTo
+        });
       }
       return res.status(405).json({ error: 'Method not allowed' });
     }
