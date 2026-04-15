@@ -595,11 +595,18 @@ function parsePMElectives(rows) {
   // Parse support roles (floaters, board duties, supply closet)
   var supportRoles = { floaters: [], boardDutiesPM1: [], boardDutiesPM2: [], supplyCloset: [] };
 
-  // Floaters are in the column next to "Student Names" label (col 6 for H1, col 19 for H2)
+  // Label-column helpers. Hour section label column is hour{1,2}StartCol;
+  // secondary labels like "Floaters" / "Board Duties" live one column to
+  // the right. Fall back to historical col 6/19 if discovery failed.
+  var h1LabelCol = hour1StartCol >= 0 ? hour1StartCol + 1 : 6;
+  var h2LabelCol = hour2StartCol > 0 ? hour2StartCol + 1 : 19;
+
+  // Floaters are in the column next to "Student Names" label.
+  var h1StudCol = hour1StartCol >= 0 ? hour1StartCol : 5;
+  var h2StudCol = hour2StartCol > 0 ? hour2StartCol : 18;
   for (var r = 0; r < rows.length; r++) {
-    if (cell(rows[r], 5) === 'Student Names' || cell(rows[r], 18) === 'Student Names') {
-      // Check floater columns (6 for H1, 19 for H2)
-      var floaterCols = [6, 19];
+    if (cell(rows[r], h1StudCol) === 'Student Names' || cell(rows[r], h2StudCol) === 'Student Names') {
+      var floaterCols = [h1LabelCol, h2LabelCol];
       for (var fi = 0; fi < floaterCols.length; fi++) {
         if (cell(rows[r], floaterCols[fi]) === 'Floaters') {
           for (var fr = r + 1; fr < Math.min(r + 15, rows.length); fr++) {
@@ -613,19 +620,18 @@ function parsePMElectives(rows) {
     }
   }
 
-  // Board duties — col 6 = PM Hour 1, col 19 = PM Hour 2
+  // Board duties share the same label column as Floaters (one to the right
+  // of each HOUR's label column).
   for (var r = 0; r < rows.length; r++) {
-    if (cell(rows[r], 6) === 'Board Duties' || cell(rows[r], 19) === 'Board Duties') {
-      var bdColMap = [[6, 'boardDutiesPM1'], [19, 'boardDutiesPM2']];
-      for (var bi = 0; bi < bdColMap.length; bi++) {
-        var bdCol = bdColMap[bi][0], bdKey = bdColMap[bi][1];
-        if (cell(rows[r], bdCol) === 'Board Duties') {
-          for (var br = r + 1; br < Math.min(r + 5, rows.length); br++) {
-            var bv = cell(rows[br], bdCol);
-            if (!bv || bv === '|') continue;
-            if (bv.match(/^(Student|Class)/i)) break;
-            supportRoles[bdKey].push(bv);
-          }
+    var bdColMap2 = [[h1LabelCol, 'boardDutiesPM1'], [h2LabelCol, 'boardDutiesPM2']];
+    for (var bi = 0; bi < bdColMap2.length; bi++) {
+      var bdCol = bdColMap2[bi][0], bdKey = bdColMap2[bi][1];
+      if (cell(rows[r], bdCol) === 'Board Duties') {
+        for (var br = r + 1; br < Math.min(r + 5, rows.length); br++) {
+          var bv = cell(rows[br], bdCol);
+          if (!bv || bv === '|') continue;
+          if (bv.match(/^(Student|Class)/i)) break;
+          if (supportRoles[bdKey].indexOf(bv) === -1) supportRoles[bdKey].push(bv);
         }
       }
     }
