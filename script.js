@@ -5531,6 +5531,9 @@
       '.steps .cell { padding: 4pt 0; border-bottom: 0.5pt solid #ccc; }',
       '.qty { color: #555; font-size: 9pt; }',
       '.notes { color: #555; font-size: 9pt; font-style: italic; }',
+      '.low-flag { display: inline-block; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 5pt; border-radius: 999pt; margin-left: 3pt; vertical-align: middle; background: #e07a2a; color: #fff; }',
+      '.low-flag-empty { background: #c0392b; }',
+      '@media print { .low-flag { background: transparent !important; color: #000; border: 0.75pt solid #000; } }',
       '@media print { .no-print { display: none; } }',
       '.no-print { text-align: center; padding: 12pt; background: #ffe; border-bottom: 1pt solid #ccc; margin: -0.25in -0.25in 12pt -0.25in; }',
       '.no-print button { font-size: 11pt; padding: 6pt 16pt; cursor: pointer; }'
@@ -5566,7 +5569,10 @@
           var qtyStr = bits.length ? ' <span class="qty">(' + bits.join(' ') + ')</span>' : '';
           var lessonsStr = ' <span class="lessons">· L' + r.lessons.join(',') + '</span>';
           var notesStr = r.notes ? ' <span class="notes">— ' + esc(r.notes) + '</span>' : '';
-          html += '<li><strong>' + esc(r.name) + '</strong>' + qtyStr + lessonsStr + notesStr + '</li>';
+          var flagStr2 = '';
+          if (r.closet_needs_restock || r.closet_quantity_level === 'empty') flagStr2 = ' <span class="low-flag' + (r.closet_quantity_level === 'empty' ? ' low-flag-empty' : '') + '">' + (r.closet_quantity_level === 'empty' ? 'Empty' : 'Low') + '</span>';
+          else if (r.closet_quantity_level === 'low') flagStr2 = ' <span class="low-flag">Low</span>';
+          html += '<li><strong>' + esc(r.name) + '</strong>' + flagStr2 + qtyStr + lessonsStr + notesStr + '</li>';
         });
         html += '</ul></div>';
       });
@@ -5592,6 +5598,11 @@
           html += '<div class="loc-group"><div class="loc-label">' + esc(g.heading) + '</div><ul class="checks">';
           g.items.forEach(function (s) {
             var line = '<strong>' + esc(s.item_name) + '</strong>';
+            if (s.closet_needs_restock || s.closet_quantity_level === 'empty') {
+              line += ' <span class="low-flag' + (s.closet_quantity_level === 'empty' ? ' low-flag-empty' : '') + '">' + (s.closet_quantity_level === 'empty' ? 'Empty' : 'Low') + '</span>';
+            } else if (s.closet_quantity_level === 'low') {
+              line += ' <span class="low-flag">Low</span>';
+            }
             var bits = [];
             if (s.qty) bits.push(esc(s.qty));
             if (s.qty_unit === 'student') bits.push('per student');
@@ -7246,6 +7257,9 @@
       '.steps .header { font-weight: 700; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.05em; padding-bottom: 4pt; border-bottom: 1pt solid #333; }',
       '.steps .num { text-align: right; padding-right: 4pt; font-weight: 700; }',
       '.steps .cell { padding: 3pt 0; border-bottom: 0.5pt solid #ccc; font-size: 10pt; }',
+      '.low-flag { display: inline-block; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 5pt; border-radius: 999pt; margin-left: 3pt; vertical-align: middle; background: #e07a2a; color: #fff; }',
+      '.low-flag-empty { background: #c0392b; }',
+      '@media print { .low-flag { background: transparent !important; color: #000; border: 0.75pt solid #000; } }',
       '@media print { .no-print { display: none; } }',
       '.no-print { text-align: center; padding: 10pt; background: #ffe; border-bottom: 1pt solid #ccc; margin: -0.25in -0.25in 12pt -0.25in; }',
       '.no-print button { font-size: 11pt; padding: 6pt 16pt; cursor: pointer; margin: 0 4pt; }'
@@ -7291,7 +7305,10 @@
             var qtyStr = bits.length ? ' <span class="qty">(' + bits.join(' ') + ')</span>' : '';
             var lessonsStr = ' <span class="lessons">\u00b7 L' + r.lessons.join(',') + '</span>';
             var notesStr = r.notes ? ' <span class="notes">\u2014 ' + esc(r.notes) + '</span>' : '';
-            html += '<li><strong>' + esc(r.name) + '</strong>' + qtyStr + lessonsStr + notesStr + '</li>';
+            var flagStr = '';
+            if (r.closet_needs_restock || r.closet_quantity_level === 'empty') flagStr = ' <span class="low-flag low-flag-empty">' + (r.closet_quantity_level === 'empty' ? 'Empty' : 'Low') + '</span>';
+            else if (r.closet_quantity_level === 'low') flagStr = ' <span class="low-flag">Low</span>';
+            html += '<li><strong>' + esc(r.name) + '</strong>' + flagStr + qtyStr + lessonsStr + notesStr + '</li>';
           });
           html += '</ul></div>';
         });
@@ -7317,6 +7334,11 @@
             html += '<div class="loc-group"><div class="loc-label">' + esc(g.heading) + '</div><ul class="checks">';
             g.items.forEach(function (s) {
               var line = '<strong>' + esc(s.item_name) + '</strong>';
+              if (s.closet_needs_restock || s.closet_quantity_level === 'empty') {
+                line += ' <span class="low-flag low-flag-empty">' + (s.closet_quantity_level === 'empty' ? 'Empty' : 'Low') + '</span>';
+              } else if (s.closet_quantity_level === 'low') {
+                line += ' <span class="low-flag">Low</span>';
+              }
               var bits = [];
               if (s.qty) bits.push(esc(s.qty));
               if (s.qty_unit === 'student') bits.push('per student');
