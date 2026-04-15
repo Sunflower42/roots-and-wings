@@ -7763,3 +7763,69 @@ button.staff-role:hover {
   .cl-sup-flag { color: #000; background: transparent !important; border: 1px solid #000; }
   .cl-supply-lowstock { background: transparent !important; }
 }
+
+/* ── Directory detail: person's AM / PM1 / PM2 schedule ── */
+.detail-day-schedule {
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg, #faf7f2);
+}
+.pds-title {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.pds-sub {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+.pds-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--color-border);
+}
+.pds-row:first-of-type { border-top: none; }
+.pds-row-empty { opacity: 0.6; }
+.pds-block {
+  display: flex;
+  flex-direction: column;
+}
+.pds-block-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-primary-dark, var(--color-primary));
+  letter-spacing: 0.04em;
+}
+.pds-block-time {
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+}
+.pds-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pds-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.pds-label { font-weight: 600; color: var(--color-text); }
+.pds-detail { font-size: 0.75rem; color: var(--color-text-light); }
+.pds-empty { font-size: 0.8rem; color: var(--color-text-light); font-style: italic; }
+@media (max-width: 480px) {
+  .pds-row { grid-template-columns: 70px 1fr; gap: 0.5rem; }
+}

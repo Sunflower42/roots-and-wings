@@ -1321,6 +1321,141 @@
     applyPhotos();
   }
 
+  // Build an AM / PM1 / PM2 mini-schedule for one directory member, scoped
+  // to the currently-active session. Returns HTML (or '' when there's nothing
+  // to show — e.g., a parent with no teaching role and no kids in electives
+  // doesn't really have a "schedule" so we skip).
+  function renderPersonDaySchedule(person, fam) {
+    if (!person || !fam) return '';
+    var sessInfo = SESSION_DATES[currentSession];
+    if (!sessInfo) return '';
+
+    // For a parent, scan AM classes + PM electives + support roles.
+    // For a kid, pull the kid's AM group topic/room + their PM electives.
+    var am = [], pm1 = [], pm2 = [];
+
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    if (person.type === 'kid') {
+      // AM: kid's group = their AM class
+      var group = person.group;
+      var amClass = group && AM_CLASSES[group];
+      var amSess = amClass && amClass.sessions && amClass.sessions[currentSession];
+      if (amSess) {
+        var amLine = groupWithAge(group);
+        if (amSess.topic) amLine += ' \u2014 ' + esc(amSess.topic);
+        am.push({ label: amLine, detail: amSess.room ? esc(amSess.room) : '' });
+      } else if (group) {
+        am.push({ label: groupWithAge(group), detail: '' });
+      }
+      // PM: kid's electives
+      var kidFullName = person.name + ' ' + (person.lastName || fam.name);
+      var electives = getKidElectives(kidFullName) || [];
+      electives.forEach(function (elec) {
+        var isBoth = elec.hour === 'both';
+        var target = { label: esc(elec.name), detail: elec.room ? esc(elec.room) : '' };
+        if (isBoth || elec.hour === 1) pm1.push(target);
+        if (isBoth || elec.hour === 2) pm2.push(target);
+      });
+      // Kid-only honoring the morning/afternoon flag
+      if (person.schedule === 'morning') { pm1 = []; pm2 = []; }
+      if (person.schedule === 'afternoon') { am = []; }
+    } else {
+      // Parent — scan roles
+      var lastName = person.lastName || fam.name;
+      var full = person.name + ' ' + lastName;
+      function isMe(n) {
+        if (!n) return false;
+        return String(n).trim().toLowerCase() === full.toLowerCase();
+      }
+
+      // AM classes (teacher / assistant)
+      Object.keys(AM_CLASSES).forEach(function (groupName) {
+        var staff = AM_CLASSES[groupName];
+        var sess = staff.sessions && staff.sessions[currentSession];
+        if (!sess) return;
+        if (isMe(sess.teacher)) {
+          am.push({ label: groupWithAge(groupName) + ' \u2014 Leading', detail: sess.room ? esc(sess.room) : '' });
+        }
+        (sess.assistants || []).forEach(function (a) {
+          if (isMe(a)) am.push({ label: groupWithAge(groupName) + ' \u2014 Assisting', detail: sess.room ? esc(sess.room) : '' });
+        });
+      });
+      // AM support (floater / prep / board)
+      var amSupport = AM_SUPPORT_ROLES && AM_SUPPORT_ROLES[currentSession];
+      if (amSupport) {
+        ['10-11', '11-12'].forEach(function (slot) {
+          ['floaters', 'prepPeriod', 'boardDuties'].forEach(function (key) {
+            var arr = amSupport[key] && amSupport[key][slot];
+            if (!arr) return;
+            arr.forEach(function (name) {
+              if (!isMe(name)) return;
+              var label = key === 'floaters' ? 'Floater' : key === 'prepPeriod' ? 'Prep Period' : 'Board Duties';
+              am.push({ label: label + ' ' + slot, detail: '' });
+            });
+          });
+        });
+      }
+
+      // PM electives (leader / assistant)
+      var sessElectives = PM_ELECTIVES[currentSession] || [];
+      sessElectives.forEach(function (elec) {
+        var inPM1 = elec.hour === 1 || elec.hour === 'both';
+        var inPM2 = elec.hour === 2 || elec.hour === 'both';
+        function add(role) {
+          var label = esc(elec.name) + ' \u2014 ' + role;
+          var detail = elec.room ? esc(elec.room) : '';
+          if (inPM1) pm1.push({ label: label, detail: detail });
+          if (inPM2) pm2.push({ label: label, detail: detail });
+        }
+        if (isMe(elec.leader)) add('Leading');
+        (elec.assistants || []).forEach(function (a) { if (isMe(a)) add('Assisting'); });
+      });
+
+      // PM support (floater / board PM1 / board PM2 / supply closet)
+      var pmSupport = PM_SUPPORT_ROLES && PM_SUPPORT_ROLES[currentSession];
+      if (pmSupport) {
+        (pmSupport.floaters || []).forEach(function (name) { if (isMe(name)) pm1.push({ label: 'PM Floater', detail: '' }); });
+        (pmSupport.boardDutiesPM1 || []).forEach(function (name) { if (isMe(name)) pm1.push({ label: 'Board Duties', detail: '' }); });
+        (pmSupport.boardDutiesPM2 || []).forEach(function (name) { if (isMe(name)) pm2.push({ label: 'Board Duties', detail: '' }); });
+        (pmSupport.supplyCloset || []).forEach(function (name) { if (isMe(name)) pm1.push({ label: 'Supply Closet', detail: 'Manage supplies' }); });
+      }
+    }
+
+    // If the person has nothing in any block, skip the section entirely.
+    if (am.length === 0 && pm1.length === 0 && pm2.length === 0) return '';
+
+    // Header wording: if today is a Tuesday within the active session, call
+    // it "Today at Co-op"; otherwise frame it around the current session.
+    var d = new Date();
+    var nowIso = d.toISOString().slice(0, 10);
+    var isCoopTuesday = d.getDay() === 2 && nowIso >= sessInfo.start && nowIso <= sessInfo.end;
+    var title = isCoopTuesday ? "Today at Co-op" : "Co-op Schedule";
+    var subtitle = esc(sessInfo.name);
+
+    function renderBlock(label, times, items) {
+      var inner = items.length === 0
+        ? '<span class="pds-empty">Nothing scheduled</span>'
+        : items.map(function (it) {
+            return '<div class="pds-item"><span class="pds-label">' + it.label + '</span>'
+              + (it.detail ? '<span class="pds-detail">' + it.detail + '</span>' : '')
+              + '</div>';
+          }).join('');
+      return '<div class="pds-row' + (items.length === 0 ? ' pds-row-empty' : '') + '">'
+        + '<div class="pds-block"><span class="pds-block-name">' + label + '</span><span class="pds-block-time">' + times + '</span></div>'
+        + '<div class="pds-items">' + inner + '</div>'
+        + '</div>';
+    }
+
+    var html = '<div class="detail-day-schedule">';
+    html += '<h4 class="pds-title">' + title + ' <span class="pds-sub">' + subtitle + '</span></h4>';
+    html += renderBlock('AM',  '10:00\u201312:00', am);
+    html += renderBlock('PM1', '1:00\u20131:55',   pm1);
+    html += renderBlock('PM2', '2:00\u20132:55',   pm2);
+    html += '</div>';
+    return html;
+  }
+
   function showPersonDetail(person, boardInfo) {
     if (!personDetail || !personDetailCard) return;
     var fam = FAMILIES.filter(function(f){return f.name === person.family;})[0];
@@ -1369,6 +1504,10 @@
     html += '<a href="tel:' + fam.phone.replace(/[^+\d]/g, '') + '" class="detail-btn detail-btn-phone">';
     html += phoneSvg + ' ' + fam.phone + '</a>';
     html += '</div>';
+
+    // ──── Today's co-op schedule for this person ────
+    var scheduleHtml = renderPersonDaySchedule(person, fam);
+    if (scheduleHtml) html += scheduleHtml;
 
     // Board responsibilities
     if (boardInfo && boardInfo.responsibilities) {
