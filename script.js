@@ -2077,6 +2077,7 @@
           else { sessionStorage.removeItem(VIEW_AS_KEY); }
           renderMyFamily();
           if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
+          if (typeof loadNotifications === 'function') loadNotifications();
         };
       }
       if (greeting) greeting.textContent = 'Welcome!';
@@ -2540,6 +2541,7 @@
         }
         renderMyFamily();
         if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
+        if (typeof loadNotifications === 'function') loadNotifications();
       };
     }
     var viewAsReset = document.getElementById('viewAsReset');
@@ -2548,6 +2550,7 @@
         sessionStorage.removeItem(VIEW_AS_KEY);
         renderMyFamily();
         if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
+        if (typeof loadNotifications === 'function') loadNotifications();
       };
     }
 
@@ -5674,7 +5677,7 @@
             keyToRow[sig].lessons.push(ls.lesson_number);
           }
         } else {
-          var row = { name: name, qty: qty, unit: unit, location: location, notes: notes, lessons: [ls.lesson_number], id: s.id || null, closet_item_id: s.closet_item_id };
+          var row = { name: name, qty: qty, unit: unit, location: location, notes: notes, lessons: [ls.lesson_number], id: s.id || null, closet_item_id: s.closet_item_id, closet_needs_restock: !!s.closet_needs_restock, closet_quantity_level: s.closet_quantity_level || null };
           keyToRow[sig] = row;
           rows.push(row);
         }
@@ -5682,6 +5685,21 @@
     });
     rows.forEach(function (r) { r.lessons.sort(function (a, b) { return a - b; }); });
     return rows;
+  }
+
+  // Returns a small pill (or '') warning that a closet-linked supply is
+  // currently flagged as needing restock, or that the coordinator has marked
+  // its quantity as empty/low. Takes either a raw supply object (per-lesson
+  // shape with closet_needs_restock/closet_quantity_level) or a master-list
+  // row that has been enriched with the same two fields.
+  function renderSupplyLowPill(s) {
+    if (!s) return '';
+    var flagged = !!s.closet_needs_restock;
+    var level = s.closet_quantity_level;
+    if (flagged) return ' <span class="cl-sup-flag cl-sup-flag-low" title="Flagged as needing restock">Low</span>';
+    if (level === 'empty') return ' <span class="cl-sup-flag cl-sup-flag-empty" title="Marked empty by Supply Coordinator">Empty</span>';
+    if (level === 'low') return ' <span class="cl-sup-flag cl-sup-flag-low" title="Marked low by Supply Coordinator">Low</span>';
+    return '';
   }
 
   function renderSupplyItem(r, opts) {
@@ -5694,7 +5712,7 @@
     var qtyStr = bits.length ? ' <span class="' + (opts && opts.qtyClass || 'cl-qty') + '">(' + bits.join(' ') + ')</span>' : '';
     var lessonsStr = '<span class="' + (opts && opts.lessonsClass || 'cl-master-lessons') + '"> · L' + r.lessons.join(',') + '</span>';
     var notesStr = r.notes ? ' <span class="' + (opts && opts.notesClass || 'cl-notes') + '">— ' + linkifyFn(r.notes) + '</span>' : '';
-    return '<span class="' + (opts && opts.nameClass || 'cl-master-name') + '">' + esc(r.name) + '</span>' + qtyStr + lessonsStr + notesStr;
+    return '<span class="' + (opts && opts.nameClass || 'cl-master-name') + '">' + esc(r.name) + '</span>' + renderSupplyLowPill(r) + qtyStr + lessonsStr + notesStr;
   }
 
   function groupLessonSuppliesByLocation(supplies) {
@@ -5857,14 +5875,15 @@
         lessonGroups.forEach(function (g) {
           html += '<div class="cl-loc-group"><span class="cl-loc-label">' + escapeAttr(g.heading) + '</span><ul class="cl-supply-list">';
           g.items.forEach(function (s) {
-            var line = escapeAttr(s.item_name);
+            var line = escapeAttr(s.item_name) + renderSupplyLowPill(s);
             var qtyParts = [];
             if (s.qty) qtyParts.push(escapeAttr(s.qty));
             if (s.qty_unit === 'student') qtyParts.push('per student');
             else if (s.qty_unit === 'class') qtyParts.push('per class');
             if (qtyParts.length) line += ' <span class="cl-qty">(' + qtyParts.join(' ') + ')</span>';
             if (s.notes) line += ' <span class="cl-notes">&mdash; ' + linkify(s.notes) + '</span>';
-            html += '<li>' + line + '</li>';
+            var liClass = (s.closet_needs_restock || s.closet_quantity_level === 'empty' || s.closet_quantity_level === 'low') ? ' class="cl-supply-lowstock"' : '';
+            html += '<li' + liClass + '>' + line + '</li>';
           });
           html += '</ul></div>';
         });
@@ -6969,10 +6988,21 @@
 
   var notifState = { notifications: [], unreadCount: 0, dropdownOpen: false };
 
+  // When communications@ is logged in AND has a View As set, the server
+  // reads that user's notification inbox instead of comms@'s own. This lets
+  // the super user triage on behalf of whoever they're helping.
+  function notifViewAsSuffix() {
+    var realEmail = sessionStorage.getItem('rw_user_email');
+    if (realEmail !== COMMS_EMAIL) return '';
+    var viewAs = sessionStorage.getItem(VIEW_AS_KEY);
+    if (!viewAs) return '';
+    return '&view_as=' + encodeURIComponent(viewAs);
+  }
+
   function loadNotifications() {
     var cred = sessionStorage.getItem('rw_google_credential');
     if (!cred) return;
-    fetch('/api/notifications?limit=20', { headers: { 'Authorization': 'Bearer ' + cred } })
+    fetch('/api/notifications?limit=20' + notifViewAsSuffix(), { headers: { 'Authorization': 'Bearer ' + cred } })
     .then(function (r) { return r.json(); })
     .then(function (data) { notifState.notifications = data.notifications || []; notifState.unreadCount = data.unread_count || 0; updateNotifBadge(); if (notifState.dropdownOpen) renderNotifDropdown(); })
     .catch(function () {});
@@ -7004,8 +7034,8 @@
     bell.insertAdjacentHTML('afterend', html);
     var dropdown = document.getElementById('notifDropdown');
     var markAllBtn = document.getElementById('notifMarkAllBtn');
-    if (markAllBtn) { markAllBtn.addEventListener('click', function (e) { e.stopPropagation(); var cred = sessionStorage.getItem('rw_google_credential'); fetch('/api/notifications?mark_all_read=true', { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' } }).then(function () { loadNotifications(); }); }); }
-    dropdown.querySelectorAll('.notif-item').forEach(function (item) { item.addEventListener('click', function () { var id = item.getAttribute('data-notif-id'); var cred = sessionStorage.getItem('rw_google_credential'); fetch('/api/notifications?id=' + id, { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' } }).then(function () { loadNotifications(); }); var cov = document.getElementById('coverage'); if (cov) cov.scrollIntoView({ behavior: 'smooth' }); closeNotifDropdown(); }); });
+    if (markAllBtn) { markAllBtn.addEventListener('click', function (e) { e.stopPropagation(); var cred = sessionStorage.getItem('rw_google_credential'); fetch('/api/notifications?mark_all_read=true' + notifViewAsSuffix(), { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' } }).then(function () { loadNotifications(); }); }); }
+    dropdown.querySelectorAll('.notif-item').forEach(function (item) { item.addEventListener('click', function () { var id = item.getAttribute('data-notif-id'); var cred = sessionStorage.getItem('rw_google_credential'); fetch('/api/notifications?id=' + id + notifViewAsSuffix(), { method: 'PATCH', headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' } }).then(function () { loadNotifications(); }); var cov = document.getElementById('coverage'); if (cov) cov.scrollIntoView({ behavior: 'smooth' }); closeNotifDropdown(); }); });
     setTimeout(function () { document.addEventListener('click', closeNotifOnOutsideClick); }, 10);
   }
 

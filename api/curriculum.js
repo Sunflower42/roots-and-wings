@@ -106,12 +106,14 @@ async function getFullCurriculum(sql, id) {
     SELECT cs.id, cs.lesson_id, cs.item_name, cs.qty, cs.qty_unit, cs.notes, cs.closet_item_id,
            COALESCE(sc_id.location, sc_name.location) AS closet_location,
            COALESCE(cs.closet_item_id, sc_name.id) AS resolved_closet_id,
+           COALESCE(sc_id.needs_restock, sc_name.needs_restock, FALSE) AS closet_needs_restock,
+           COALESCE(sc_id.quantity_level, sc_name.quantity_level) AS closet_quantity_level,
            l.lesson_number
     FROM curriculum_supplies cs
     JOIN lessons l ON l.id = cs.lesson_id
     LEFT JOIN supply_closet sc_id ON sc_id.id = cs.closet_item_id
     LEFT JOIN LATERAL (
-      SELECT id, location FROM supply_closet
+      SELECT id, location, needs_restock, quantity_level FROM supply_closet
       WHERE cs.closet_item_id IS NULL
         AND LOWER(TRIM(supply_closet.item_name)) = LOWER(TRIM(cs.item_name))
       LIMIT 1
@@ -130,7 +132,9 @@ async function getFullCurriculum(sql, id) {
       qty_unit: s.qty_unit || '',
       notes: s.notes,
       closet_item_id: s.resolved_closet_id || s.closet_item_id,
-      closet_location: s.closet_location || ''
+      closet_location: s.closet_location || '',
+      closet_needs_restock: !!s.closet_needs_restock,
+      closet_quantity_level: s.closet_quantity_level || null
     });
   });
   lessons.forEach(l => { l.supplies = byLesson[l.id] || []; });

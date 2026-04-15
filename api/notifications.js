@@ -10,7 +10,21 @@ const { ALLOWED_ORIGINS } = require('./_config');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
+const SUPER_USER_EMAIL = 'communications@rootsandwingsindy.com';
 const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+// If the real signed-in user is communications@ and they've asked to view as
+// another @rootsandwingsindy.com member (via ?view_as=), return that email;
+// otherwise return the real user's email. This mirrors the existing dashboard
+// View As pattern so the super user can triage notifications on behalf of
+// whoever they're helping.
+function resolveRecipient(user, viewAsQuery) {
+  if (user.email.toLowerCase() !== SUPER_USER_EMAIL) return user.email;
+  var va = (viewAsQuery || '').toString().trim().toLowerCase();
+  if (!va) return user.email;
+  if ((va.split('@')[1] || '') !== ALLOWED_DOMAIN) return user.email;
+  return va;
+}
 
 async function verifyGoogleAuth(req) {
   const authHeader = req.headers.authorization || '';
@@ -41,6 +55,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const sql = getSql();
+    const recipient = resolveRecipient(user, req.query.view_as);
 
     if (req.method === 'GET') {
       const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
@@ -50,7 +65,7 @@ module.exports = async function handler(req, res) {
         rows = await sql`
           SELECT id, type, title, body, link_url, related_absence_id, is_read, created_at
           FROM notifications
-          WHERE recipient_email = ${user.email} AND is_read = FALSE
+          WHERE recipient_email = ${recipient} AND is_read = FALSE
           ORDER BY created_at DESC
           LIMIT ${limit}
         `;
@@ -58,14 +73,14 @@ module.exports = async function handler(req, res) {
         rows = await sql`
           SELECT id, type, title, body, link_url, related_absence_id, is_read, created_at
           FROM notifications
-          WHERE recipient_email = ${user.email}
+          WHERE recipient_email = ${recipient}
           ORDER BY created_at DESC
           LIMIT ${limit}
         `;
       }
       const unreadCount = await sql`
         SELECT COUNT(*)::int AS count FROM notifications
-        WHERE recipient_email = ${user.email} AND is_read = FALSE
+        WHERE recipient_email = ${recipient} AND is_read = FALSE
       `;
       return res.status(200).json({ notifications: rows, unread_count: unreadCount[0].count });
     }
@@ -74,7 +89,7 @@ module.exports = async function handler(req, res) {
       if (req.query.mark_all_read === 'true') {
         await sql`
           UPDATE notifications SET is_read = TRUE
-          WHERE recipient_email = ${user.email} AND is_read = FALSE
+          WHERE recipient_email = ${recipient} AND is_read = FALSE
         `;
         return res.status(200).json({ ok: true });
       }
@@ -82,7 +97,7 @@ module.exports = async function handler(req, res) {
       if (!id || Number.isNaN(id)) return res.status(400).json({ error: 'id required' });
       await sql`
         UPDATE notifications SET is_read = TRUE
-        WHERE id = ${id} AND recipient_email = ${user.email}
+        WHERE id = ${id} AND recipient_email = ${recipient}
       `;
       return res.status(200).json({ ok: true });
     }

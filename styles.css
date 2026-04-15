@@ -7742,3 +7742,24 @@ button.staff-role:hover {
   background: rgba(224, 122, 42, 0.1);
   color: #a5531a;
 }
+
+/* ── Curriculum lesson: low/empty-stock pill beside supply names ── */
+.cl-sup-flag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: 4px;
+  vertical-align: middle;
+  color: #fff;
+}
+.cl-sup-flag-low   { background: #e07a2a; }
+.cl-sup-flag-empty { background: #c0392b; }
+.cl-supply-lowstock { background: rgba(224, 122, 42, 0.06); border-radius: 4px; padding: 1px 4px; }
+@media print {
+  .cl-sup-flag { color: #000; background: transparent !important; border: 1px solid #000; }
+  .cl-supply-lowstock { background: transparent !important; }
+}
