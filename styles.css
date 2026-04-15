@@ -6480,6 +6480,31 @@ button.staff-role:hover {
   text-align: center;
   border-radius: 8px;
   padding: 0 3px;
+  box-shadow: 0 0 0 2px var(--color-bg, #fff);
+}
+
+/* Bell button gets a soft red ring + gentle pulse while unread notifications
+   exist, so users notice it without having to open the dropdown. */
+.notif-bell-btn.has-unread {
+  color: #dc3545;
+  animation: notifBellPulse 2s ease-in-out infinite;
+}
+.notif-bell-btn.has-unread .notif-badge {
+  animation: notifBadgePulse 1.6s ease-in-out infinite;
+}
+@keyframes notifBellPulse {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(220, 53, 69, 0)); }
+  50%      { filter: drop-shadow(0 0 4px rgba(220, 53, 69, 0.55)); }
+}
+@keyframes notifBadgePulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 2px var(--color-bg, #fff), 0 0 0 0 rgba(220, 53, 69, 0.45); }
+  50%      { transform: scale(1.08); box-shadow: 0 0 0 2px var(--color-bg, #fff), 0 0 0 5px rgba(220, 53, 69, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notif-bell-btn.has-unread,
+  .notif-bell-btn.has-unread .notif-badge {
+    animation: none;
+  }
 }
 
 /* Notification dropdown */
@@ -7701,3 +7726,19 @@ button.staff-role:hover {
 .sc-qty-opt.sc-qty-low.sc-qty-active    { background: #e07a2a; }
 .sc-qty-opt.sc-qty-medium.sc-qty-active { background: #b89400; }
 .sc-qty-opt.sc-qty-high.sc-qty-active   { background: #2e6a2e; }
+
+/* ── Supply closet: section headers for flagged vs rest ── */
+.sc-section-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 14px 6px;
+  background: var(--color-bg, #faf7f2);
+  color: var(--color-text-light);
+  border-bottom: 1px solid var(--color-border);
+}
+.sc-section-flagged {
+  background: rgba(224, 122, 42, 0.1);
+  color: #a5531a;
+}

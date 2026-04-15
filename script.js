@@ -3770,12 +3770,13 @@
       );
     });
     var sortBy = state.sortBy;
+    // Flagged items ALWAYS float to the top, regardless of the selected sort.
+    // Within each group (flagged / unflagged) the user's sort choice applies.
     rows.sort(function (a, b) {
-      if (sortBy === 'attention') {
-        var fa = a.needs_restock ? 0 : 1;
-        var fb = b.needs_restock ? 0 : 1;
-        if (fa !== fb) return fa - fb;
-      } else if (sortBy === 'location') {
+      var fa = a.needs_restock ? 0 : 1;
+      var fb = b.needs_restock ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      if (sortBy === 'location') {
         var la = (a.location || '\uffff').toLowerCase();
         var lb = (b.location || '\uffff').toLowerCase();
         if (la !== lb) return la < lb ? -1 : 1;
@@ -3813,8 +3814,7 @@
     var sortOptions = [
       { v: 'name', label: 'Sort: Name' },
       { v: 'location', label: 'Sort: Location' },
-      { v: 'category', label: 'Sort: Category' },
-      { v: 'attention', label: 'Sort: Needs attention' }
+      { v: 'category', label: 'Sort: Category' }
     ];
     sortOptions.forEach(function (o) {
       var sel = state.sortBy === o.v ? ' selected' : '';
@@ -3843,22 +3843,7 @@
     html += '<div class="sc-count">Showing ' + rows.length + ' of ' + totalCount + ' items</div>';
 
     // Item list
-    html += '<div class="sc-list">';
-    if (state.addingNew) {
-      html += renderEditRow(null);
-    }
-    if (rows.length === 0 && !state.addingNew) {
-      var msg = state.searchQuery ? 'No items match your search.' : 'No items in the selected categories.';
-      html += '<div class="sc-empty">' + msg + '</div>';
-    }
-    rows.forEach(function (item) {
-      if (state.editingId === item.id) {
-        html += renderEditRow(item);
-      } else {
-        html += renderReadRow(item);
-      }
-    });
-    html += '</div>';
+    html += '<div class="sc-list">' + renderSupplyListBody(rows, state) + '</div>';
 
     // Footer
     html += '<div class="sc-footer">';
@@ -3879,6 +3864,39 @@
     document.body.style.overflow = 'hidden';
 
     wireSupplyClosetEvents();
+  }
+
+  // Renders just the <div class="sc-list"> INNER HTML. Splits the result into
+  // a "Needs restocking" section at the top and an "All items" section below
+  // whenever any flagged items are present. Shared by full and list-only
+  // refreshes so both paths use identical markup.
+  function renderSupplyListBody(rows, state) {
+    var html = '';
+    if (state.addingNew) html += renderEditRow(null);
+    if (rows.length === 0 && !state.addingNew) {
+      var msg = state.searchQuery ? 'No items match your search.' : 'No items in the selected categories.';
+      html += '<div class="sc-empty">' + msg + '</div>';
+      return html;
+    }
+    var flagged = [];
+    var rest = [];
+    rows.forEach(function (item) {
+      if (item.needs_restock) flagged.push(item); else rest.push(item);
+    });
+    function renderGroup(group) {
+      return group.map(function (item) {
+        return state.editingId === item.id ? renderEditRow(item) : renderReadRow(item);
+      }).join('');
+    }
+    if (flagged.length > 0) {
+      html += '<div class="sc-section-header sc-section-flagged">Needs restocking (' + flagged.length + ')</div>';
+      html += renderGroup(flagged);
+      if (rest.length > 0) {
+        html += '<div class="sc-section-header sc-section-rest">All items</div>';
+      }
+    }
+    html += renderGroup(rest);
+    return html;
   }
 
   function renderReadRow(item) {
@@ -4435,20 +4453,7 @@
     var listEl = personDetailCard.querySelector('.sc-list');
     if (!listEl) return;
 
-    var html = '';
-    if (state.addingNew) html += renderEditRow(null);
-    if (rows.length === 0 && !state.addingNew) {
-      var msg = state.searchQuery ? 'No items match your search.' : 'No items in the selected categories.';
-      html += '<div class="sc-empty">' + msg + '</div>';
-    }
-    rows.forEach(function (item) {
-      if (state.editingId === item.id) {
-        html += renderEditRow(item);
-      } else {
-        html += renderReadRow(item);
-      }
-    });
-    listEl.innerHTML = html;
+    listEl.innerHTML = renderSupplyListBody(rows, state);
 
     // Re-wire only the events inside the list (edit/delete/save/cancel)
     wireSupplyClosetListEvents();
@@ -6974,9 +6979,14 @@
   }
 
   function updateNotifBadge() {
+    var has = notifState.unreadCount > 0;
     document.querySelectorAll('.notif-badge').forEach(function (badge) {
-      if (notifState.unreadCount > 0) { badge.textContent = notifState.unreadCount > 99 ? '99+' : notifState.unreadCount; badge.style.display = ''; }
+      if (has) { badge.textContent = notifState.unreadCount > 99 ? '99+' : notifState.unreadCount; badge.style.display = ''; }
       else { badge.style.display = 'none'; }
+    });
+    // Toggle an "unread" class on every bell button so CSS can pulse/glow it.
+    document.querySelectorAll('.notif-bell-btn').forEach(function (btn) {
+      btn.classList.toggle('has-unread', has);
     });
   }
 
