@@ -1364,23 +1364,35 @@
       // Parent — scan roles
       var lastName = person.lastName || fam.name;
       var full = person.name + ' ' + lastName;
-      var myFirst = String(person.name || '').trim().toLowerCase();
-      var myLast = String(lastName || '').trim().toLowerCase();
+      // Normalize for comparison: collapse whitespace, swap curly quotes for
+      // straight, and lowercase. Handles cross-tab spelling drift (different
+      // people type different quotes / extra spaces in the same sheet).
+      function norm(s) {
+        return String(s == null ? '' : s)
+          .replace(/[\u2018\u2019\u02BC]/g, "'")
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+      }
+      var fullN = norm(full);
+      var myFirstN = norm(person.name).split(' ')[0];
+      var myLastN = norm(lastName);
       function isMe(n) {
         if (!n) return false;
-        var s = String(n).trim().toLowerCase();
+        var s = norm(n);
         if (!s) return false;
-        if (s === full.toLowerCase()) return true;
-        // Fallback for shortened forms like "Erin B", "Erin B.", "Erin Bogan Jr."
-        // Match first-name starts with myFirst AND last word starts with myLast's first letter.
-        var parts = s.split(/\s+/);
+        if (s === fullN) return true;
+        // Fallback for "Erin B", "Erin B.", "Aimee O'Connor Gading" (whose
+        // directory parent name is "Aimee O'Connor" with family "Gading"),
+        // middle initials, etc. Accept when first-name matches exactly AND
+        // last word matches family name exactly OR is an abbreviation of it.
+        var parts = s.split(' ');
         if (parts.length < 2) return false;
-        var first = parts[0].replace(/[^a-z]/g, '');
+        var first = parts[0].replace(/[^a-z']/g, '');
         var last = parts[parts.length - 1].replace(/[^a-z]/g, '');
-        if (first !== myFirst) return false;
-        // Exact last name match OR abbreviated last name (first char of myLast)
-        if (last === myLast) return true;
-        if (last.length <= 2 && myLast.length > 0 && last.charAt(0) === myLast.charAt(0)) return true;
+        if (first !== myFirstN) return false;
+        if (last === myLastN) return true;
+        if (last.length <= 2 && myLastN.length > 0 && last.charAt(0) === myLastN.charAt(0)) return true;
         return false;
       }
 
