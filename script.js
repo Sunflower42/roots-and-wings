@@ -2577,18 +2577,19 @@
       var sem = calculateSemesterFees(fam, semKey);
       if (!sem) return;
 
-      // Deposit subsection
+      // Membership fee subsection (the $50 that was previously labeled "deposit" —
+      // this is what the public registration flow collects at sign-up)
       if (sem.deposit) {
         var depPaid = sem.depositStatus === 'Paid';
         var depStatusClass = depPaid ? 'mf-billing-paid' : 'mf-billing-due-status';
         html += '<div class="mf-billing-semester">';
         html += '<div class="mf-billing-header">';
-        html += '<strong>' + sem.name + ' Deposit</strong>';
+        html += '<strong>' + sem.name + ' Membership Fee</strong>';
         html += '<span class="mf-billing-status ' + depStatusClass + '">' + sem.depositStatus + '</span>';
         html += '</div>';
         html += '<div class="mf-billing-lines">';
         html += '<div class="mf-billing-line mf-billing-total">';
-        html += '<span>Deposit (per family)</span>';
+        html += '<span>Membership Fee (per family)</span>';
         html += '<span>$' + sem.deposit.toFixed(2) + '</span>';
         html += '</div>';
         html += '</div>';
@@ -2659,10 +2660,10 @@
       html += '<span>$' + sem.subtotal.toFixed(2) + '</span>';
       html += '</div>';
 
-      // Deposit credit
+      // Membership fee credit
       if (sem.deposit > 0) {
         html += '<div class="mf-billing-line mf-billing-paid-line">';
-        html += '<span>Deposit applied</span>';
+        html += '<span>Membership Fee applied</span>';
         html += '<span>&minus;$' + sem.deposit.toFixed(2) + '</span>';
         html += '</div>';
       }
@@ -2842,10 +2843,10 @@
       var sem = calculateSemesterFees(fam, semKey);
       if (!sem) return;
       var capKey = semKey.charAt(0).toUpperCase() + semKey.slice(1);
-      // Deposit button
+      // Membership fee button (the $50 intake fee — also collected via /register.html)
       wirePaypalButton('paypal-dep-' + semKey, sem.deposit.toFixed(2),
-        sem.name + ' deposit — ' + fam.name + ' family',
-        'RW-' + capKey + '-Dep-' + fam.name + '-' + new Date().getFullYear(), fam.email, buildPaypalNote(fam, semKey, 'Deposit'));
+        sem.name + ' membership fee — ' + fam.name + ' family',
+        'RW-' + capKey + '-Memb-' + fam.name + '-' + new Date().getFullYear(), fam.email, buildPaypalNote(fam, semKey, 'Membership Fee'));
       // Semester fees button
       wirePaypalButton('paypal-btn-' + semKey, sem.total.toFixed(2),
         sem.name + ' fees — ' + fam.name + ' family',

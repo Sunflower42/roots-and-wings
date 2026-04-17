@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Roots & Wings Indy registration — sign the member agreement, liability waiver, and pay the Fall Membership Fee.">
+  <meta name="theme-color" content="#523A79">
+  <title>Register — Roots & Wings Indy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preload" href="logo-combined.png?v=20260417d" as="image">
+  <link rel="stylesheet" href="styles.css?v=20260417d">
+  <link rel="icon" href="logo-combined-mark.png?v=20260417d" type="image/png">
+
+  <style>
+    /* ── Register page (scoped) ─────────────────────────────── */
+    .reg-page { background: linear-gradient(160deg, #f5f0ff 0%, #ffffff 70%); min-height: 100vh; padding-bottom: 80px; }
+    .reg-hero { background: linear-gradient(160deg, var(--color-primary) 0%, var(--color-primary-dark) 100%); color: #fff; padding: 60px 0 50px; text-align: center; }
+    .reg-hero h1 { font-family: 'Playfair Display', serif; font-size: clamp(2rem, 4vw, 2.75rem); margin: 0 0 10px; color: #fff; }
+    .reg-hero p { max-width: 620px; margin: 0 auto; font-size: 1.05rem; opacity: 0.92; }
+
+    .reg-container { max-width: 760px; margin: -30px auto 0; padding: 0 20px; }
+    .reg-card { background: #fff; border-radius: 16px; box-shadow: 0 18px 60px rgba(82, 58, 121, 0.18); padding: 32px 28px; margin-bottom: 24px; }
+    .reg-card h2 { font-family: 'Playfair Display', serif; color: var(--color-primary-dark); font-size: 1.5rem; margin: 0 0 8px; }
+    .reg-card p.reg-lede { color: #555; margin: 0 0 20px; }
+
+    .reg-stepper { display: flex; gap: 8px; justify-content: center; margin-bottom: 18px; }
+    .reg-step-dot { width: 34px; height: 6px; border-radius: 3px; background: rgba(var(--color-primary-rgb), 0.18); }
+    .reg-step-dot.active { background: var(--color-primary); }
+    .reg-step-dot.done { background: var(--color-leaf); }
+
+    .reg-choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+    .reg-choice-btn { border: 2px solid rgba(var(--color-primary-rgb), 0.2); background: #fff; border-radius: 12px; padding: 20px 16px; cursor: pointer; text-align: left; font-family: inherit; font-size: 1rem; transition: all .15s ease; }
+    .reg-choice-btn:hover { border-color: var(--color-primary); transform: translateY(-1px); box-shadow: 0 8px 20px rgba(var(--color-primary-rgb), 0.12); }
+    .reg-choice-btn strong { display: block; color: var(--color-primary-dark); font-size: 1.05rem; margin-bottom: 4px; }
+    .reg-choice-btn span { color: #666; font-size: 0.9rem; }
+
+    .reg-field { margin-bottom: 16px; }
+    .reg-field label { display: block; font-weight: 600; color: var(--color-primary-dark); margin-bottom: 6px; font-size: 0.95rem; }
+    .reg-field label .reg-req { color: #c33; margin-left: 2px; }
+    .reg-field input[type=text], .reg-field input[type=email], .reg-field input[type=tel], .reg-field input[type=date], .reg-field textarea, .reg-field select {
+      width: 100%; padding: 10px 12px; border: 1.5px solid rgba(var(--color-primary-rgb), 0.25); border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #222; box-sizing: border-box;
+    }
+    .reg-field input:focus, .reg-field textarea:focus, .reg-field select:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12); }
+    .reg-field textarea { resize: vertical; min-height: 80px; }
+    .reg-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 560px) { .reg-field-row { grid-template-columns: 1fr; } }
+
+    .reg-radio-group { display: flex; flex-direction: column; gap: 8px; }
+    .reg-radio-group label { font-weight: 500; color: #333; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .reg-radio-group input[type=radio] { width: 18px; height: 18px; accent-color: var(--color-primary); }
+
+    .reg-kids-list { display: flex; flex-direction: column; gap: 12px; }
+    .reg-kid-row { display: grid; grid-template-columns: 1fr 180px auto; gap: 10px; align-items: end; }
+    @media (max-width: 560px) { .reg-kid-row { grid-template-columns: 1fr 1fr; } .reg-kid-row .reg-kid-remove { grid-column: span 2; } }
+    .reg-kid-remove { background: transparent; border: 1.5px solid #d9534f; color: #d9534f; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 0.9rem; height: 42px; }
+    .reg-kid-remove:hover { background: #d9534f; color: #fff; }
+    .reg-add-kid-btn { background: rgba(var(--color-primary-rgb), 0.08); border: 1.5px dashed var(--color-primary); color: var(--color-primary-dark); border-radius: 8px; padding: 10px 14px; cursor: pointer; font-weight: 600; margin-top: 10px; width: 100%; }
+    .reg-add-kid-btn:hover { background: rgba(var(--color-primary-rgb), 0.14); }
+
+    .reg-waiver { background: rgba(var(--color-primary-rgb), 0.04); border-left: 4px solid var(--color-primary); padding: 14px 18px; margin: 14px 0; border-radius: 0 8px 8px 0; font-size: 0.95rem; line-height: 1.6; color: #333; }
+    .reg-waiver h3 { font-family: 'Playfair Display', serif; color: var(--color-primary-dark); margin: 0 0 8px; font-size: 1.15rem; }
+    .reg-waiver ul { margin: 0 0 0 20px; padding: 0; }
+    .reg-check-label { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; color: #222; margin-top: 10px; cursor: pointer; padding: 10px 12px; background: #fff; border: 1.5px solid rgba(var(--color-primary-rgb), 0.25); border-radius: 8px; }
+    .reg-check-label input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--color-primary); flex-shrink: 0; margin-top: 2px; }
+
+    .reg-actions { display: flex; gap: 12px; justify-content: space-between; align-items: center; margin-top: 20px; }
+    .reg-actions .btn { min-width: 120px; }
+    .reg-back-btn { background: transparent; border: none; color: var(--color-primary); font-weight: 600; cursor: pointer; font-size: 0.95rem; padding: 8px 4px; }
+    .reg-back-btn:hover { text-decoration: underline; }
+
+    .reg-summary { background: rgba(var(--color-primary-rgb), 0.05); border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+    .reg-summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.95rem; }
+    .reg-summary-row.total { border-top: 1px solid rgba(var(--color-primary-rgb), 0.2); margin-top: 6px; padding-top: 10px; font-weight: 700; color: var(--color-primary-dark); font-size: 1.05rem; }
+
+    .reg-error { background: #fff2f2; border-left: 4px solid #c33; padding: 12px 14px; color: #822; border-radius: 0 6px 6px 0; margin: 14px 0; display: none; }
+    .reg-error.show { display: block; }
+    .reg-success-icon { display: flex; justify-content: center; margin-bottom: 16px; }
+    .reg-success-icon svg { width: 72px; height: 72px; color: var(--color-leaf); }
+
+    .reg-google-btn-wrap { display: flex; justify-content: center; margin: 16px 0; }
+
+    .reg-prefilled-banner { background: rgba(90, 107, 57, 0.1); border-left: 4px solid var(--color-leaf); padding: 10px 14px; margin-bottom: 16px; border-radius: 0 6px 6px 0; color: #3d4a27; font-size: 0.95rem; }
+  </style>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body class="reg-page">
+
+  <!-- ====== Navigation ====== -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="index.html" class="nav-brand" aria-label="Roots & Wings Indy home">
+        <img src="logo-combined.png?v=20260417d" alt="Roots & Wings Indianapolis" onerror="this.style.display='none'">
+        <div class="nav-brand-text">
+          ROOTS & WINGS
+          <span>Indianapolis</span>
+        </div>
+      </a>
+      <div class="nav-links" role="menubar">
+        <a href="index.html#about" role="menuitem">About</a>
+        <a href="index.html#pricing" role="menuitem">Pricing</a>
+        <a href="members.html" class="btn btn-primary btn-sm" role="menuitem">Members</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="reg-hero">
+    <h1>Fall Membership Registration</h1>
+    <p>Welcome! Complete this form to secure your family's spot for the upcoming co-op year. Registration includes the member agreement, liability waiver, and a $50 Fall Membership Fee.</p>
+  </header>
+
+  <main class="reg-container">
+    <div class="reg-stepper" aria-hidden="true">
+      <div class="reg-step-dot" data-step-dot="1"></div>
+      <div class="reg-step-dot" data-step-dot="2"></div>
+      <div class="reg-step-dot" data-step-dot="3"></div>
+      <div class="reg-step-dot" data-step-dot="4"></div>
+    </div>
+
+    <!-- ── Step 1: Identify ── -->
+    <section class="reg-card" id="reg-step-1">
+      <h2>Welcome</h2>
+      <p class="reg-lede">Are you a returning family, or just joining us?</p>
+
+      <div class="reg-choice-row">
+        <button class="reg-choice-btn" id="reg-choose-returning">
+          <strong>Returning family</strong>
+          <span>Sign in with your @rootsandwingsindy.com account and we'll pre-fill the form.</span>
+        </button>
+        <button class="reg-choice-btn" id="reg-choose-new">
+          <strong>New to Roots &amp; Wings</strong>
+          <span>Welcome! Continue with your email to get started.</span>
+        </button>
+      </div>
+
+      <div id="reg-google-signin-area" style="display:none; margin-top: 20px;">
+        <p class="reg-lede" style="margin-bottom: 10px;">Sign in with the Google account you use for Roots &amp; Wings:</p>
+        <div class="reg-google-btn-wrap" id="reg-google-signin-btn"></div>
+        <div class="reg-error" id="reg-google-error">That account isn't in our directory. Try again or continue as a new family.</div>
+        <button class="reg-back-btn" id="reg-google-cancel">&larr; Back</button>
+      </div>
+    </section>
+
+    <!-- ── Step 2: Form ── -->
+    <section class="reg-card" id="reg-step-2" style="display:none;">
+      <h2>Family Information</h2>
+      <p class="reg-lede">Tell us about your family. We'll use this to set up your membership.</p>
+      <div class="reg-prefilled-banner" id="reg-prefilled-banner" style="display:none;">We've pre-filled fields from your existing member record. Please review and update anything that's changed.</div>
+
+      <form id="reg-form">
+        <div class="reg-field">
+          <label for="reg-email">Email <span class="reg-req">*</span></label>
+          <input type="email" id="reg-email" required autocomplete="email">
+        </div>
+
+        <div class="reg-field">
+          <label for="reg-coach">Main Learning Coach (parent who will attend) <span class="reg-req">*</span></label>
+          <input type="text" id="reg-coach" required autocomplete="name">
+        </div>
+
+        <div class="reg-field-row">
+          <div class="reg-field">
+            <label for="reg-phone">Phone <span class="reg-req">*</span></label>
+            <input type="tel" id="reg-phone" required autocomplete="tel" placeholder="(317) 555-1234">
+          </div>
+          <div class="reg-field">
+            <label for="reg-address">Address <span class="reg-req">*</span></label>
+            <input type="text" id="reg-address" required autocomplete="street-address">
+          </div>
+        </div>
+
+        <div class="reg-field">
+          <label>Mornings, Afternoons, or Both? <span class="reg-req">*</span></label>
+          <div class="reg-radio-group">
+            <label><input type="radio" name="reg-track" value="Morning Only"> Morning Only</label>
+            <label><input type="radio" name="reg-track" value="Afternoon Only"> Afternoon Only</label>
+            <label><input type="radio" name="reg-track" value="Both"> Both</label>
+            <label><input type="radio" name="reg-track" value="Other"> Other: <input type="text" id="reg-track-other" style="margin-left: 6px; flex: 1; min-width: 0;"></label>
+          </div>
+        </div>
+
+        <div class="reg-field">
+          <label>Children <span class="reg-req">*</span></label>
+          <p style="color:#666; font-size:0.9rem; margin: 0 0 10px;">Add each child's full name and birth date.</p>
+          <div class="reg-kids-list" id="reg-kids-list"></div>
+          <button type="button" class="reg-add-kid-btn" id="reg-add-kid">+ Add another child</button>
+        </div>
+
+        <div class="reg-field">
+          <label for="reg-notes">Placement requests or notes (optional)</label>
+          <textarea id="reg-notes" placeholder="e.g., please place my child in the younger/older class, sibling requests, etc."></textarea>
+        </div>
+
+        <div class="reg-error" id="reg-form-error"></div>
+
+        <div class="reg-actions">
+          <button type="button" class="reg-back-btn" data-goto-step="1">&larr; Back</button>
+          <button type="submit" class="btn btn-primary">Continue to Waiver &rarr;</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ── Step 3: Waiver ── -->
+    <section class="reg-card" id="reg-step-3" style="display:none;">
+      <h2>Member Agreement &amp; Waivers</h2>
+      <p class="reg-lede">Please read each section carefully.</p>
+
+      <div class="reg-waiver">
+        <h3>Member Requirements &amp; Expectations</h3>
+        <p><strong>Member Requirements</strong></p>
+        <ul>
+          <li>Sign member agreement, photo release and liability waiver</li>
+          <li>Pay Fall Membership Fee upon registration</li>
+          <li>Active assigned adult will be present with student(s) each co-op day</li>
+        </ul>
+        <p><strong>Member Expectations</strong></p>
+        <ul>
+          <li>Reasonable family attendance at co-op</li>
+          <li>Reasonable participation at parent meetings</li>
+          <li>Reasonable participation in special events and field trips</li>
+          <li>Pay class fees on time before/on the first day of co-op each session</li>
+          <li>Sign up for classes on time</li>
+          <li>Active participation in the leadership and facilitation of daily co-op activities through volunteering, as outlined in the member handbook</li>
+        </ul>
+        <p>If you feel you cannot meet the membership requirements and/or expectations, please contact the board at <a href="mailto:board@rootsandwingsindy.com">board@rootsandwingsindy.com</a>.</p>
+      </div>
+
+      <label class="reg-check-label">
+        <input type="checkbox" id="reg-waiver-member">
+        <span>I have been given and read the Roots and Wings Homeschool Co-op Inc. handbook and agree to work with Co-op members to complete the requirements and expectations of membership.</span>
+      </label>
+
+      <div class="reg-waiver" style="margin-top: 24px;">
+        <h3>Photo/Media Consent</h3>
+        <p>I hereby consent to the participation in interviews, the use of quotes, and the taking of photographs, movies or video tapes of myself and the Student(s) named above by Roots and Wings Homeschool Co-op.</p>
+        <p>I also grant to Roots and Wings Homeschool Co-op the right to edit, use, and reuse said products for non-profit purposes including use in print (e.g. the yearbook), on the internet, and all other forms of media. I also hereby release Roots and Wings Homeschool Co-op and its agents and employees from all claims, demands, and liabilities whatsoever in connection with the above.</p>
+      </div>
+      <div class="reg-radio-group" style="margin-top: 8px;">
+        <label><input type="radio" name="reg-photo" value="yes"> I consent to photo/media use as described above.</label>
+        <label><input type="radio" name="reg-photo" value="no"> I do NOT consent to photo/media use.</label>
+      </div>
+
+      <div class="reg-waiver" style="margin-top: 24px;">
+        <h3>Liability Waiver</h3>
+        <p>"My child/children and I participate with Roots and Wings Homeschool Co-op Inc. which meets once a week at the First Mennonite Church for group lessons. I recognize that my child's/children's and my participation with Roots and Wings Homeschool Co-op at the First Mennonite Church, although there is no strenuous physical activity during these lessons, could result in possible injury due to accidents or other circumstances during time spent in the church building or other co-op activities. I hereby affirm that my child/children and I are in good physical condition and do not suffer from any known disability or condition which would keep us from participation in this time spent at First Mennonite Church. I acknowledge that my child's/children's and my participation in Roots and Wings Homeschool Co-op Inc. is purely voluntary and in no way mandated by Roots and Wings Homeschool Co-op Inc. or First Mennonite Church."</p>
+        <p>"In consideration of my child's/children's and my participating with Roots and Wings Homeschool Co-op Inc., I hereby release Roots and Wings Homeschool Co-op Inc. and First Mennonite Church and its agents from any claims, demands, and causes of action as a result of my child's/children's and my participation and enrollment."</p>
+        <p>"I fully understand that if my child/children or I suffer an injury as a result of participating with Roots and Wings Homeschool Co-op Inc. while at First Mennonite Church, I hereby release Roots and Wings Inc. and First Mennonite Church and its agents from any liability now or in the future for conditions that my child/children or I may obtain. These conditions may result in serious injury or death."</p>
+      </div>
+      <label class="reg-check-label">
+        <input type="checkbox" id="reg-waiver-liability">
+        <span>I HEREBY AFFIRM THAT I HAVE READ AND FULLY UNDERSTAND THE ABOVE STATEMENTS.</span>
+      </label>
+
+      <h2 style="margin-top: 28px;">Signature</h2>
+      <div class="reg-field">
+        <label for="reg-signature">Parent/Guardian Signature <span class="reg-req">*</span></label>
+        <input type="text" id="reg-signature" placeholder="Type your full legal name as your electronic signature">
+      </div>
+      <div class="reg-field-row">
+        <div class="reg-field">
+          <label for="reg-sig-date">Date <span class="reg-req">*</span></label>
+          <input type="date" id="reg-sig-date">
+        </div>
+        <div class="reg-field">
+          <label for="reg-student-sig">Student Signature (if 18+)</label>
+          <input type="text" id="reg-student-sig" placeholder="Optional — only if student is 18 or older">
+        </div>
+      </div>
+
+      <div class="reg-error" id="reg-waiver-error"></div>
+
+      <div class="reg-actions">
+        <button type="button" class="reg-back-btn" data-goto-step="2">&larr; Back</button>
+        <button type="button" class="btn btn-primary" id="reg-waiver-continue">Continue to Payment &rarr;</button>
+      </div>
+    </section>
+
+    <!-- ── Step 4: Payment ── -->
+    <section class="reg-card" id="reg-step-4" style="display:none;">
+      <h2>Payment</h2>
+      <p class="reg-lede">Your registration is saved. Complete payment below to finalize.</p>
+
+      <div class="reg-summary">
+        <div class="reg-summary-row"><span>Fall Membership Fee</span><span>$50.00</span></div>
+        <div class="reg-summary-row total"><span>Total due</span><span>$50.00</span></div>
+      </div>
+
+      <div id="reg-paypal-btn-wrap">
+        <button class="btn btn-primary" id="reg-paypal-btn" style="width:100%;">Pay $50.00 with PayPal</button>
+      </div>
+      <p style="font-size: 0.9rem; color: #666; margin-top: 12px;">
+        Prefer check or cash? Make checks payable to <em>Roots and Wings Homeschool, Inc.</em> and deliver to Jessica Shewan (Treasurer). Your spot will be confirmed once payment is received &mdash; email <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a> with questions.
+      </p>
+
+      <div class="reg-error" id="reg-pay-error"></div>
+    </section>
+
+    <!-- ── Step 5: Done ── -->
+    <section class="reg-card" id="reg-step-done" style="display:none;">
+      <div class="reg-success-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <h2 style="text-align:center;">You're all set!</h2>
+      <p class="reg-lede" style="text-align:center;" id="reg-done-msg">Thanks for registering. You'll receive a confirmation email shortly.</p>
+      <div style="text-align:center; margin-top: 20px;">
+        <a href="index.html" class="btn btn-outline">Back to main site</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://www.paypal.com/sdk/js?client-id=BAAEXrFcNz-Q5sFay27KpbAs3d29W3AdjACtLpfAJXN5XshPFGjdnKD7ueLJcdHCNUNlhk7YigOuyoB1HQ&components=buttons&enable-funding=venmo&currency=USD" data-namespace="paypal_sdk"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    var GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
+    var REGISTRATION_FEE = 50;
+    var SEASON = '2025-2026';
+
+    // State
+    var state = {
+      step: 1,
+      googleCredential: null,
+      prefillFamily: null,
+      registrationId: null
+    };
+
+    function showStep(n) {
+      state.step = n;
+      ['1', '2', '3', '4', 'done'].forEach(function (s) {
+        var el = document.getElementById('reg-step-' + s);
+        if (el) el.style.display = (String(s) === String(n)) ? '' : 'none';
+      });
+      // stepper dots
+      [1, 2, 3, 4].forEach(function (i) {
+        var dot = document.querySelector('[data-step-dot="' + i + '"]');
+        if (!dot) return;
+        dot.classList.remove('active', 'done');
+        if (n === 'done' || i < Number(n)) dot.classList.add('done');
+        else if (i === Number(n)) dot.classList.add('active');
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function showError(id, msg) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = msg;
+      el.classList.add('show');
+    }
+
+    function clearError(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('show');
+      el.textContent = '';
+    }
+
+    // ── Kids list ──
+    function addKidRow(prefill) {
+      var list = document.getElementById('reg-kids-list');
+      var row = document.createElement('div');
+      row.className = 'reg-kid-row';
+      row.innerHTML =
+        '<div class="reg-field" style="margin-bottom:0;"><label>Name</label><input type="text" class="reg-kid-name" placeholder="e.g., Violet Bogan"></div>' +
+        '<div class="reg-field" style="margin-bottom:0;"><label>Birth date</label><input type="date" class="reg-kid-bday"></div>' +
+        '<button type="button" class="reg-kid-remove" title="Remove">Remove</button>';
+      if (prefill && prefill.name) row.querySelector('.reg-kid-name').value = prefill.name;
+      if (prefill && prefill.birth_date) row.querySelector('.reg-kid-bday').value = prefill.birth_date;
+      row.querySelector('.reg-kid-remove').addEventListener('click', function () {
+        row.parentNode.removeChild(row);
+      });
+      list.appendChild(row);
+    }
+
+    function getKids() {
+      var rows = document.querySelectorAll('#reg-kids-list .reg-kid-row');
+      var out = [];
+      rows.forEach(function (r) {
+        var name = (r.querySelector('.reg-kid-name') || {}).value || '';
+        var bday = (r.querySelector('.reg-kid-bday') || {}).value || '';
+        name = name.trim();
+        bday = bday.trim();
+        if (name || bday) out.push({ name: name, birth_date: bday });
+      });
+      return out;
+    }
+
+    document.getElementById('reg-add-kid').addEventListener('click', function () { addKidRow(); });
+
+    // ── Step 1: choice ──
+    document.getElementById('reg-choose-new').addEventListener('click', function () {
+      if (document.querySelectorAll('#reg-kids-list .reg-kid-row').length === 0) addKidRow();
+      showStep(2);
+    });
+    document.getElementById('reg-choose-returning').addEventListener('click', function () {
+      document.getElementById('reg-google-signin-area').style.display = '';
+      initGoogle();
+    });
+    document.getElementById('reg-google-cancel').addEventListener('click', function () {
+      document.getElementById('reg-google-signin-area').style.display = 'none';
+    });
+
+    function initGoogle() {
+      if (!window.google || !window.google.accounts) {
+        setTimeout(initGoogle, 200);
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredential,
+        ux_mode: 'popup'
+      });
+      var btnEl = document.getElementById('reg-google-signin-btn');
+      btnEl.innerHTML = '';
+      window.google.accounts.id.renderButton(btnEl, {
+        theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular'
+      });
+    }
+
+    function handleGoogleCredential(resp) {
+      clearError('reg-google-error');
+      state.googleCredential = resp.credential;
+
+      // Decode JWT payload (not verifying — server verifies)
+      var payload;
+      try { payload = JSON.parse(atob(resp.credential.split('.')[1])); } catch (e) { payload = {}; }
+      var email = (payload.email || '').toLowerCase();
+      if (!email.endsWith('@rootsandwingsindy.com')) {
+        showError('reg-google-error', 'Please sign in with your @rootsandwingsindy.com account.');
+        return;
+      }
+
+      // Fetch families from the authed sheets API to find this user's record
+      fetch('/api/sheets', { headers: { 'Authorization': 'Bearer ' + resp.credential } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data) { prefillFromEmail(email, payload.name); showStep(2); return; }
+          var fams = (data.families || []);
+          var me = null;
+          for (var i = 0; i < fams.length; i++) {
+            if ((fams[i].email || '').toLowerCase() === email) { me = fams[i]; break; }
+          }
+          if (me) {
+            prefillFromFamily(me, email);
+          } else {
+            prefillFromEmail(email, payload.name);
+          }
+          showStep(2);
+        })
+        .catch(function () {
+          prefillFromEmail(email, payload.name);
+          showStep(2);
+        });
+    }
+
+    function prefillFromEmail(email, name) {
+      document.getElementById('reg-email').value = email || '';
+      if (name) document.getElementById('reg-coach').value = name;
+      if (document.querySelectorAll('#reg-kids-list .reg-kid-row').length === 0) addKidRow();
+    }
+
+    function prefillFromFamily(fam, email) {
+      document.getElementById('reg-prefilled-banner').style.display = '';
+      document.getElementById('reg-email').value = email || fam.email || '';
+      // Parents like "Erin & Joseph" → use first parent + family last name
+      var firstParent = (fam.parents || '').split(' & ')[0].trim();
+      var coach = firstParent ? (firstParent + ' ' + fam.name) : (fam.name || '');
+      document.getElementById('reg-coach').value = coach;
+      if (fam.phone) document.getElementById('reg-phone').value = fam.phone;
+      if (fam.address) document.getElementById('reg-address').value = fam.address;
+      // Track inference: if any kid has schedule 'morning' only → AM. etc.
+      var hasAM = false, hasPM = false;
+      (fam.kids || []).forEach(function (k) {
+        var s = k.schedule || 'all-day';
+        if (s === 'all-day' || s === 'morning') hasAM = true;
+        if (s === 'all-day' || s === 'afternoon') hasPM = true;
+      });
+      var track = (hasAM && hasPM) ? 'Both' : hasAM ? 'Morning Only' : hasPM ? 'Afternoon Only' : null;
+      if (track) {
+        var r = document.querySelector('input[name="reg-track"][value="' + track + '"]');
+        if (r) r.checked = true;
+      }
+      // Kids — prefill name (no birth date available from directory; leave blank for review)
+      (fam.kids || []).forEach(function (k) {
+        var last = k.lastName || fam.name;
+        addKidRow({ name: (k.name || '') + (last ? ' ' + last : ''), birth_date: '' });
+      });
+      if (document.querySelectorAll('#reg-kids-list .reg-kid-row').length === 0) addKidRow();
+      state.prefillFamily = fam.name || '';
+    }
+
+    // ── Step 2: form validate + store ──
+    document.querySelectorAll('[data-goto-step]').forEach(function (btn) {
+      btn.addEventListener('click', function () { showStep(btn.getAttribute('data-goto-step')); });
+    });
+
+    document.getElementById('reg-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearError('reg-form-error');
+
+      var email = document.getElementById('reg-email').value.trim();
+      var coach = document.getElementById('reg-coach').value.trim();
+      var phone = document.getElementById('reg-phone').value.trim();
+      var address = document.getElementById('reg-address').value.trim();
+      var trackEl = document.querySelector('input[name="reg-track"]:checked');
+      var trackOther = document.getElementById('reg-track-other').value.trim();
+      var notes = document.getElementById('reg-notes').value.trim();
+      var kids = getKids();
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError('reg-form-error', 'Please enter a valid email.');
+      if (!coach) return showError('reg-form-error', 'Main Learning Coach is required.');
+      if (!phone) return showError('reg-form-error', 'Phone is required.');
+      if (!address) return showError('reg-form-error', 'Address is required.');
+      if (!trackEl) return showError('reg-form-error', 'Please select Morning, Afternoon, or Both.');
+      if (trackEl.value === 'Other' && !trackOther) return showError('reg-form-error', 'Please describe your "Other" schedule.');
+      if (kids.length === 0) return showError('reg-form-error', 'Please add at least one child.');
+      for (var i = 0; i < kids.length; i++) {
+        if (!kids[i].name) return showError('reg-form-error', 'Child ' + (i + 1) + ' needs a name.');
+        if (!kids[i].birth_date) return showError('reg-form-error', 'Child ' + (i + 1) + ' needs a birth date.');
+      }
+
+      state.form = {
+        email: email, main_learning_coach: coach, phone: phone, address: address,
+        track: trackEl.value, track_other: trackOther, kids: kids, placement_notes: notes,
+        existing_family_name: state.prefillFamily || ''
+      };
+      // Default signature fields
+      if (!document.getElementById('reg-signature').value) document.getElementById('reg-signature').value = coach;
+      if (!document.getElementById('reg-sig-date').value) document.getElementById('reg-sig-date').value = new Date().toISOString().slice(0, 10);
+      showStep(3);
+    });
+
+    // ── Step 3: waiver → submit to API ──
+    document.getElementById('reg-waiver-continue').addEventListener('click', function () {
+      clearError('reg-waiver-error');
+      var member = document.getElementById('reg-waiver-member').checked;
+      var liability = document.getElementById('reg-waiver-liability').checked;
+      var photoEl = document.querySelector('input[name="reg-photo"]:checked');
+      var sig = document.getElementById('reg-signature').value.trim();
+      var sigDate = document.getElementById('reg-sig-date').value.trim();
+      var studentSig = document.getElementById('reg-student-sig').value.trim();
+
+      if (!member) return showError('reg-waiver-error', 'Please acknowledge the Member Agreement.');
+      if (!photoEl) return showError('reg-waiver-error', 'Please make a photo/media consent selection.');
+      if (!liability) return showError('reg-waiver-error', 'Please acknowledge the Liability Waiver.');
+      if (!sig) return showError('reg-waiver-error', 'Signature is required.');
+      if (!sigDate) return showError('reg-waiver-error', 'Signature date is required.');
+
+      var body = Object.assign({}, state.form, {
+        kind: 'registration',
+        season: SEASON,
+        waiver_member_agreement: true,
+        waiver_photo_consent: photoEl.value,
+        waiver_liability: true,
+        signature_name: sig,
+        signature_date: sigDate,
+        student_signature: studentSig
+      });
+
+      var btn = document.getElementById('reg-waiver-continue');
+      btn.disabled = true; btn.textContent = 'Saving…';
+
+      fetch('/api/tour', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+      }).then(function (res) {
+        btn.disabled = false; btn.textContent = 'Continue to Payment →';
+        if (!res.ok) {
+          showError('reg-waiver-error', (res.data && res.data.error) || 'Could not save registration.');
+          return;
+        }
+        state.registrationId = res.data.id;
+        showStep(4);
+        wirePaypal();
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = 'Continue to Payment →';
+        showError('reg-waiver-error', 'Network error. Please try again.');
+      });
+    });
+
+    // ── Step 4: PayPal ──
+    function wirePaypal() {
+      var btn = document.getElementById('reg-paypal-btn');
+      if (!btn || typeof paypal_sdk === 'undefined') {
+        showError('reg-pay-error', 'Payment is unavailable right now. Please email treasurer@rootsandwingsindy.com to finalize.');
+        return;
+      }
+      btn.onclick = function () {
+        clearError('reg-pay-error');
+        var amountStr = REGISTRATION_FEE.toFixed(2);
+        paypal_sdk.Buttons({
+          fundingSource: paypal_sdk.FUNDING.PAYPAL,
+          style: { layout: 'horizontal', color: 'gold', shape: 'rect', label: 'pay', height: 44 },
+          createOrder: function (data, actions) {
+            return actions.order.create({
+              purchase_units: [{
+                amount: { value: amountStr, currency_code: 'USD' },
+                description: 'Fall Membership Fee — ' + (state.form.main_learning_coach || 'Roots & Wings'),
+                invoice_id: 'RW-REG-' + state.registrationId + '-' + new Date().getFullYear(),
+                custom_id: state.form.email,
+                note_to_payee: (state.form.main_learning_coach || '') + ' | ' + (state.form.kids || []).length + ' kids | ' + (state.form.track || '') + ' | Fall Membership Fee | registration_id=' + state.registrationId
+              }]
+            });
+          },
+          onApprove: function (data, actions) {
+            return actions.order.capture().then(function (details) {
+              return fetch('/api/tour', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  kind: 'registration-payment',
+                  id: state.registrationId,
+                  paypal_transaction_id: details.id
+                })
+              }).then(function () {
+                document.getElementById('reg-done-msg').textContent =
+                  'Thanks! Your Fall Membership Fee has been paid (transaction ' + details.id + '). You\'ll get a confirmation email shortly.';
+                showStep('done');
+              });
+            });
+          },
+          onError: function () {
+            showError('reg-pay-error', 'Payment could not be processed. Please try again or email treasurer@rootsandwingsindy.com.');
+          }
+        }).render('#reg-paypal-btn-wrap').then(function () {
+          btn.style.display = 'none';
+        });
+      };
+    }
+
+    // Initialize step 1
+    showStep(1);
+  })();
+  </script>
+</body>
+</html>

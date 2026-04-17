@@ -110,11 +110,15 @@ CREATE TABLE IF NOT EXISTS absences (
   notes TEXT DEFAULT '',
   created_by TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  cancelled_at TIMESTAMPTZ,
-  UNIQUE (absent_person, absence_date)
+  cancelled_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS absences_date_idx ON absences (absence_date);
 CREATE INDEX IF NOT EXISTS absences_session_idx ON absences (session_number);
+-- Partial unique index: only one active (non-cancelled) absence per
+-- person/date, but cancelled rows don't block re-submission.
+CREATE UNIQUE INDEX IF NOT EXISTS absences_active_unique_idx
+  ON absences (absent_person, absence_date)
+  WHERE cancelled_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS coverage_slots (
   id SERIAL PRIMARY KEY,
@@ -229,3 +233,37 @@ CREATE TABLE IF NOT EXISTS board_photos (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS board_photos_role_idx ON board_photos (role_title);
+
+-- ──────────────────────────────────────────────
+-- Member Registrations (new + returning families each co-op year)
+-- Populated by the public /register.html form. Next year this table replaces
+-- the Google Sheet as the source of truth for member records.
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS registrations (
+  id SERIAL PRIMARY KEY,
+  season TEXT NOT NULL,
+  email TEXT NOT NULL,
+  existing_family_name TEXT,
+  main_learning_coach TEXT NOT NULL,
+  address TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  track TEXT NOT NULL,
+  track_other TEXT DEFAULT '',
+  kids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  placement_notes TEXT DEFAULT '',
+  waiver_member_agreement BOOLEAN NOT NULL DEFAULT FALSE,
+  waiver_photo_consent TEXT NOT NULL DEFAULT 'no',
+  waiver_liability BOOLEAN NOT NULL DEFAULT FALSE,
+  signature_name TEXT NOT NULL,
+  signature_date DATE NOT NULL,
+  student_signature TEXT DEFAULT '',
+  payment_status TEXT NOT NULL DEFAULT 'pending',
+  paypal_transaction_id TEXT DEFAULT '',
+  payment_amount NUMERIC(10,2) DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS registrations_email_season_idx
+  ON registrations (LOWER(email), season);
+CREATE INDEX IF NOT EXISTS registrations_season_idx ON registrations (season);
+CREATE INDEX IF NOT EXISTS registrations_payment_status_idx ON registrations (payment_status);
