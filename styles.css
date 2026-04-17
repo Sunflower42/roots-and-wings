@@ -5,29 +5,39 @@
 
 /* ---------- Custom Properties ---------- */
 :root {
-  --color-primary: #523A79;
+  /* Primary palette */
+  --color-primary: #523A79;         /* Deep Purple */
   --color-primary-dark: #3A285C;
-  --color-primary-light: #8858AD;
-  --color-accent: #E0B52C;
+  --color-primary-light: #8858AD;   /* Medium Purple */
+  --color-accent: #E0B52C;          /* Golden Yellow */
   --color-accent-dark: #B8941C;
   --color-accent-light: #F0D66B;
-  --color-leaf: #5A6B39;
-  --color-wood: #5A2E0E;
+  --color-leaf: #5A6B39;            /* Olive Green */
+  --color-wood: #5A2E0E;            /* Dark Brown */
   --color-sky: #5A6B39;
-  --color-cream: #F5F5F0;
-  --color-cream-dark: #ECECE6;
+
+  /* Secondary palette */
+  --color-teal: #1A7A7A;            /* Deep Teal */
+  --color-chartreuse: #9BC431;      /* Chartreuse */
+  --color-coral: #D95F3B;           /* Warm Coral */
+
+  --color-cream: #F5F0E8;           /* Warm Cream */
+  --color-cream-dark: #ECE5D7;
   --color-white: #FFFFFF;
   --color-text: #3A3F47;
   --color-text-light: #5E6572;
   --color-text-inverse: #FFFFFF;
-  --color-border: #DFE1DE;
+  --color-border: #DFD9CC;
   --color-success: #5A6B39;
-  --color-error: #C4847A;
+  --color-error: #D95F3B;
 
   /* RGB channels for semi-transparent usage */
   --color-primary-rgb: 82, 58, 121;
   --color-accent-light-rgb: 240, 214, 107;
   --color-primary-light-rgb: 136, 88, 173;
+  --color-teal-rgb: 26, 122, 122;
+  --color-chartreuse-rgb: 155, 196, 49;
+  --color-coral-rgb: 217, 95, 59;
 
   --font-heading: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-body: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
