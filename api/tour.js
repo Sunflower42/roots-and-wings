@@ -6,6 +6,7 @@
 //   - GET ?list=registrations  — Workspace-authed list for membership coordinators
 //   - GET ?config=1            — public config (e.g., Google Maps key) for the register page
 
+const crypto = require('crypto');
 const { Resend } = require('resend');
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
@@ -103,7 +104,7 @@ async function handleTour(body, res) {
 }
 
 // ── Registration (public, no auth; PayPal has already captured) ──
-async function handleRegistration(body, res) {
+async function handleRegistration(body, req, res) {
   const email = String(body.email || '').trim().toLowerCase();
   const main_learning_coach = String(body.main_learning_coach || '').trim();
   const address = String(body.address || '').trim();
@@ -121,6 +122,18 @@ async function handleRegistration(body, res) {
   const kids = Array.isArray(body.kids) ? body.kids : [];
   const paypal_transaction_id = String(body.paypal_transaction_id || '').trim();
   const payment_amount = Number.isFinite(Number(body.payment_amount)) ? Number(body.payment_amount) : REGISTRATION_FEE;
+  const backup_coaches_raw = Array.isArray(body.backup_coaches) ? body.backup_coaches : [];
+  const backup_coaches = [];
+  for (let i = 0; i < backup_coaches_raw.length && backup_coaches.length < 10; i++) {
+    const bc = backup_coaches_raw[i] || {};
+    const bcName = String(bc.name || '').trim();
+    const bcEmail = String(bc.email || '').trim().toLowerCase();
+    if (!bcName && !bcEmail) continue;
+    if (!bcName || !bcEmail) return res.status(400).json({ error: 'Each backup Learning Coach needs both a name and email.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bcEmail)) return res.status(400).json({ error: 'Backup Learning Coach email looks invalid.' });
+    if (bcName.length > 200 || bcEmail.length > 200) return res.status(400).json({ error: 'Backup Learning Coach field too long.' });
+    backup_coaches.push({ name: bcName, email: bcEmail });
+  }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid email required.' });
   if (!main_learning_coach) return res.status(400).json({ error: 'Main Learning Coach name required.' });
@@ -167,10 +180,55 @@ async function handleRegistration(body, res) {
     `;
     const id = inserted[0].id;
 
+    // Create a unique signing token per backup Learning Coach and email each one.
+    const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
+      ? `${req.headers['x-forwarded-proto']}://${req.headers.host}`
+      : 'https://roots-and-wings-topaz.vercel.app';
+    const backupCoachRows = [];
+    for (const bc of backup_coaches) {
+      const token = crypto.randomUUID().replace(/-/g, '');
+      try {
+        await sql`
+          INSERT INTO backup_coach_waivers (registration_id, name, email, token)
+          VALUES (${id}, ${bc.name}, ${bc.email}, ${token})
+        `;
+        backupCoachRows.push({ name: bc.name, email: bc.email, token });
+      } catch (bcErr) {
+        console.error('Backup coach insert error (non-fatal):', bcErr);
+      }
+    }
+
+    // Best-effort backup coach emails.
+    if (backupCoachRows.length > 0) {
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        for (const bc of backupCoachRows) {
+          const link = `${baseUrl}/waiver.html?token=${encodeURIComponent(bc.token)}`;
+          await resend.emails.send({
+            from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+            to: bc.email,
+            replyTo: 'membership@rootsandwingsindy.com',
+            subject: `Roots & Wings Co-op: Please sign the backup Learning Coach waiver`,
+            html: `
+              <h2>Backup Learning Coach waiver</h2>
+              <p>Hi ${escapeHtml(bc.name)},</p>
+              <p>${escapeHtml(main_learning_coach)} listed you as a backup Learning Coach for the <strong>${escapeHtml(main_learning_coach)} family</strong> at Roots &amp; Wings Homeschool Co-op Inc. When you sub or cover for the Main Learning Coach at co-op, this waiver needs to be on file.</p>
+              <p><a href="${escapeHtml(link)}" style="display:inline-block;background:#523A79;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Review &amp; sign the waiver</a></p>
+              <p style="color:#666;font-size:0.9rem;">Or copy this link into your browser:<br><span style="word-break:break-all;">${escapeHtml(link)}</span></p>
+              <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+            `,
+          });
+        }
+      } catch (mailErr) {
+        console.error('Backup coach email error (non-fatal):', mailErr);
+      }
+    }
+
     // Best-effort confirmation email — failure does not fail the request.
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
       const kidsList = kids.map(k => `<li>${escapeHtml(k.name)} &mdash; ${escapeHtml(k.birth_date)}</li>`).join('');
+      const backupList = backupCoachRows.map(b => `<li>${escapeHtml(b.name)} &mdash; ${escapeHtml(b.email)} (emailed a waiver link)</li>`).join('');
       await resend.emails.send({
         from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
         to: email,
@@ -198,6 +256,7 @@ async function handleRegistration(body, res) {
           </table>
           <h3>Children</h3>
           <ul>${kidsList}</ul>
+          ${backupList ? `<h3>Backup Learning Coaches</h3><ul>${backupList}</ul>` : ''}
           ${placement_notes ? `<h3>Placement notes</h3><p>${escapeHtml(placement_notes)}</p>` : ''}
           <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
         `,
@@ -249,6 +308,97 @@ function handleConfig(res) {
   });
 }
 
+// ── Backup Learning Coach waiver: look up by token ──
+async function handleBackupWaiverInfo(req, res) {
+  const token = String(req.query.backup_waiver_token || '').trim();
+  if (!token || !/^[a-f0-9]{8,64}$/i.test(token)) return res.status(400).json({ error: 'Invalid token.' });
+  const sql = getSql();
+  try {
+    const rows = await sql`
+      SELECT b.name, b.email, b.signed_at, b.signature_name, b.signature_date,
+             r.main_learning_coach, r.existing_family_name, r.season
+      FROM backup_coach_waivers b
+      JOIN registrations r ON r.id = b.registration_id
+      WHERE b.token = ${token}
+      LIMIT 1
+    `;
+    if (rows.length === 0) return res.status(404).json({ error: 'Waiver link not found. Please contact membership@rootsandwingsindy.com.' });
+    const row = rows[0];
+    return res.status(200).json({
+      name: row.name,
+      email: row.email,
+      main_learning_coach: row.main_learning_coach,
+      family_name: row.existing_family_name || row.main_learning_coach,
+      season: row.season,
+      signed: !!row.signed_at,
+      signed_at: row.signed_at || null,
+      signature_name: row.signature_name || '',
+      signature_date: row.signature_date || null
+    });
+  } catch (err) {
+    console.error('Backup waiver info error:', err);
+    return res.status(500).json({ error: 'Could not load waiver.' });
+  }
+}
+
+// ── Backup Learning Coach waiver: record signature ──
+async function handleBackupWaiverSign(body, req, res) {
+  const token = String(body.token || '').trim();
+  const signature_name = String(body.signature_name || '').trim();
+  const signature_date = String(body.signature_date || '').trim();
+  if (!token || !/^[a-f0-9]{8,64}$/i.test(token)) return res.status(400).json({ error: 'Invalid token.' });
+  if (!signature_name) return res.status(400).json({ error: 'Please type your name to sign.' });
+  if (signature_name.length > 200) return res.status(400).json({ error: 'Signature too long.' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(signature_date)) return res.status(400).json({ error: 'Signature date required (YYYY-MM-DD).' });
+
+  const sql = getSql();
+  try {
+    const existing = await sql`
+      SELECT id, signed_at FROM backup_coach_waivers WHERE token = ${token} LIMIT 1
+    `;
+    if (existing.length === 0) return res.status(404).json({ error: 'Waiver link not found.' });
+    if (existing[0].signed_at) return res.status(409).json({ error: 'This waiver has already been signed.' });
+
+    const updated = await sql`
+      UPDATE backup_coach_waivers
+      SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date}
+      WHERE token = ${token} AND signed_at IS NULL
+      RETURNING id, name, email, registration_id
+    `;
+    if (updated.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
+
+    // Confirm to the coach + Main LC (best-effort).
+    try {
+      const related = await sql`
+        SELECT r.main_learning_coach, r.email AS main_email, r.season
+        FROM registrations r WHERE r.id = ${updated[0].registration_id} LIMIT 1
+      `;
+      const info = related[0] || {};
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      await resend.emails.send({
+        from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+        to: updated[0].email,
+        cc: [info.main_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
+        replyTo: 'membership@rootsandwingsindy.com',
+        subject: `Roots & Wings Co-op: Backup Learning Coach waiver on file`,
+        html: `
+          <h2>Waiver signed — thank you</h2>
+          <p>Thanks, ${escapeHtml(updated[0].name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(info.main_learning_coach || 'Roots & Wings')} family</strong> is on file.</p>
+          <p><strong>Signed:</strong> ${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</p>
+          <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+        `,
+      });
+    } catch (mailErr) {
+      console.error('Backup waiver confirmation email error (non-fatal):', mailErr);
+    }
+
+    return res.status(200).json({ success: true, name: updated[0].name });
+  } catch (err) {
+    console.error('Backup waiver sign error:', err);
+    return res.status(500).json({ error: 'Could not record signature.' });
+  }
+}
+
 module.exports = async function handler(req, res) {
   setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -256,6 +406,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     if (req.query.list === 'registrations') return handleList(req, res);
     if (req.query.config === '1' || req.query.config === 'true') return handleConfig(res);
+    if (req.query.backup_waiver_token) return handleBackupWaiverInfo(req, res);
     return res.status(400).json({ error: 'Unknown GET action.' });
   }
 
@@ -263,7 +414,8 @@ module.exports = async function handler(req, res) {
     const body = req.body || {};
     const kind = String(body.kind || 'tour').toLowerCase();
     if (kind === 'tour') return handleTour(body, res);
-    if (kind === 'registration') return handleRegistration(body, res);
+    if (kind === 'registration') return handleRegistration(body, req, res);
+    if (kind === 'backup-waiver-sign') return handleBackupWaiverSign(body, req, res);
     return res.status(400).json({ error: 'Unknown kind.' });
   }
 

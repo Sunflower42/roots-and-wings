@@ -107,8 +107,68 @@ function basePayload(overrides) {
   if (cfg.status !== 200) throw new Error('Expected 200');
   if (!('googleMapsApiKey' in (cfg.data || {}))) throw new Error('Expected googleMapsApiKey field');
 
-  console.log('8. Cleaning up test row…');
-  await sql`DELETE FROM registrations WHERE id = ${id}`;
+  console.log('8. Registration with backup coaches creates signing rows + tokens…');
+  const bcEmail1 = 'bc1+' + Date.now() + '@example.com';
+  const bcEmail2 = 'bc2+' + Date.now() + '@example.com';
+  const withBc = await post(basePayload({
+    email: 'bcreg+' + Date.now() + '@example.com',
+    paypal_transaction_id: 'TEST-TXN-BC-' + Date.now(),
+    backup_coaches: [
+      { name: 'Grandma Jo', email: bcEmail1 },
+      { name: 'Uncle Max', email: bcEmail2 }
+    ]
+  }));
+  console.log('   →', withBc.status, withBc.data);
+  if (withBc.status !== 201) throw new Error('Expected 201');
+  const bcRegId = withBc.data.id;
+  const bcRows = await sql`SELECT id, name, email, token, signed_at FROM backup_coach_waivers WHERE registration_id = ${bcRegId} ORDER BY id`;
+  console.log('   → backup rows:', bcRows.length);
+  if (bcRows.length !== 2) throw new Error('Expected 2 backup coach rows');
+  if (!bcRows[0].token || bcRows[0].token.length < 16) throw new Error('Expected token to be set');
+  if (bcRows[0].signed_at) throw new Error('Expected not yet signed');
+
+  console.log('9. GET ?backup_waiver_token lookup works…');
+  const bcInfo = await get({ backup_waiver_token: bcRows[0].token });
+  console.log('   →', bcInfo.status, bcInfo.data && { name: bcInfo.data.name, mlc: bcInfo.data.main_learning_coach, signed: bcInfo.data.signed });
+  if (bcInfo.status !== 200) throw new Error('Expected 200');
+  if (bcInfo.data.name !== 'Grandma Jo') throw new Error('Expected name Grandma Jo');
+  if (bcInfo.data.signed !== false) throw new Error('Expected signed=false');
+
+  console.log('10. POST backup-waiver-sign records signature…');
+  const bcSign = await post({
+    kind: 'backup-waiver-sign',
+    token: bcRows[0].token,
+    signature_name: 'Grandma Josephine Actual',
+    signature_date: new Date().toISOString().slice(0, 10)
+  });
+  console.log('   →', bcSign.status, bcSign.data);
+  if (bcSign.status !== 200) throw new Error('Expected 200');
+  const signedCheck = await sql`SELECT signed_at, signature_name FROM backup_coach_waivers WHERE id = ${bcRows[0].id}`;
+  if (!signedCheck[0].signed_at) throw new Error('Expected signed_at to be set');
+  if (signedCheck[0].signature_name !== 'Grandma Josephine Actual') throw new Error('Signature name mismatch');
+
+  console.log('11. Double-signing the same token returns 409…');
+  const bcDoubleSign = await post({
+    kind: 'backup-waiver-sign',
+    token: bcRows[0].token,
+    signature_name: 'Someone Else',
+    signature_date: new Date().toISOString().slice(0, 10)
+  });
+  console.log('   →', bcDoubleSign.status, bcDoubleSign.data && bcDoubleSign.data.error);
+  if (bcDoubleSign.status !== 409) throw new Error('Expected 409');
+
+  console.log('12. Invalid token returns 400…');
+  const badTok = await get({ backup_waiver_token: 'not-a-token' });
+  console.log('   →', badTok.status, badTok.data && badTok.data.error);
+  if (badTok.status !== 400) throw new Error('Expected 400');
+
+  console.log('13. Unknown token returns 404…');
+  const unknownTok = await get({ backup_waiver_token: 'deadbeefdeadbeefdeadbeefdeadbeef' });
+  console.log('   →', unknownTok.status, unknownTok.data && unknownTok.data.error);
+  if (unknownTok.status !== 404) throw new Error('Expected 404');
+
+  console.log('14. Cleaning up test rows…');
+  await sql`DELETE FROM registrations WHERE id = ${id} OR id = ${bcRegId}`;
 
   console.log('\n✓ All smoke tests passed.');
   process.exit(0);

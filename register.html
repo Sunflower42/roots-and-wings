@@ -220,6 +220,13 @@
           <button type="button" class="reg-add-kid-btn" id="reg-add-kid">+ Add another child</button>
         </fieldset>
 
+        <fieldset class="reg-field" style="border: none; padding: 0; margin-bottom: 16px;">
+          <legend style="font-weight: 600; color: var(--color-primary-dark); margin-bottom: 6px; font-size: 0.95rem;">Backup Learning Coaches (optional)</legend>
+          <p class="reg-field-hint" style="margin: 0 0 10px;">Any adult (spouse, grandparent, friend) who will sub or cover for the Main Learning Coach needs their own waiver on file. Add them below and we'll email each one a link to sign their waiver.</p>
+          <div class="reg-kids-list" id="reg-backup-list"></div>
+          <button type="button" class="reg-add-kid-btn" id="reg-add-backup">+ Add a backup Learning Coach</button>
+        </fieldset>
+
         <div class="reg-field">
           <label for="reg-notes">Placement requests, allergies, or notes (optional)</label>
           <textarea id="reg-notes" placeholder="e.g., please place my child in the younger/older class, sibling requests, allergies, accommodations, etc."></textarea>
@@ -243,7 +250,7 @@
 
         <div class="reg-waiver">
           <h3>Data Storage &amp; AI Use</h3>
-          <p>To run the co-op we store family information — parent and student names, pronouns, home address, phone, email, birthdates, allergies and medical notes, emergency contacts, and any placement or accommodation notes — in <strong>Google Workspace</strong> under the <em>rootsandwingsindy.com</em> account. Access is limited to the Roots and Wings members, and we don't share information outside of what's required to run the co-op (e.g., emergency services).</p>
+          <p>To run the co-op we store family information — parent and student names, pronouns, home address, phone, email, birthdates, allergies and medical notes, emergency contacts, and any placement or accommodation notes — in <strong>Google Workspace</strong>. Access is limited to the Roots and Wings members, and we don't share information outside of what's required to run the co-op (e.g., emergency services).</p>
           <p>We also use AI tools, including <strong>Anthropic's Claude</strong>, to help draft communications and organize records. Family information may be processed by these tools under their enterprise privacy terms; AI is not used to make enrollment, placement, or disciplinary decisions.</p>
           <p>You can review, correct, or delete your family's stored information any time by emailing <a href="mailto:board@rootsandwingsindy.com">board@rootsandwingsindy.com</a>.</p>
         </div>
@@ -572,6 +579,43 @@
 
     document.getElementById('reg-add-kid').addEventListener('click', function () { addKidRow(); updateStudentSigVisibility(); });
 
+    // ── Backup Learning Coaches ──
+    function addBackupRow(prefill) {
+      var list = document.getElementById('reg-backup-list');
+      var id = ++state.kidIdCounter;
+      var row = document.createElement('div');
+      row.className = 'reg-kid-row';
+      var nameId = 'reg-backup-name-' + id;
+      var emailId = 'reg-backup-email-' + id;
+      row.innerHTML =
+        '<div class="reg-field" style="margin-bottom:0;">' +
+          '<label for="' + nameId + '">Name</label>' +
+          '<input type="text" id="' + nameId + '" class="reg-backup-name" placeholder="e.g., Alex Bogan" autocomplete="off">' +
+        '</div>' +
+        '<div class="reg-field" style="margin-bottom:0;">' +
+          '<label for="' + emailId + '">Email</label>' +
+          '<input type="email" id="' + emailId + '" class="reg-backup-email" placeholder="alex@example.com" autocomplete="off">' +
+        '</div>' +
+        '<button type="button" class="reg-kid-remove" aria-label="Remove this backup Learning Coach">Remove</button>';
+      if (prefill && prefill.name) row.querySelector('.reg-backup-name').value = prefill.name;
+      if (prefill && prefill.email) row.querySelector('.reg-backup-email').value = prefill.email;
+      row.querySelector('.reg-kid-remove').addEventListener('click', function () {
+        row.parentNode.removeChild(row);
+      });
+      list.appendChild(row);
+    }
+    function getBackupCoaches() {
+      var rows = document.querySelectorAll('#reg-backup-list .reg-kid-row');
+      var out = [];
+      rows.forEach(function (r) {
+        var name = ((r.querySelector('.reg-backup-name') || {}).value || '').trim();
+        var email = ((r.querySelector('.reg-backup-email') || {}).value || '').trim();
+        if (name || email) out.push({ name: name, email: email });
+      });
+      return out;
+    }
+    document.getElementById('reg-add-backup').addEventListener('click', function () { addBackupRow(); });
+
     // ── Step 1: choice ──
     document.getElementById('reg-choose-new').addEventListener('click', function () {
       clearKids();
@@ -757,6 +801,18 @@
       if (!sig) { showError('reg-form-error', 'Please type your name to sign the agreement.'); markInvalid('reg-signature'); return; }
       if (!sigDate) { showError('reg-form-error', 'Signature date is required.'); markInvalid('reg-sig-date'); return; }
 
+      var backupCoaches = getBackupCoaches();
+      for (var b = 0; b < backupCoaches.length; b++) {
+        if (!backupCoaches[b].name || !backupCoaches[b].email) {
+          showError('reg-form-error', 'Each backup Learning Coach needs both a name and email. Remove the row or fill in both fields.');
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(backupCoaches[b].email)) {
+          showError('reg-form-error', 'Backup Learning Coach "' + backupCoaches[b].name + '" has an invalid email.');
+          return;
+        }
+      }
+
       var studentSigInputs = document.querySelectorAll('#reg-student-sig-list .reg-adult-sig-input');
       var studentSigParts = [];
       for (var j = 0; j < studentSigInputs.length; j++) {
@@ -774,7 +830,8 @@
       state.form = {
         email: email, main_learning_coach: coach, phone: phone, address: address,
         track: trackEl.value, track_other: '', kids: kids, placement_notes: notes,
-        existing_family_name: state.prefillFamily || ''
+        existing_family_name: state.prefillFamily || '',
+        backup_coaches: backupCoaches
       };
       state.waiver = {
         waiver_member_agreement: true,

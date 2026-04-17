@@ -267,3 +267,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS registrations_email_season_idx
   ON registrations (LOWER(email), season);
 CREATE INDEX IF NOT EXISTS registrations_season_idx ON registrations (season);
 CREATE INDEX IF NOT EXISTS registrations_payment_status_idx ON registrations (payment_status);
+
+-- ──────────────────────────────────────────────
+-- Backup Learning Coach waivers
+-- One row per backup adult (spouse, grandparent, etc.) the Main LC listed at
+-- registration. Each row carries a unique token used to sign via waiver.html.
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS backup_coach_waivers (
+  id SERIAL PRIMARY KEY,
+  registration_id INTEGER NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  signed_at TIMESTAMPTZ,
+  signature_name TEXT DEFAULT '',
+  signature_date DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS backup_coach_waivers_registration_idx ON backup_coach_waivers (registration_id);
+CREATE INDEX IF NOT EXISTS backup_coach_waivers_token_idx ON backup_coach_waivers (token);

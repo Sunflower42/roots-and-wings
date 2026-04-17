@@ -79,11 +79,29 @@
   </nav>
 
   <header class="wv-hero">
-    <h1>Member Agreement &amp; Waivers</h1>
-    <p>A reference copy of the agreement families accept when registering with Roots and Wings Homeschool Co-op Inc.</p>
+    <h1 id="wv-hero-title">Member Agreement &amp; Waivers</h1>
+    <p id="wv-hero-sub">A reference copy of the agreement families accept when registering. Print or share it with anyone (spouse, grandparent, friend) who'll sub or cover for you at co-op.</p>
   </header>
 
   <main class="wv-container">
+    <div class="wv-card" id="wv-sign-card" style="display:none;">
+      <h2 style="font-family:'Playfair Display',serif;color:var(--color-primary-dark);margin:0 0 10px;">Sign as a backup Learning Coach</h2>
+      <p id="wv-sign-intro" style="color:#555;margin:0 0 16px;"></p>
+      <div id="wv-sign-status" style="display:none;padding:14px 16px;border-radius:8px;margin-bottom:16px;"></div>
+      <form id="wv-sign-form">
+        <div style="margin-bottom:14px;">
+          <label for="wv-sig-name" style="display:block;font-weight:600;color:var(--color-primary-dark);margin-bottom:6px;">Signature <span aria-hidden="true" style="color:var(--color-error,#c0392b);">*</span></label>
+          <input type="text" id="wv-sig-name" placeholder="Type your full legal name as your electronic signature" required style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:8px;font-size:1rem;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:14px;max-width:240px;">
+          <label for="wv-sig-date" style="display:block;font-weight:600;color:var(--color-primary-dark);margin-bottom:6px;">Date <span aria-hidden="true" style="color:var(--color-error,#c0392b);">*</span></label>
+          <input type="date" id="wv-sig-date" required style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:8px;font-size:1rem;box-sizing:border-box;">
+        </div>
+        <p style="color:#555;font-size:0.92rem;margin:0 0 14px;">By typing your name to sign below, you agree to the full Member Agreement &amp; Waivers on this page on behalf of yourself.</p>
+        <button type="submit" class="btn btn-primary">Sign &amp; Submit</button>
+      </form>
+    </div>
+
     <div class="wv-card">
       <div class="wv-toc">
         <strong>Contents</strong>
@@ -110,7 +128,7 @@
 
       <section class="wv-section" id="data">
         <h3>3. Data Storage &amp; AI Use</h3>
-        <p>To run the co-op we store family information — parent and student names, pronouns, home address, phone, email, birthdates, allergies and medical notes, emergency contacts, and any placement or accommodation notes — in <strong>Google Workspace</strong> under the <em>rootsandwingsindy.com</em> account. Access is limited to the Roots and Wings members, and we don't share information outside of what's required to run the co-op (e.g., emergency services).</p>
+        <p>To run the co-op we store family information — parent and student names, pronouns, home address, phone, email, birthdates, allergies and medical notes, emergency contacts, and any placement or accommodation notes — in <strong>Google Workspace</strong>. Access is limited to the Roots and Wings members, and we don't share information outside of what's required to run the co-op (e.g., emergency services).</p>
         <p>We also use AI tools, including <strong>Anthropic's Claude</strong>, to help draft communications and organize records. Family information may be processed by these tools under their enterprise privacy terms; AI is not used to make enrollment, placement, or disciplinary decisions.</p>
         <p>You can review, correct, or delete your family's stored information any time by emailing <a href="mailto:board@rootsandwingsindy.com">board@rootsandwingsindy.com</a>.</p>
       </section>
@@ -196,6 +214,90 @@
         }
       });
     });
+
+    // ── Backup Learning Coach signing flow ──
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var token = params.get('token') || '';
+      if (!/^[a-f0-9]{8,64}$/i.test(token)) return;
+
+      var card = document.getElementById('wv-sign-card');
+      var intro = document.getElementById('wv-sign-intro');
+      var status = document.getElementById('wv-sign-status');
+      var form = document.getElementById('wv-sign-form');
+      var nameInput = document.getElementById('wv-sig-name');
+      var dateInput = document.getElementById('wv-sig-date');
+      var heroTitle = document.getElementById('wv-hero-title');
+      var heroSub = document.getElementById('wv-hero-sub');
+
+      function showStatus(type, msg) {
+        status.style.display = '';
+        status.textContent = msg;
+        if (type === 'ok') { status.style.background = '#e8f5e9'; status.style.color = '#2f7d3b'; status.style.border = '1px solid #b8e0c1'; }
+        else if (type === 'err') { status.style.background = '#fdecea'; status.style.color = '#b93a33'; status.style.border = '1px solid #f5c6c0'; }
+        else { status.style.background = '#eee'; status.style.color = '#555'; status.style.border = '1px solid #ddd'; }
+      }
+
+      card.style.display = '';
+      showStatus('info', 'Loading your waiver…');
+
+      fetch('/api/tour?backup_waiver_token=' + encodeURIComponent(token))
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (result) {
+          if (!result.ok) {
+            showStatus('err', (result.data && result.data.error) || 'Could not load this waiver link.');
+            form.style.display = 'none';
+            return;
+          }
+          var d = result.data;
+          heroTitle.textContent = 'Backup Learning Coach Waiver';
+          heroSub.textContent = 'Review the agreement below, then sign at the top of this page.';
+          if (d.signed) {
+            showStatus('ok', 'This waiver was signed on ' + (d.signature_date || '').slice(0, 10) + ' by ' + (d.signature_name || d.name) + '. No further action needed.');
+            form.style.display = 'none';
+            return;
+          }
+          intro.innerHTML = 'Hi <strong>' + escapeText(d.name) + '</strong> — ' + escapeText(d.main_learning_coach) + ' listed you as a backup Learning Coach for the <strong>' + escapeText(d.family_name) + ' family</strong>. Review the Member Agreement &amp; Waivers below, then sign to put your waiver on file.';
+          nameInput.value = d.name || '';
+          dateInput.value = new Date().toISOString().slice(0, 10);
+          status.style.display = 'none';
+        })
+        .catch(function () {
+          showStatus('err', 'Could not reach the server. Please try again in a moment.');
+          form.style.display = 'none';
+        });
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var sig = (nameInput.value || '').trim();
+        var date = (dateInput.value || '').trim();
+        if (!sig) { showStatus('err', 'Please type your name to sign.'); nameInput.focus(); return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showStatus('err', 'Please enter a signature date.'); dateInput.focus(); return; }
+        showStatus('info', 'Submitting…');
+        fetch('/api/tour', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'backup-waiver-sign', token: token, signature_name: sig, signature_date: date })
+        }).then(function (r) {
+          return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+        }).then(function (result) {
+          if (!result.ok) {
+            showStatus('err', (result.data && result.data.error) || 'Could not record signature.');
+            return;
+          }
+          showStatus('ok', 'Thanks — your waiver is on file. A confirmation email is on the way.');
+          form.style.display = 'none';
+        }).catch(function () {
+          showStatus('err', 'Could not reach the server. Please try again.');
+        });
+      });
+
+      function escapeText(s) {
+        var div = document.createElement('div');
+        div.textContent = String(s == null ? '' : s);
+        return div.innerHTML;
+      }
+    })();
   </script>
 </body>
 </html>
