@@ -6371,6 +6371,78 @@
     curriculumBtn.addEventListener('click', showCurriculumLibrary);
   }
 
+  // ── Member Agreement & Waivers modal ──
+  // Fetches waiver.html and extracts the wv-card so the modal content stays
+  // in lockstep with the standalone page (single source of truth).
+  var waiverHtmlCache = null;
+  var waiverStylesInjected = false;
+  function injectWaiverStyles(cssText) {
+    if (waiverStylesInjected || !cssText) return;
+    var tag = document.createElement('style');
+    tag.id = 'waiver-modal-styles';
+    // Scope the fetched rules inside the modal so they don't leak elsewhere.
+    tag.textContent = cssText;
+    document.head.appendChild(tag);
+    waiverStylesInjected = true;
+  }
+  function loadWaiverHtml() {
+    if (waiverHtmlCache) return Promise.resolve(waiverHtmlCache);
+    return fetch('/waiver.html', { credentials: 'omit' })
+      .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error('fetch failed')); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var card = doc.querySelector('.wv-card:not(#wv-sign-card)');
+        var styleEl = doc.querySelector('style');
+        if (styleEl) injectWaiverStyles(styleEl.textContent);
+        waiverHtmlCache = card ? card.innerHTML : null;
+        return waiverHtmlCache;
+      });
+  }
+
+  function showWaiverModal() {
+    if (!personDetail || !personDetailCard) return;
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail" id="waiverModalBody">';
+    html += '<div style="text-align:center;color:#777;padding:40px 0;">Loading Member Agreement…</div>';
+    html += '</div>';
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.onclick = function (ev) { if (ev.target === personDetail) closeDetail(); };
+
+    loadWaiverHtml().then(function (inner) {
+      var body = document.getElementById('waiverModalBody');
+      if (!body) return;
+      if (!inner) {
+        body.innerHTML = '<p style="color:#b93a33;">Could not load the waiver. <a href="waiver.html" target="_blank" rel="noopener">Open in a new tab instead</a>.</p>';
+        return;
+      }
+      body.innerHTML =
+        '<h2 style="font-family:\'Playfair Display\',serif;color:var(--color-primary-dark);margin:0 0 8px;">Member Agreement &amp; Waivers</h2>' +
+        '<p style="color:#555;margin:0 0 16px;">Reference copy of the agreement families accept when registering.</p>' +
+        inner +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end;margin-top:20px;">' +
+          '<a href="waiver.html" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm">Open in new tab / Print</a>' +
+          '<button type="button" class="btn btn-primary btn-sm" id="waiverModalClose">Close</button>' +
+        '</div>';
+      // Suppress the inline "Print / Save as PDF" and "Back to Member Portal"
+      // buttons that live inside the fetched wv-card — they don't make sense
+      // inside the modal.
+      body.querySelectorAll('.wv-actions').forEach(function (el) { el.style.display = 'none'; });
+      var closeBtn = document.getElementById('waiverModalClose');
+      if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+    }).catch(function () {
+      var body = document.getElementById('waiverModalBody');
+      if (body) body.innerHTML = '<p style="color:#b93a33;">Could not load the waiver. <a href="waiver.html" target="_blank" rel="noopener">Open in a new tab instead</a>.</p>';
+    });
+  }
+
+  var waiverBtn = document.getElementById('waiverBtn');
+  if (waiverBtn) {
+    waiverBtn.addEventListener('click', showWaiverModal);
+  }
+
   // Render all coordination tabs
   function renderCoordinationTabs() {
     renderSessionTab();
