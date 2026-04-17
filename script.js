@@ -6502,11 +6502,10 @@
       id: 'playfair',
       label: 'Style 2',
       font: 'Playfair Display',
-      logo: 'logo-style2-full.png',
-      watermark: 'logo-style2-mark.png',
+      logo: 'logo-combined-mark.png',
+      watermark: 'logo-combined-mark.png',
       brandText: 'Roots & Wings',
-      useFullLogo: true,
-      swatches: ['#1F6B3F', '#E8624E', '#4FB5B8', '#F0C674']
+      swatches: ['#523A79', '#E0B52C', '#5A6B39', '#8858AD']
     },
     {
       id: 'style3',

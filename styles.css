@@ -5,13 +5,15 @@
 
 /* ---------- Custom Properties ---------- */
 :root {
-  --color-primary: #1F6B3F;
-  --color-primary-dark: #134A2A;
-  --color-primary-light: #8DB840;
-  --color-accent: #E8624E;
-  --color-accent-dark: #C44A38;
-  --color-accent-light: #F0C674;
-  --color-sky: #4FB5B8;
+  --color-primary: #523A79;
+  --color-primary-dark: #3A285C;
+  --color-primary-light: #8858AD;
+  --color-accent: #E0B52C;
+  --color-accent-dark: #B8941C;
+  --color-accent-light: #F0D66B;
+  --color-leaf: #5A6B39;
+  --color-wood: #5A2E0E;
+  --color-sky: #5A6B39;
   --color-cream: #F5F5F0;
   --color-cream-dark: #ECECE6;
   --color-white: #FFFFFF;
@@ -19,13 +21,13 @@
   --color-text-light: #5E6572;
   --color-text-inverse: #FFFFFF;
   --color-border: #DFE1DE;
-  --color-success: #8DB43E;
+  --color-success: #5A6B39;
   --color-error: #C4847A;
 
   /* RGB channels for semi-transparent usage */
-  --color-primary-rgb: 31, 107, 63;
-  --color-accent-light-rgb: 240, 198, 116;
-  --color-primary-light-rgb: 141, 184, 64;
+  --color-primary-rgb: 82, 58, 121;
+  --color-accent-light-rgb: 240, 214, 107;
+  --color-primary-light-rgb: 136, 88, 173;
 
   --font-heading: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-body: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;

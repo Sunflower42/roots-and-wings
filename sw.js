@@ -6,8 +6,8 @@ self.addEventListener('push', function (event) {
   var title = data.title || 'Roots & Wings';
   var options = {
     body: data.body || '',
-    icon: '/logo-new.png',
-    badge: '/logo-new.png',
+    icon: '/logo-combined-mark.png',
+    badge: '/logo-combined-mark.png',
     tag: data.tag || 'rw-notification',
     data: { url: data.url || '/members.html#coverage' },
     requireInteraction: true
