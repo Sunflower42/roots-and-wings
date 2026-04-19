@@ -2547,14 +2547,17 @@
       }
     }
 
-    // ── Coverage (taking someone else's slot for the next co-op day) ──
-    // If any parent in this family has claimed an uncovered slot for the
-    // upcoming co-op day, surface that slot alongside their regular AM/PM1/PM2
-    // duties. Matching is by name (same approach the rest of this card uses).
+    // ── Coverage (covering for someone on an upcoming co-op day) ──
+    // If any parent in this family has claimed a slot for an absence dated
+    // today-or-later, surface that slot alongside their regular AM/PM1/PM2
+    // duties. We don't tie to getNextCoopDate() because absences can be
+    // entered for any date (including legacy non-Wednesday dates); the
+    // Coverage Board renders the same way.
     try {
-      var coopDate = getNextCoopDate();
+      var todayIsoCov = new Date().toISOString().slice(0, 10);
       (loadedAbsences || []).forEach(function (a) {
-        if (String(a.absence_date || '').slice(0, 10) !== coopDate) return;
+        var absDate = String(a.absence_date || '').slice(0, 10);
+        if (!absDate || absDate < todayIsoCov) return;
         (a.slots || []).forEach(function (s) {
           if (!s.claimed_by_email && !s.claimed_by_name) return;
           var mine = parentFullNames.some(function (full) { return nameMatch(s.claimed_by_name, full); });
@@ -2562,8 +2565,9 @@
           var blk = (s.block === 'AM' || s.block === 'PM1' || s.block === 'PM2' || s.block === 'Cleaning') ? s.block : 'AM';
           var icon = s.role_type === 'teacher' ? 'teach' : s.role_type === 'cleaning' ? 'clean' : 'assist';
           var absentPerson = a.absent_person || 'a member';
+          var dateLbl = formatDateLabel(absDate).replace(/^\w+,\s*/, '');
           var text = 'Covering: ' + (s.role_description || 'role');
-          var detail = 'For ' + absentPerson;
+          var detail = 'For ' + absentPerson + ' \u00b7 ' + dateLbl;
           // If the slot maps to a known class/elective, build a popup link.
           var popup = null;
           if (s.block === 'AM' && s.group_or_class && AM_CLASSES[s.group_or_class]) {
