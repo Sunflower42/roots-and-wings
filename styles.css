@@ -3877,6 +3877,15 @@ button.staff-role:hover {
   font-size: 0.78rem;
 }
 
+/* Small italic pronoun tag used inline in class/elective detail modals. */
+.pronoun-inline {
+  color: var(--color-text-light);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 0.78rem;
+  margin-left: 2px;
+}
+
 /* Parent duties */
 .mf-duty {
   display: flex;

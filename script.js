@@ -209,6 +209,58 @@
     return s;
   }
 
+  // Resolve a "First Last" name to the corresponding entry in allPeople.
+  // Used by class/elective detail modals to surface pronouns and allergies.
+  function lookupPerson(fullName) {
+    if (!fullName || typeof allPeople === 'undefined' || !Array.isArray(allPeople)) return null;
+    var parts = String(fullName).trim().split(/\s+/);
+    if (parts.length === 0) return null;
+    var first = parts[0];
+    var last = parts.slice(1).join(' ');
+    for (var i = 0; i < allPeople.length; i++) {
+      var p = allPeople[i];
+      if (p.name !== first) continue;
+      if (!last) return p;
+      if (p.lastName === last || p.family === last) return p;
+    }
+    return null;
+  }
+
+  // Return a small italic pronouns tag for inline use, or '' if none.
+  function pronounTag(person) {
+    if (!person || !person.pronouns) return '';
+    return ' <span class="pronoun-inline">(' + escapeHtml(person.pronouns) + ')</span>';
+  }
+
+  // Given a list of display-name students, build a red-accent callout listing
+  // every kid with real allergies (sentinel "None" values are already stripped
+  // at ingestion by normalizeAllergies). Returns '' if no one has allergies.
+  function studentAllergyCallout(studentNames) {
+    var callouts = [];
+    (studentNames || []).forEach(function (name) {
+      var p = lookupPerson(name);
+      if (p && p.allergies) callouts.push({ name: name, allergies: p.allergies });
+    });
+    if (callouts.length === 0) return '';
+    var html = '<div class="class-allergy-alerts"><div class="class-allergy-title">\u26A0 Allergy & Medical Alerts</div><ul>';
+    callouts.forEach(function (c) {
+      html += '<li><strong>' + escapeHtml(c.name) + ':</strong> ' + escapeHtml(c.allergies) + '</li>';
+    });
+    html += '</ul></div>';
+    return html;
+  }
+
+  // Small HTML escape used by the helpers above. The bigger codebase uses
+  // ad-hoc escapes; keeping this local and small avoids name collisions.
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function getActiveEmail() {
     var viewAs = sessionStorage.getItem(VIEW_AS_KEY);
     if (viewAs) return viewAs;
@@ -1765,16 +1817,18 @@
       if (sess && sess.topic) html += '<p class="elective-description" style="font-style:italic;">' + sess.topic + '</p>';
       html += '<div class="elective-staff-list">';
       if (sess && sess.teacher) {
+        var teacherPerson = lookupPerson(sess.teacher);
         html += '<div class="elective-teacher">';
         html += '<div class="staff-dot" style="background:' + faceColor(sess.teacher) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + sess.teacher.charAt(0) + '</span></div>';
-        html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + sess.teacher + '</strong><small style="color:var(--color-text-light);">Leader</small></div>';
+        html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + sess.teacher + pronounTag(teacherPerson) + '</strong><small style="color:var(--color-text-light);">Leader</small></div>';
         html += '</div>';
       }
       if (sess && sess.assistants) {
         sess.assistants.forEach(function(a) {
+          var assistPerson = lookupPerson(a);
           html += '<div class="elective-teacher">';
           html += '<div class="staff-dot" style="background:' + faceColor(a) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + a.charAt(0) + '</span></div>';
-          html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + a + '</strong><small style="color:var(--color-text-light);">Assistant</small></div>';
+          html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + a + pronounTag(assistPerson) + '</strong><small style="color:var(--color-text-light);">Assistant</small></div>';
           html += '</div>';
         });
       }
@@ -1784,13 +1838,17 @@
       if (groupKids.length > 0) {
         html += '<h4 class="elective-roster-title">' + groupKids.length + ' Students</h4>';
         html += '<div class="elective-roster">';
+        var studentFullNames = [];
         groupKids.forEach(function(kid) {
+          var kidFull = kid.name + ' ' + (kid.lastName || kid.family);
+          studentFullNames.push(kidFull);
           html += '<div class="elective-student">';
           html += '<div class="elective-student-dot" style="background:' + faceColor(kid.name) + '"><span>' + kid.name.charAt(0) + '</span></div>';
-          html += '<div><strong>' + kid.name + '</strong> <span class="elective-student-last">' + (kid.lastName || kid.family) + '</span></div>';
+          html += '<div><strong>' + kid.name + '</strong> <span class="elective-student-last">' + (kid.lastName || kid.family) + '</span>' + pronounTag(kid) + '</div>';
           html += '</div>';
         });
         html += '</div>';
+        html += studentAllergyCallout(studentFullNames);
       }
     }
 
@@ -2977,15 +3035,17 @@
 
     // Leader + assistants
     html += '<div class="elective-staff-list">';
+    var leaderPerson = lookupPerson(elec.leader);
     html += '<div class="elective-teacher">';
     html += '<div class="staff-dot" style="background:' + faceColor(elec.leader) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + elec.leader.charAt(0) + '</span></div>';
-    html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + elec.leader + '</strong><small style="color:var(--color-text-light);">Leader</small></div>';
+    html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + elec.leader + pronounTag(leaderPerson) + '</strong><small style="color:var(--color-text-light);">Leader</small></div>';
     html += '</div>';
     if (elec.assistants && elec.assistants.length > 0) {
       elec.assistants.forEach(function (a) {
+        var assistPerson = lookupPerson(a);
         html += '<div class="elective-teacher">';
         html += '<div class="staff-dot" style="background:' + faceColor(a) + ';width:36px;height:36px;"><span style="font-size:0.85rem;">' + a.charAt(0) + '</span></div>';
-        html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + a + '</strong><small style="color:var(--color-text-light);">Assistant</small></div>';
+        html += '<div class="staff-label" style="color:var(--color-text);"><strong style="color:var(--color-text);">' + a + pronounTag(assistPerson) + '</strong><small style="color:var(--color-text-light);">Assistant</small></div>';
         html += '</div>';
       });
     }
@@ -3003,12 +3063,14 @@
     elec.students.forEach(function (kidName) {
       var first = kidName.split(' ')[0];
       var last = kidName.split(' ').slice(1).join(' ');
+      var kidPerson = lookupPerson(kidName);
       html += '<div class="elective-student">';
       html += '<div class="elective-student-dot" style="background:' + faceColor(first) + '"><span>' + first.charAt(0) + '</span></div>';
-      html += '<div><strong>' + first + '</strong> <span class="elective-student-last">' + last + '</span></div>';
+      html += '<div><strong>' + first + '</strong> <span class="elective-student-last">' + last + '</span>' + pronounTag(kidPerson) + '</div>';
       html += '</div>';
     });
     html += '</div>';
+    html += studentAllergyCallout(elec.students);
 
     // Append role description for leader/assistant
     var activeEmail = getActiveEmail();
@@ -5797,9 +5859,9 @@
       '.steps .cell { padding: 4pt 0; border-bottom: 0.5pt solid #ccc; }',
       '.qty { color: #555; font-size: 9pt; }',
       '.notes { color: #555; font-size: 9pt; font-style: italic; }',
-      '.low-flag { display: inline-block; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 5pt; border-radius: 999pt; margin-left: 3pt; vertical-align: middle; background: #e07a2a; color: #fff; }',
+      '.low-flag { display: inline-block; font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1pt 5pt; border-radius: 6pt; margin-left: 4pt; line-height: 1.2; vertical-align: 1pt; background: #e07a2a; color: #fff; }',
       '.low-flag-empty { background: #c0392b; }',
-      '@media print { .low-flag { background: transparent !important; color: #000; border: 0.75pt solid #000; } }',
+      '@media print { .low-flag { background: transparent !important; color: #000; border: 0.5pt solid #000; } }',
       '@media print { .no-print { display: none; } }',
       '.no-print { text-align: center; padding: 12pt; background: #ffe; border-bottom: 1pt solid #ccc; margin: -0.25in -0.25in 12pt -0.25in; }',
       '.no-print button { font-size: 11pt; padding: 6pt 16pt; cursor: pointer; }'
@@ -7733,9 +7795,9 @@
       '.steps .header { font-weight: 700; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.05em; padding-bottom: 4pt; border-bottom: 1pt solid #333; }',
       '.steps .num { text-align: right; padding-right: 4pt; font-weight: 700; }',
       '.steps .cell { padding: 3pt 0; border-bottom: 0.5pt solid #ccc; font-size: 10pt; }',
-      '.low-flag { display: inline-block; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0 5pt; border-radius: 999pt; margin-left: 3pt; vertical-align: middle; background: #e07a2a; color: #fff; }',
+      '.low-flag { display: inline-block; font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1pt 5pt; border-radius: 6pt; margin-left: 4pt; line-height: 1.2; vertical-align: 1pt; background: #e07a2a; color: #fff; }',
       '.low-flag-empty { background: #c0392b; }',
-      '@media print { .low-flag { background: transparent !important; color: #000; border: 0.75pt solid #000; } }',
+      '@media print { .low-flag { background: transparent !important; color: #000; border: 0.5pt solid #000; } }',
       '@media print { .no-print { display: none; } }',
       '.no-print { text-align: center; padding: 10pt; background: #ffe; border-bottom: 1pt solid #ccc; margin: -0.25in -0.25in 12pt -0.25in; }',
       '.no-print button { font-size: 11pt; padding: 6pt 16pt; cursor: pointer; margin: 0 4pt; }'
