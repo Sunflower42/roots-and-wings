@@ -2264,10 +2264,10 @@
     });
     var memberFee = BILLING_CONFIG.memberFeePerSemester;
     var deposit = sem.deposit || 0;
-    // Class Fees and Membership Fee are now billed separately. The deposit
-    // (Membership Fee) is its own payment and no longer reduces the class
-    // fee balance.
-    var subtotal = memberFee + classTotal;
+    // Class Fees cover AM/PM class charges only. Member / Membership fees are
+    // billed as their own payments and no longer roll into the class-fee
+    // subtotal or credit.
+    var subtotal = classTotal;
     var balanceBeforeFee = subtotal;
     var paypalFee = Math.ceil(((balanceBeforeFee + BILLING_CONFIG.paypalFeeFixed) / (1 - BILLING_CONFIG.paypalFeeRate) - balanceBeforeFee) * 100) / 100;
     var total = balanceBeforeFee + paypalFee;
@@ -2807,11 +2807,6 @@
       var programmingKids = fam.kids.filter(function(k) { return k.group !== 'Greenhouse'; });
       var fullDayKids = programmingKids.filter(function(k) { return !k.schedule || k.schedule === 'all-day'; });
       var nSessions = sem.sessionCount;
-
-      html += '<div class="mf-billing-line">';
-      html += '<span>Member fee (per family)</span>';
-      html += '<span>$' + sem.memberFee.toFixed(2) + '</span>';
-      html += '</div>';
 
       if (fullDayKids.length > 0) {
         var amTotal = fullDayKids.length * BILLING_CONFIG.amFeePerSession * nSessions;
