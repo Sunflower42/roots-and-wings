@@ -7781,6 +7781,10 @@ button.staff-role:hover {
   background: rgba(224, 122, 42, 0.1);
   color: #a5531a;
 }
+.sc-section-rest {
+  margin-top: 18px;
+  padding-top: 14px;
+}
 
 /* ── Curriculum lesson: low/empty-stock pill beside supply names ── */
 .cl-sup-flag {
