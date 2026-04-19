@@ -7094,6 +7094,7 @@
         var personSlots = { person: a.absent_person, notes: a.notes, slots: [] };
         (a.slots || []).forEach(function (slot) {
           slot._person = a.absent_person;
+          slot._familyEmail = a.family_email;
           if (slot.claimed_by_email) coveredSlots.push(slot);
           else openSlots.push(slot);
           personSlots.slots.push(slot);
@@ -7108,11 +7109,14 @@
         html += '<div class="coverage-open-section">';
         html += '<div class="coverage-section-label">Needs Coverage</div>';
         openSlots.forEach(function (slot) {
+          var isMyOwnAbsence = slot._familyEmail && slot._familyEmail === email;
           html += '<div class="coverage-slot coverage-slot-open">';
           html += '<span class="coverage-slot-block">' + slot.block + '</span>';
           html += '<span class="coverage-slot-desc">' + slot.role_description + ' <span class="coverage-slot-for">(' + slot._person + ')</span></span>';
           html += '<span class="coverage-slot-actions">';
-          html += '<button class="btn btn-sm btn-cover" data-slot-id="' + slot.id + '">I\'ll Cover This</button>';
+          if (!isMyOwnAbsence) {
+            html += '<button class="btn btn-sm btn-cover" data-slot-id="' + slot.id + '">I\'ll Cover This</button>';
+          }
           if (isVpUser) html += '<button class="btn btn-sm btn-outline btn-assign" data-slot-id="' + slot.id + '" data-slot-desc="' + (slot.role_description || '').replace(/"/g, '&quot;') + '" data-slot-date="' + date + '">Assign\u2026</button>';
           html += '</span>';
           html += '</div>';
@@ -7775,8 +7779,7 @@
       info.students.forEach(function (s) {
         var p = lookupPerson(s);
         var pron = p && p.pronouns ? ' <em style="color:#666;font-size:8.5pt;">(' + esc(p.pronouns) + ')</em>' : '';
-        var allergyMark = p && p.allergies ? ' <span style="color:#b3381a;">\u26A0</span>' : '';
-        html += '<li>' + esc(s) + pron + allergyMark + '</li>';
+        html += '<li>' + esc(s) + pron + '</li>';
         if (p && p.allergies) allergyCallouts.push({ name: s, allergies: p.allergies });
       });
       html += '</ul></div>';
