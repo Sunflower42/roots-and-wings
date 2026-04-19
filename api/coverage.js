@@ -102,7 +102,7 @@ module.exports = async function handler(req, res) {
       const newName = String(body.claimed_by_name || '').trim();
 
       const slot = await sql`
-        SELECT cs.*, a.absence_date, a.absence_id
+        SELECT cs.*, a.absence_date
         FROM coverage_slots cs
         JOIN absences a ON a.id = cs.absence_id
         WHERE cs.id = ${id}

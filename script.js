@@ -6795,7 +6795,7 @@
     // Guard against double-open (e.g., rapid double-click)
     if (document.getElementById('absenceOverlay')) return;
 
-    var email = localStorage.getItem('rw_user_email');
+    var email = getActiveEmail();
     if (!email || !FAMILIES) return;
     var me = null;
     for (var i = 0; i < FAMILIES.length; i++) { if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; } }
@@ -6973,17 +6973,15 @@
 
   function loadCoverageBoard() {
     var cred = localStorage.getItem('rw_google_credential');
-    if (!cred) { console.log('[coverage] loadCoverageBoard skipped — no credential'); return; }
-    console.log('[coverage] loadCoverageBoard fetching session=' + currentSession);
+    if (!cred) return;
     fetch('/api/absences?session=' + currentSession, { headers: { 'Authorization': 'Bearer ' + cred } })
-    .then(function (r) { console.log('[coverage] /api/absences status:', r.status); return r.json(); })
+    .then(function (r) { return r.json(); })
     .then(function (data) {
       var raw = data.absences || [];
       var filtered = raw.filter(function (a) { return !a.cancelled_at; });
-      console.log('[coverage] API returned', raw.length, 'absences,', filtered.length, 'active');
       renderCoverageBoard(filtered);
     })
-    .catch(function (err) { console.error('[coverage] fetch failed:', err); var el = document.getElementById('coverageBoardContent'); if (el) el.innerHTML = '<p>Could not load coverage data.</p>'; });
+    .catch(function (err) { console.error('Coverage fetch failed:', err); var el = document.getElementById('coverageBoardContent'); if (el) el.innerHTML = '<p>Could not load coverage data.</p>'; });
   }
 
   // Store loaded absences so responsibilities card can reference them
@@ -6999,7 +6997,6 @@
     } catch (e) { console.error('renderDirectory failed inside renderCoverageBoard:', e); }
     var el = document.getElementById('coverageBoardContent');
     var card = document.getElementById('coverageBoardCard');
-    console.log('[coverage] renderCoverageBoard — absences:', absences.length, 'el:', !!el, 'card:', !!card);
     if (!el) return;
 
     var isVpUser = isVP();
@@ -7034,7 +7031,7 @@
       summaryBadge.className = 'coverage-summary-badge ' + (totalOpenAll > 0 ? 'coverage-summary-open' : 'coverage-summary-ok');
     }
 
-    var email = localStorage.getItem('rw_user_email');
+    var email = getActiveEmail();
     var me = null;
     for (var i = 0; i < FAMILIES.length; i++) { if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; } }
     var myName = me ? me.parents.split(' & ')[0].trim() + ' ' + me.name : '';
@@ -7052,7 +7049,6 @@
     // absences (e.g. the Tuesday dates from before the co-op day fix) still
     // render instead of silently being filtered into oblivion.
     var activeDates = Object.keys(byDate).sort();
-    console.log('[coverage] activeDates:', activeDates, 'byDate keys:', Object.keys(byDate));
     if (activeDates.length === 0) {
       if (isVpUser) {
         el.innerHTML = '<div class="coverage-empty">No absences reported for any upcoming co-op day this session.</div>';
@@ -7305,7 +7301,7 @@
     var notesContainer = document.getElementById('coverageNotesArea');
     if (!notesContainer) return;
 
-    var email = localStorage.getItem('rw_user_email');
+    var email = getActiveEmail();
     var me = null;
     for (var i = 0; i < FAMILIES.length; i++) { if (FAMILIES[i].email === email) { me = FAMILIES[i]; break; } }
     if (!me) return;
@@ -7358,7 +7354,7 @@
     var el = document.getElementById('myAbsencesArea');
     if (!el || !loadedAbsences || loadedAbsences.length === 0) { if (el) el.innerHTML = ''; return; }
 
-    var email = localStorage.getItem('rw_user_email');
+    var email = getActiveEmail();
     if (!email) return;
 
     var myAbsences = loadedAbsences.filter(function (a) {
