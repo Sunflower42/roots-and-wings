@@ -7329,9 +7329,12 @@
 
     if (myClasses.length === 0 && myElectives.length === 0) { notesContainer.innerHTML = ''; return; }
 
-    // Check if any absent person has a slot matching my classes/electives
+    // Check if any absent person has a slot matching my classes/electives.
+    // Skip absences where I'm the one out — those are already surfaced in
+    // "Your Upcoming Absences" below, with per-slot coverage status.
     var notes = [];
     loadedAbsences.forEach(function (a) {
+      if (a.family_email === email) return;
       (a.slots || []).forEach(function (slot) {
         var match = false;
         if (myClasses.indexOf(slot.group_or_class) !== -1) match = true;
@@ -7375,6 +7378,19 @@
       html += '<div class="my-absence-info">';
       html += '<strong>' + dateLabel + '</strong> \u00b7 ' + a.absent_person;
       html += '<div class="my-absence-detail">' + blocks + statusText + '</div>';
+      // Per-slot coverage status so the user sees who's covering each role.
+      if (totalSlots > 0) {
+        html += '<ul class="my-absence-slots">';
+        (a.slots || []).forEach(function (s) {
+          var label = (s.role_description || s.group_or_class || 'Slot') + ' (' + s.block + ')';
+          if (s.claimed_by_email) {
+            html += '<li class="my-absence-slot my-absence-slot-ok">' + label + ' \u2014 covered by <strong>' + (s.claimed_by_name || s.claimed_by_email) + '</strong></li>';
+          } else {
+            html += '<li class="my-absence-slot my-absence-slot-open">' + label + ' \u2014 <strong>needs coverage</strong></li>';
+          }
+        });
+        html += '</ul>';
+      }
       html += '</div>';
       html += '<div class="my-absence-actions">';
       html += '<button class="sc-btn my-absence-edit" data-absence-id="' + a.id + '">Edit</button>';

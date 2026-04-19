@@ -6870,6 +6870,26 @@ button.staff-role:hover {
   gap: 0.3rem;
   flex-shrink: 0;
 }
+.my-absence-slots {
+  list-style: none;
+  margin: 0.3rem 0 0 0;
+  padding: 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.my-absence-slot {
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  margin-top: 0.2rem;
+}
+.my-absence-slot-ok {
+  background: rgba(var(--color-teal-rgb), 0.1);
+  color: var(--color-text);
+}
+.my-absence-slot-open {
+  background: rgba(var(--color-coral-rgb), 0.1);
+  color: var(--color-text);
+}
 .coverage-absence {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid rgba(0,0,0,0.04);
