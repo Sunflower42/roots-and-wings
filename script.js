@@ -1263,6 +1263,22 @@
       }
       html += '</div></div>';
 
+      // Class-wide allergy / medical alerts — mirrors the Class Pack callout
+      // so teachers see these whether they're on-screen or printed.
+      var classAllergies = [];
+      allPeople.forEach(function (p) {
+        if (p.type === 'kid' && p.group === activeFilter && p.schedule !== 'afternoon' && p.allergies) {
+          classAllergies.push({ name: p.name + ' ' + (p.lastName || p.family), allergies: p.allergies });
+        }
+      });
+      if (classAllergies.length > 0) {
+        html += '<div class="class-allergy-alerts"><div class="class-allergy-title">\u26A0 Allergy & Medical Alerts</div><ul>';
+        classAllergies.forEach(function (c) {
+          html += '<li><strong>' + c.name + ':</strong> ' + c.allergies + '</li>';
+        });
+        html += '</ul></div>';
+      }
+
       // Face cards for kids in this group (excluding afternoon-only)
       allPeople.forEach(function (person, idx) {
         if (person.type !== 'kid' || person.group !== activeFilter) return;
@@ -7699,6 +7715,30 @@
 
     var html = '<!doctype html><html><head><meta charset="utf-8"><title>Class Pack: ' + esc(info.name) + '</title><style>' + css + '</style></head><body>';
 
+    // Resolve a "First Last" name to the allPeople entry so we can attach
+    // pronouns / allergies to class-pack rosters. Tries the kid's actual
+    // lastName first, then falls back to the family surname.
+    function lookupPerson(fullName) {
+      if (!fullName || !Array.isArray(allPeople)) return null;
+      var parts = String(fullName).trim().split(/\s+/);
+      if (parts.length === 0) return null;
+      var first = parts[0];
+      var last = parts.slice(1).join(' ');
+      for (var i = 0; i < allPeople.length; i++) {
+        var p = allPeople[i];
+        if (p.name !== first) continue;
+        if (!last) return p;
+        if (p.lastName === last || p.family === last) return p;
+      }
+      return null;
+    }
+
+    function staffLine(name) {
+      var p = lookupPerson(name);
+      if (p && p.pronouns) return esc(name) + ' <span style="color:#555;font-style:italic;">(' + esc(p.pronouns) + ')</span>';
+      return esc(name);
+    }
+
     // ── Class header ──
     html += '<div class="class-header">';
     html += '<h1>' + esc(info.name) + (info.ageRange ? ' <span style="font-size:12pt;color:#555;">(' + esc(info.ageRange) + ')</span>' : '') + '</h1>';
@@ -7706,16 +7746,35 @@
     html += '<dl class="class-detail">';
     html += '<dt>Time</dt><dd>' + esc(info.time) + '</dd>';
     html += '<dt>Room</dt><dd>' + esc(info.room) + '</dd>';
-    html += '<dt>Teacher</dt><dd>' + esc(info.teacher) + '</dd>';
-    if (info.assistants.length) { html += '<dt>Assistants</dt><dd>' + esc(info.assistants.join(', ')) + '</dd>'; }
+    html += '<dt>Teacher</dt><dd>' + staffLine(info.teacher) + '</dd>';
+    if (info.assistants.length) {
+      html += '<dt>Assistants</dt><dd>' + info.assistants.map(staffLine).join(', ') + '</dd>';
+    }
     if (info.topic) { html += '<dt>Topic</dt><dd>' + esc(info.topic) + '</dd>'; }
     html += '</dl>';
 
-    // Student roster (PM electives have student lists)
+    // Student roster with pronouns inline + a highlighted allergy/medical
+    // callout so teachers see it at a glance instead of scanning line by line.
     if (info.students && info.students.length > 0) {
       html += '<div class="roster"><div class="roster-title">Students (' + info.students.length + ')</div><ul class="roster-list">';
-      info.students.forEach(function (s) { html += '<li>' + esc(s) + '</li>'; });
+      var allergyCallouts = [];
+      info.students.forEach(function (s) {
+        var p = lookupPerson(s);
+        var pron = p && p.pronouns ? ' <em style="color:#666;font-size:8.5pt;">(' + esc(p.pronouns) + ')</em>' : '';
+        var allergyMark = p && p.allergies ? ' <span style="color:#b3381a;">\u26A0</span>' : '';
+        html += '<li>' + esc(s) + pron + allergyMark + '</li>';
+        if (p && p.allergies) allergyCallouts.push({ name: s, allergies: p.allergies });
+      });
       html += '</ul></div>';
+      if (allergyCallouts.length > 0) {
+        html += '<div class="roster-alerts" style="margin-top:8pt;border:1pt solid #b3381a;background:#fdf2ef;padding:8pt 10pt;font-size:9.5pt;">';
+        html += '<div style="font-weight:700;color:#b3381a;margin-bottom:3pt;">\u26A0 Allergy & Medical Alerts</div>';
+        html += '<ul style="list-style:none;padding:0;margin:0;">';
+        allergyCallouts.forEach(function (c) {
+          html += '<li style="margin-bottom:2pt;"><strong>' + esc(c.name) + ':</strong> ' + esc(c.allergies) + '</li>';
+        });
+        html += '</ul></div>';
+      }
     }
     html += '</div>';
 

@@ -7752,3 +7752,31 @@ button.staff-role:hover {
   border-color: var(--color-coral);
   background: rgba(var(--color-coral-rgb), 0.04);
 }
+
+/* Class allergy / medical alerts — shown above the face grid in class view */
+.class-allergy-alerts {
+  grid-column: 1 / -1;
+  border: 1px solid var(--color-coral);
+  background: rgba(var(--color-coral-rgb), 0.08);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 6px;
+}
+.class-allergy-title {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-coral);
+  margin-bottom: 4px;
+}
+.class-allergy-alerts ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+.class-allergy-alerts li strong { color: var(--color-text); }
