@@ -199,6 +199,16 @@
   var COMMS_EMAIL = 'communications@rootsandwingsindy.com';
   var VIEW_AS_KEY = 'rw_view_as_email';
 
+  // Treat sentinel values like "None", "N/A", "-", "no" as empty so allergy
+  // callouts don't trigger for kids whose parents filled the field with a
+  // negative answer instead of leaving it blank.
+  function normalizeAllergies(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return '';
+    if (/^(none|no|n\/a|na|nope|\.|-+)\.?$/i.test(s)) return '';
+    return s;
+  }
+
   function getActiveEmail() {
     var viewAs = sessionStorage.getItem(VIEW_AS_KEY);
     if (viewAs) return viewAs;
@@ -302,7 +312,7 @@
                 group: kid.group || '',
                 age: kid.age || 0,
                 pronouns: kid.pronouns || '',
-                allergies: kid.allergies || '',
+                allergies: normalizeAllergies(kid.allergies),
                 schedule: kid.schedule || 'all-day',
                 parentNames: fam.parents
               });
@@ -1145,7 +1155,7 @@
         group: kid.group,
         age: kid.age,
         pronouns: kid.pronouns || '',
-        allergies: kid.allergies || '',
+        allergies: normalizeAllergies(kid.allergies),
         schedule: kid.schedule || 'all-day',
         parentNames: fam.parents
       });
