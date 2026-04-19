@@ -166,6 +166,42 @@ p + p { margin-top: 1rem; }
 
 .text-center { text-align: center; }
 
+/* =============================================================
+   Buttons — picking the right class
+   -------------------------------------------------------------
+   The portal has grown several button families, each with a
+   legitimate visual role. Prefer an existing class over inventing
+   a new one. Rough guide:
+
+   Hero / marketing CTAs (public site + install prompts)
+     .btn .btn-primary         solid accent-filled pill, large
+     .btn .btn-outline         transparent on primary-coloured bg
+     .btn .btn-outline-dark    outlined primary-colour on light bg
+     .btn .btn-sm              size modifier — pair with above
+
+   Inline row buttons (admin rows in Supply Closet, Directory,
+   Absences, etc. — small, outlined, space-efficient)
+     .sc-btn                   neutral outlined chip (Edit)
+     .sc-btn.sc-btn-del        destructive variant (Cancel / Delete)
+
+   Coverage-board actions (tight chips on a slot row)
+     .btn-cover                primary green solid — "Cover"
+     .btn-assign, .btn-reassign  VP outlined variant
+     .btn-link                 low-emphasis underlined text action
+
+   "I'll be out" prompt on the responsibilities card
+     .btn-absence              full-width accent-outlined prompt
+
+   Pill-shaped affordances inside cards
+     .mf-class-link            soft-tinted pill (class detail)
+     .mf-elective-link         dashed-underline text-link chip
+     .mf-manage-btn            rounded outlined "Manage" control
+     .mf-billing-pay-btn       gradient pill — special Pay button
+
+   Do NOT add a new button class if one of the above already
+   fits. If in doubt, lean on .sc-btn / .sc-btn-del for row
+   actions and .btn .btn-primary / .btn-outline-dark for CTAs.
+   ============================================================= */
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex;
