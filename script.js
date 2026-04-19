@@ -2577,7 +2577,7 @@
           } else if (s.block === 'Cleaning' && s.group_or_class) {
             popup = { type: 'cleaning', area: s.group_or_class, floor: s.group_or_class === 'Floater' ? 'floater' : '', session: currentSession };
           }
-          duties.push({ block: blk, icon: icon, text: text, detail: detail, popup: popup, isCoverage: true });
+          duties.push({ block: blk, icon: icon, text: text, detail: detail, popup: popup, isCoverage: true, slotId: s.id });
           if (blk === 'Cleaning') hasCleaning = true;
         });
       });
@@ -2664,7 +2664,9 @@
         h += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
         h += ' Manage</button>';
       }
-      if (d.popup && !d.manage) {
+      if (d.isCoverage && d.slotId) {
+        h += '<button class="sc-btn sc-btn-del mf-duty-cancel-cover" data-slot-id="' + d.slotId + '" title="Cancel covering this slot">Cancel</button>';
+      } else if (d.popup && !d.manage) {
         h += '<div class="mf-duty-arrow">&rsaquo;</div>';
       }
       h += '</div>';
@@ -2902,10 +2904,38 @@
     // Wire up duty detail popups
     grid.querySelectorAll('.mf-duty-clickable').forEach(function (row) {
       row.addEventListener('click', function (e) {
-        // Don't trigger detail if Manage button or info button was clicked
+        // Don't trigger detail if Manage button, Cancel button, or info button was clicked
         if (e.target.closest('.mf-manage-btn')) return;
+        if (e.target.closest('.mf-duty-cancel-cover')) return;
         var idx = parseInt(this.getAttribute('data-duty-idx'), 10);
         if (duties[idx]) showDutyDetail(duties[idx]);
+      });
+    });
+
+    // Wire up Cancel-covering buttons inside My Responsibilities
+    grid.querySelectorAll('.mf-duty-cancel-cover').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (!confirm('Cancel your coverage for this slot? It will go back to Needs Coverage.')) return;
+        var slotId = parseInt(this.getAttribute('data-slot-id'), 10);
+        this.disabled = true;
+        var origText = this.textContent;
+        this.textContent = 'Cancelling\u2026';
+        var self = this;
+        var cred = localStorage.getItem('rw_google_credential');
+        fetch('/api/coverage?id=' + slotId, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + cred }
+        })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            alert('Error: ' + (res.data.error || 'cancel failed'));
+            self.disabled = false; self.textContent = origText; return;
+          }
+          loadCoverageBoard();
+          if (typeof loadNotifications === 'function') loadNotifications();
+        });
       });
     });
 
