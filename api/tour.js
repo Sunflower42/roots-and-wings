@@ -309,6 +309,10 @@ function handleConfig(res) {
 }
 
 // ── Backup Learning Coach waiver: look up by token ──
+// Falls back to the one_off_waivers table if the token isn't found in
+// backup_coach_waivers, so a single /waiver.html?token=… link works for
+// both the registration-backed backup-coach flow and the Comms Director's
+// one-off sends from the Workspace.
 async function handleBackupWaiverInfo(req, res) {
   const token = String(req.query.backup_waiver_token || '').trim();
   if (!token || !/^[a-f0-9]{8,64}$/i.test(token)) return res.status(400).json({ error: 'Invalid token.' });
@@ -322,18 +326,39 @@ async function handleBackupWaiverInfo(req, res) {
       WHERE b.token = ${token}
       LIMIT 1
     `;
-    if (rows.length === 0) return res.status(404).json({ error: 'Waiver link not found. Please contact membership@rootsandwingsindy.com.' });
-    const row = rows[0];
+    if (rows.length > 0) {
+      const row = rows[0];
+      return res.status(200).json({
+        name: row.name,
+        email: row.email,
+        main_learning_coach: row.main_learning_coach,
+        family_name: row.existing_family_name || row.main_learning_coach,
+        season: row.season,
+        signed: !!row.signed_at,
+        signed_at: row.signed_at || null,
+        signature_name: row.signature_name || '',
+        signature_date: row.signature_date || null
+      });
+    }
+    // One-off waiver fallback (Comms Director sends).
+    const oneOff = await sql`
+      SELECT name, email, signed_at, signature_name, signature_date
+      FROM one_off_waivers
+      WHERE token = ${token}
+      LIMIT 1
+    `;
+    if (oneOff.length === 0) return res.status(404).json({ error: 'Waiver link not found. Please contact membership@rootsandwingsindy.com.' });
+    const oo = oneOff[0];
     return res.status(200).json({
-      name: row.name,
-      email: row.email,
-      main_learning_coach: row.main_learning_coach,
-      family_name: row.existing_family_name || row.main_learning_coach,
-      season: row.season,
-      signed: !!row.signed_at,
-      signed_at: row.signed_at || null,
-      signature_name: row.signature_name || '',
-      signature_date: row.signature_date || null
+      name: oo.name,
+      email: oo.email,
+      main_learning_coach: '',
+      family_name: oo.name,
+      season: '',
+      signed: !!oo.signed_at,
+      signed_at: oo.signed_at || null,
+      signature_name: oo.signature_name || '',
+      signature_date: oo.signature_date || null
     });
   } catch (err) {
     console.error('Backup waiver info error:', err);
@@ -353,46 +378,85 @@ async function handleBackupWaiverSign(body, req, res) {
 
   const sql = getSql();
   try {
+    // Try backup-coach waivers first; fall back to one-off waivers so the
+    // same /waiver.html sign form works for Comms Director sends.
     const existing = await sql`
       SELECT id, signed_at FROM backup_coach_waivers WHERE token = ${token} LIMIT 1
     `;
-    if (existing.length === 0) return res.status(404).json({ error: 'Waiver link not found.' });
-    if (existing[0].signed_at) return res.status(409).json({ error: 'This waiver has already been signed.' });
+    if (existing.length > 0) {
+      if (existing[0].signed_at) return res.status(409).json({ error: 'This waiver has already been signed.' });
 
-    const updated = await sql`
-      UPDATE backup_coach_waivers
+      const updated = await sql`
+        UPDATE backup_coach_waivers
+        SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date}
+        WHERE token = ${token} AND signed_at IS NULL
+        RETURNING id, name, email, registration_id
+      `;
+      if (updated.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
+
+      // Confirm to the coach + Main LC (best-effort).
+      try {
+        const related = await sql`
+          SELECT r.main_learning_coach, r.email AS main_email, r.season
+          FROM registrations r WHERE r.id = ${updated[0].registration_id} LIMIT 1
+        `;
+        const info = related[0] || {};
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+          to: updated[0].email,
+          cc: [info.main_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
+          replyTo: 'membership@rootsandwingsindy.com',
+          subject: `Roots & Wings Co-op: Backup Learning Coach waiver on file`,
+          html: `
+            <h2>Waiver signed — thank you</h2>
+            <p>Thanks, ${escapeHtml(updated[0].name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(info.main_learning_coach || 'Roots & Wings')} family</strong> is on file.</p>
+            <p><strong>Signed:</strong> ${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</p>
+            <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+          `,
+        });
+      } catch (mailErr) {
+        console.error('Backup waiver confirmation email error (non-fatal):', mailErr);
+      }
+
+      return res.status(200).json({ success: true, name: updated[0].name });
+    }
+
+    // One-off waiver sign path.
+    const existingOneOff = await sql`
+      SELECT id, signed_at, sent_by_email FROM one_off_waivers WHERE token = ${token} LIMIT 1
+    `;
+    if (existingOneOff.length === 0) return res.status(404).json({ error: 'Waiver link not found.' });
+    if (existingOneOff[0].signed_at) return res.status(409).json({ error: 'This waiver has already been signed.' });
+
+    const updatedOneOff = await sql`
+      UPDATE one_off_waivers
       SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date}
       WHERE token = ${token} AND signed_at IS NULL
-      RETURNING id, name, email, registration_id
+      RETURNING id, name, email, sent_by_email
     `;
-    if (updated.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
+    if (updatedOneOff.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
 
-    // Confirm to the coach + Main LC (best-effort).
     try {
-      const related = await sql`
-        SELECT r.main_learning_coach, r.email AS main_email, r.season
-        FROM registrations r WHERE r.id = ${updated[0].registration_id} LIMIT 1
-      `;
-      const info = related[0] || {};
       const resend = new Resend(process.env.RESEND_API_KEY);
       await resend.emails.send({
         from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
-        to: updated[0].email,
-        cc: [info.main_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
+        to: updatedOneOff[0].email,
+        cc: [updatedOneOff[0].sent_by_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
         replyTo: 'membership@rootsandwingsindy.com',
-        subject: `Roots & Wings Co-op: Backup Learning Coach waiver on file`,
+        subject: `Roots & Wings Co-op: Waiver on file`,
         html: `
           <h2>Waiver signed — thank you</h2>
-          <p>Thanks, ${escapeHtml(updated[0].name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(info.main_learning_coach || 'Roots & Wings')} family</strong> is on file.</p>
+          <p>Thanks, ${escapeHtml(updatedOneOff[0].name)}! Your Roots &amp; Wings waiver is on file.</p>
           <p><strong>Signed:</strong> ${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</p>
           <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
         `,
       });
     } catch (mailErr) {
-      console.error('Backup waiver confirmation email error (non-fatal):', mailErr);
+      console.error('One-off waiver confirmation email error (non-fatal):', mailErr);
     }
 
-    return res.status(200).json({ success: true, name: updated[0].name });
+    return res.status(200).json({ success: true, name: updatedOneOff[0].name });
   } catch (err) {
     console.error('Backup waiver sign error:', err);
     return res.status(500).json({ error: 'Could not record signature.' });

@@ -1094,6 +1094,10 @@
       this.classList.add('active');
       var panel = document.getElementById('tab-' + tabId);
       if (panel) panel.classList.add('active');
+      // Workspace pulls async data (waivers report) — refresh on activation
+      if (tabId === 'workspace' && typeof renderWorkspaceTab === 'function') {
+        renderWorkspaceTab();
+      }
     });
   });
 
@@ -3966,6 +3970,411 @@
     container.innerHTML = html;
   }
 
+  // ──────────────────────────────────────────────
+  // 7c. My Workspace tab — role-aware, per-member customisable
+  // ──────────────────────────────────────────────
+  //
+  // Model: each member sees a stack of "widget" cards based on the roles
+  // they hold. A registry maps widget-type → render() + role gate. Defaults
+  // per role live in WORKSPACE_DEFAULTS. A per-user prefs blob in
+  // localStorage lets the member hide widgets and maintain a personal
+  // "My Links" list. When we migrate to DB-backed prefs (see MEMORY.md
+  // rw-billing-integration / sheets-inventory timelines), swap the
+  // getWorkspacePrefs/saveWorkspacePrefs helpers without touching widgets.
+
+  var WORKSPACE_PREFS_KEY_PREFIX = 'rw_workspace_prefs_';
+
+  // Fixed link sets used by the shared-tools and admin-consoles widgets.
+  // Kept inline in v1; move to DB when the volunteer-sheet migration lands.
+  var WORKSPACE_SHARED_TOOLS = [
+    { title: 'Members Handbook', url: 'https://docs.google.com/document/d/PLACEHOLDER', icon: '\uD83D\uDCD6' },
+    { title: 'Shared Drive', url: 'https://drive.google.com/drive/folders/PLACEHOLDER', icon: '\uD83D\uDCC1' },
+    { title: 'Member Directory Sheet', url: 'https://docs.google.com/spreadsheets/d/19hR1Am3yzX9YC4jsJ32we-hPxUQ1IwMduz6xvaszMEA/edit', icon: '\uD83D\uDCCB' },
+    { title: 'Google Calendar', url: 'https://calendar.google.com/calendar/u/0/r', icon: '\uD83D\uDCC5' },
+    { title: 'Google Chat', url: 'https://chat.google.com/', icon: '\uD83D\uDCAC' }
+  ];
+
+  var WORKSPACE_ADMIN_CONSOLES = [
+    { title: 'Google Admin', url: 'https://admin.google.com/', icon: '\u2699' },
+    { title: 'Vercel', url: 'https://vercel.com/dashboard', icon: '\u25B2' },
+    { title: 'GitHub', url: 'https://github.com/communications-arch/roots-and-wings', icon: '\uD83D\uDC19' },
+    { title: 'Neon Postgres', url: 'https://console.neon.tech/', icon: '\uD83D\uDDC4' },
+    { title: 'Resend (email)', url: 'https://resend.com/emails', icon: '\u2709' },
+    { title: 'GoDaddy', url: 'https://sso.godaddy.com/', icon: '\uD83C\uDF10' }
+  ];
+
+  function getWorkspacePrefs() {
+    var email = getActiveEmail() || 'anonymous';
+    try {
+      var raw = localStorage.getItem(WORKSPACE_PREFS_KEY_PREFIX + email);
+      if (!raw) return { hidden: [], myLinks: [] };
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return { hidden: [], myLinks: [] };
+      if (!Array.isArray(parsed.hidden)) parsed.hidden = [];
+      if (!Array.isArray(parsed.myLinks)) parsed.myLinks = [];
+      return parsed;
+    } catch (e) {
+      return { hidden: [], myLinks: [] };
+    }
+  }
+  function saveWorkspacePrefs(prefs) {
+    var email = getActiveEmail() || 'anonymous';
+    try { localStorage.setItem(WORKSPACE_PREFS_KEY_PREFIX + email, JSON.stringify(prefs)); }
+    catch (e) { console.error('workspace prefs save failed:', e); }
+  }
+
+  // Determine the Workspace roles for the currently-viewed user. Respects
+  // View As impersonation via getActiveEmail(); the super-user communications@
+  // account always has the Communications Director role when viewing as self.
+  function getWorkspaceRoles() {
+    var active = getActiveEmail();
+    if (!active) return [];
+    var out = [];
+    if (active.toLowerCase() === 'communications@rootsandwingsindy.com') {
+      out.push('Communications Director');
+    }
+    var fam = null;
+    for (var i = 0; i < FAMILIES.length; i++) {
+      if (FAMILIES[i].email && FAMILIES[i].email.toLowerCase() === active.toLowerCase()) { fam = FAMILIES[i]; break; }
+    }
+    if (fam) {
+      var parentNames = (fam.parents || '').split(/\s*&\s*/).map(function (first) {
+        return (first.trim() + ' ' + fam.name).trim();
+      });
+      function wsMatch(a, b) {
+        if (!a || !b) return false;
+        return a.trim().toLowerCase() === b.trim().toLowerCase();
+      }
+      (VOLUNTEER_COMMITTEES || []).forEach(function (c) {
+        if (c.chair && c.chair.person && parentNames.some(function (n) { return wsMatch(c.chair.person, n); })) {
+          if (out.indexOf(c.chair.title) === -1) out.push(c.chair.title);
+        }
+        (c.roles || []).forEach(function (r) {
+          if (r.person && parentNames.some(function (n) { return wsMatch(r.person, n); })) {
+            if (out.indexOf(r.title) === -1) out.push(r.title);
+          }
+        });
+      });
+    }
+    return out;
+  }
+
+  // Widget registry. Each widget: { title, roleGate: null | [titles...], render(prefs, roles) }
+  // Role gate null = universal. A widget is shown if roleGate is null OR any of
+  // the user's roles is in roleGate.
+  var WORKSPACE_WIDGETS = {
+    'shared-tools': {
+      title: 'Shared Tools',
+      roleGate: null,
+      render: function () {
+        var h = '<p class="ws-body-hint">Tools everyone can reach.</p>';
+        h += '<ul class="ws-link-list">';
+        WORKSPACE_SHARED_TOOLS.forEach(function (l) {
+          h += '<li><a href="' + l.url + '" target="_blank" rel="noopener"><span class="ws-link-icon">' + l.icon + '</span>' + l.title + '</a></li>';
+        });
+        h += '</ul>';
+        return h;
+      }
+    },
+    'my-links': {
+      title: 'My Links',
+      roleGate: null,
+      render: function (prefs) {
+        var h = '<p class="ws-body-hint">Your own collection — Pinterest boards, docs, anything.</p>';
+        h += '<ul class="ws-link-list" id="ws-mylinks-list">';
+        if (prefs.myLinks.length === 0) {
+          h += '<li class="ws-empty">No links yet. Add your first below.</li>';
+        } else {
+          prefs.myLinks.forEach(function (l, idx) {
+            h += '<li><a href="' + l.url + '" target="_blank" rel="noopener"><span class="ws-link-icon">\uD83D\uDD17</span>' + l.title + '</a>';
+            h += ' <button class="sc-btn sc-btn-del ws-mylink-del" data-idx="' + idx + '" aria-label="Remove">\u00d7</button></li>';
+          });
+        }
+        h += '</ul>';
+        h += '<div class="ws-mylink-form">';
+        h += '<input type="text" id="ws-mylink-title" placeholder="Label" maxlength="80" />';
+        h += '<input type="url" id="ws-mylink-url" placeholder="https://..." maxlength="400" />';
+        h += '<button class="btn btn-primary btn-sm" id="ws-mylink-add">Add</button>';
+        h += '</div>';
+        return h;
+      }
+    },
+    'ways-to-help': {
+      title: 'Ways to Help',
+      roleGate: null,
+      render: function () {
+        var open = [];
+        (VOLUNTEER_COMMITTEES || []).forEach(function (c) {
+          if (c.chair && !c.chair.person) open.push({ committee: c.name, title: c.chair.title });
+          (c.roles || []).forEach(function (r) { if (!r.person) open.push({ committee: c.name, title: r.title }); });
+        });
+        if (open.length === 0) {
+          return '<p class="ws-empty">Every volunteer seat is filled right now. If you want to start something new, pitch it in <a href="https://chat.google.com/" target="_blank" rel="noopener">Google Chat</a>.</p>';
+        }
+        var h = '<p class="ws-body-hint">Open committee seats — email membership@rootsandwingsindy.com to claim one.</p>';
+        h += '<ul class="ws-opportunities">';
+        open.forEach(function (o) {
+          h += '<li><strong>' + o.title + '</strong> <span class="ws-opp-committee">' + o.committee + '</span></li>';
+        });
+        h += '</ul>';
+        return h;
+      }
+    },
+    'admin-consoles': {
+      title: 'Admin Consoles',
+      roleGate: ['Communications Director'],
+      render: function () {
+        var h = '<p class="ws-body-hint">External dashboards for the tools powering the site.</p>';
+        h += '<ul class="ws-link-list">';
+        WORKSPACE_ADMIN_CONSOLES.forEach(function (l) {
+          h += '<li><a href="' + l.url + '" target="_blank" rel="noopener"><span class="ws-link-icon">' + l.icon + '</span>' + l.title + '</a></li>';
+        });
+        h += '</ul>';
+        return h;
+      }
+    },
+    'send-waiver': {
+      title: 'Send One-Off Waiver',
+      roleGate: ['Communications Director'],
+      render: function () {
+        var h = '<p class="ws-body-hint">Email a signing link to a last-minute adult. They sign via <code>/waiver.html</code> — you\u2019ll see it reflected in the Waivers report.</p>';
+        h += '<div class="ws-waiver-form">';
+        h += '<label>Recipient name<input type="text" id="ws-wv-name" maxlength="200" placeholder="Jane Doe"></label>';
+        h += '<label>Recipient email<input type="email" id="ws-wv-email" maxlength="200" placeholder="jane@example.com"></label>';
+        h += '<label>Note (optional)<textarea id="ws-wv-note" maxlength="500" rows="2" placeholder="Added context that appears in the email..."></textarea></label>';
+        h += '<button class="btn btn-primary btn-sm" id="ws-wv-send">Send Waiver</button>';
+        h += '<div class="ws-wv-status" id="ws-wv-status"></div>';
+        h += '</div>';
+        return h;
+      }
+    },
+    'waivers-report': {
+      title: 'Waivers Report',
+      roleGate: ['Communications Director'],
+      render: function () {
+        // Async — body is a placeholder; loadWaiversReport() fills it in.
+        return '<div id="ws-waivers-report-body"><p class="ws-empty">Loading waivers\u2026</p></div>';
+      },
+      afterRender: function () { loadWaiversReport(); }
+    }
+  };
+
+  var WORKSPACE_DEFAULTS = {
+    'Communications Director': ['waivers-report', 'send-waiver', 'admin-consoles', 'my-links', 'ways-to-help', 'shared-tools'],
+    '*': ['my-links', 'ways-to-help', 'shared-tools']
+  };
+
+  // Resolve the ordered widget list for a user: union of defaults for each
+  // role they hold, plus the universal '*' defaults, preserving first-seen
+  // order and deduplicating.
+  function resolveWidgetOrder(roles) {
+    var order = [];
+    function add(type) { if (WORKSPACE_WIDGETS[type] && order.indexOf(type) === -1) order.push(type); }
+    roles.forEach(function (r) {
+      var list = WORKSPACE_DEFAULTS[r];
+      if (list) list.forEach(add);
+    });
+    (WORKSPACE_DEFAULTS['*'] || []).forEach(add);
+    return order;
+  }
+
+  function renderWorkspaceTab() {
+    var container = document.getElementById('workspaceTabContent');
+    if (!container) return;
+
+    var roles = getWorkspaceRoles();
+    var prefs = getWorkspacePrefs();
+    var order = resolveWidgetOrder(roles);
+
+    // Filter widgets: role-gated and not hidden. Hidden widgets render as
+    // a restorable chip row beneath the grid.
+    var visibleTypes = [];
+    var hiddenTypes = [];
+    order.forEach(function (type) {
+      var w = WORKSPACE_WIDGETS[type];
+      if (!w) return;
+      if (w.roleGate && !w.roleGate.some(function (r) { return roles.indexOf(r) !== -1; })) return;
+      if (prefs.hidden.indexOf(type) !== -1) hiddenTypes.push(type);
+      else visibleTypes.push(type);
+    });
+
+    var html = '<div class="workspace-intro">';
+    html += '<h3>My Workspace</h3>';
+    if (roles.length === 0) {
+      html += '<p>A personalised area for your tools and the ways you contribute. As you pick up roles, more cards will appear here.</p>';
+    } else {
+      html += '<p>Personalised tools for your role' + (roles.length > 1 ? 's' : '') + ': <strong>' + roles.join(', ') + '</strong>.</p>';
+    }
+    html += '</div>';
+
+    if (visibleTypes.length === 0) {
+      html += '<p class="ws-empty">All your workspace cards are hidden. Restore one below.</p>';
+    } else {
+      html += '<div class="workspace-grid">';
+      visibleTypes.forEach(function (type) {
+        var w = WORKSPACE_WIDGETS[type];
+        html += '<div class="mf-card workspace-card" data-widget-type="' + type + '">';
+        html += '<div class="workspace-card-header">';
+        html += '<h4>' + w.title + '</h4>';
+        html += '<button class="sc-btn ws-hide-btn" data-widget="' + type + '" title="Hide this card">Hide</button>';
+        html += '</div>';
+        html += '<div class="workspace-card-body">' + w.render(prefs, roles) + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    if (hiddenTypes.length > 0) {
+      html += '<div class="workspace-hidden"><span class="workspace-hidden-label">Hidden:</span> ';
+      hiddenTypes.forEach(function (type) {
+        var w = WORKSPACE_WIDGETS[type];
+        html += '<button class="sc-btn ws-restore-btn" data-widget="' + type + '">+ ' + w.title + '</button> ';
+      });
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+
+    // Per-widget post-render hooks (e.g. kick off async data fetches).
+    visibleTypes.forEach(function (type) {
+      var w = WORKSPACE_WIDGETS[type];
+      if (typeof w.afterRender === 'function') {
+        try { w.afterRender(); } catch (e) { console.error('workspace widget afterRender ' + type + ':', e); }
+      }
+    });
+
+    // Hide / restore buttons
+    container.querySelectorAll('.ws-hide-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var t = this.getAttribute('data-widget');
+        var p = getWorkspacePrefs();
+        if (p.hidden.indexOf(t) === -1) p.hidden.push(t);
+        saveWorkspacePrefs(p);
+        renderWorkspaceTab();
+      });
+    });
+    container.querySelectorAll('.ws-restore-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var t = this.getAttribute('data-widget');
+        var p = getWorkspacePrefs();
+        p.hidden = p.hidden.filter(function (x) { return x !== t; });
+        saveWorkspacePrefs(p);
+        renderWorkspaceTab();
+      });
+    });
+
+    // My Links: add + delete
+    var addBtn = container.querySelector('#ws-mylink-add');
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        var titleEl = container.querySelector('#ws-mylink-title');
+        var urlEl = container.querySelector('#ws-mylink-url');
+        var title = (titleEl.value || '').trim();
+        var url = (urlEl.value || '').trim();
+        if (!title || !url) { alert('Both a label and a URL are required.'); return; }
+        if (!/^https?:\/\//i.test(url)) { alert('URL must start with http:// or https://'); return; }
+        var p = getWorkspacePrefs();
+        p.myLinks.push({ title: title, url: url });
+        saveWorkspacePrefs(p);
+        renderWorkspaceTab();
+      });
+    }
+    container.querySelectorAll('.ws-mylink-del').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var idx = parseInt(this.getAttribute('data-idx'), 10);
+        var p = getWorkspacePrefs();
+        if (idx >= 0 && idx < p.myLinks.length) { p.myLinks.splice(idx, 1); saveWorkspacePrefs(p); renderWorkspaceTab(); }
+      });
+    });
+
+    // Send waiver button
+    var sendBtn = container.querySelector('#ws-wv-send');
+    if (sendBtn) {
+      sendBtn.addEventListener('click', function () {
+        var nameEl = container.querySelector('#ws-wv-name');
+        var emailEl = container.querySelector('#ws-wv-email');
+        var noteEl = container.querySelector('#ws-wv-note');
+        var statusEl = container.querySelector('#ws-wv-status');
+        var name = (nameEl.value || '').trim();
+        var emailVal = (emailEl.value || '').trim();
+        var note = (noteEl.value || '').trim();
+        if (!name || !emailVal) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = 'Name and email are required.'; return; }
+        sendBtn.disabled = true; var origLabel = sendBtn.textContent; sendBtn.textContent = 'Sending\u2026';
+        statusEl.className = 'ws-wv-status'; statusEl.textContent = '';
+        var cred = localStorage.getItem('rw_google_credential');
+        fetch('/api/waiver-send', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, email: emailVal, note: note })
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          sendBtn.disabled = false; sendBtn.textContent = origLabel;
+          if (!res.ok) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = (res.data && res.data.error) || 'Send failed.'; return; }
+          statusEl.className = 'ws-wv-status ws-wv-ok';
+          statusEl.textContent = res.data.emailed ? 'Sent. They\u2019ll get the waiver link by email shortly.' : 'Stored. Email delivery hiccupped — copy the link from the report row: ' + res.data.link;
+          nameEl.value = ''; emailEl.value = ''; noteEl.value = '';
+          loadWaiversReport();
+        }).catch(function (err) {
+          sendBtn.disabled = false; sendBtn.textContent = origLabel;
+          statusEl.className = 'ws-wv-status ws-wv-err';
+          statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+        });
+      });
+    }
+  }
+
+  // Async loader for the Waivers Report widget body.
+  function loadWaiversReport() {
+    var body = document.getElementById('ws-waivers-report-body');
+    if (!body) return;
+    var cred = localStorage.getItem('rw_google_credential');
+    fetch('/api/waiver-send', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (res) {
+      if (!res.ok) {
+        body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load waivers: ' + ((res.data && res.data.error) || 'error') + '</p>';
+        return;
+      }
+      var backup = res.data.backup || [];
+      var oneOff = res.data.oneOff || [];
+      // Merge + sort newest first
+      var merged = [];
+      backup.forEach(function (b) {
+        merged.push({ source: 'Registration', name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '' });
+      });
+      oneOff.forEach(function (o) {
+        merged.push({ source: 'One-off', name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, context: o.sent_by ? 'by ' + o.sent_by : '' });
+      });
+      merged.sort(function (a, b) { return (b.sent_at || '').localeCompare(a.sent_at || ''); });
+
+      var total = merged.length;
+      var unsigned = merged.filter(function (w) { return !w.signed; }).length;
+      var h = '<p class="ws-body-hint"><strong>' + total + '</strong> total waivers \u00b7 <strong class="' + (unsigned > 0 ? 'ws-wv-pending' : 'ws-wv-ok') + '">' + unsigned + ' pending</strong></p>';
+      if (merged.length === 0) {
+        h += '<p class="ws-empty">No waivers sent yet.</p>';
+      } else {
+        h += '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table"><thead><tr><th>Name</th><th>Email</th><th>Source</th><th>Status</th><th>Sent</th></tr></thead><tbody>';
+        merged.slice(0, 30).forEach(function (w) {
+          var statusCell = w.signed
+            ? '<span class="ws-wv-ok">Signed ' + (w.signed_at ? new Date(w.signed_at).toLocaleDateString() : '') + '</span>'
+            : '<span class="ws-wv-pending">Pending</span>';
+          h += '<tr><td>' + escapeHtmlWs(w.name) + '</td><td>' + escapeHtmlWs(w.email) + '</td><td>' + w.source + '</td><td>' + statusCell + '</td><td>' + (w.sent_at ? new Date(w.sent_at).toLocaleDateString() : '') + '</td></tr>';
+        });
+        h += '</tbody></table></div>';
+        if (merged.length > 30) h += '<p class="ws-body-hint">Showing 30 most recent of ' + merged.length + '.</p>';
+      }
+      body.innerHTML = h;
+    }).catch(function (err) {
+      body.innerHTML = '<p class="ws-empty ws-wv-err">Network error loading waivers: ' + ((err && err.message) || 'unknown') + '</p>';
+    });
+  }
+
+  function escapeHtmlWs(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   // Class Ideas popup (from Resources card)
   function showClassIdeasPopup() {
     if (!personDetail || !personDetailCard) return;
@@ -6683,6 +7092,7 @@
     renderCleaningTab();
     renderVolunteersTab();
     renderEventsTab();
+    if (typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
   }
 
   // Render tabs on load

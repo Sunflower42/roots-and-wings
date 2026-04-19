@@ -286,3 +286,25 @@ CREATE TABLE IF NOT EXISTS backup_coach_waivers (
 );
 CREATE INDEX IF NOT EXISTS backup_coach_waivers_registration_idx ON backup_coach_waivers (registration_id);
 CREATE INDEX IF NOT EXISTS backup_coach_waivers_token_idx ON backup_coach_waivers (token);
+
+-- ──────────────────────────────────────────────
+-- One-off waivers (Comms Director sends ad-hoc to a last-minute adult who
+-- is not tied to a registration — e.g. a visiting guardian, a substitute
+-- helper, or a new member whose paperwork got missed). Shares the same
+-- signing flow as backup_coach_waivers; tour.js token lookup falls back
+-- to this table when a token isn't found in backup_coach_waivers.
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS one_off_waivers (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  sent_by_email TEXT NOT NULL,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  signed_at TIMESTAMPTZ,
+  signature_name TEXT DEFAULT '',
+  signature_date DATE,
+  note TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS one_off_waivers_token_idx ON one_off_waivers (token);
+CREATE INDEX IF NOT EXISTS one_off_waivers_email_idx ON one_off_waivers (email);

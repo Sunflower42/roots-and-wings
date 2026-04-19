@@ -7934,3 +7934,210 @@ button.staff-role:hover {
   color: var(--color-text);
 }
 .class-allergy-alerts li strong { color: var(--color-text); }
+
+/* ── My Workspace tab ── */
+.workspace-intro {
+  margin-bottom: 20px;
+}
+.workspace-intro h3 {
+  margin: 0 0 6px 0;
+  font-size: 1.25rem;
+}
+.workspace-intro p {
+  margin: 0;
+  color: var(--color-text-light);
+}
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+.workspace-card {
+  display: flex;
+  flex-direction: column;
+}
+.workspace-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.workspace-card-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.workspace-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ws-body-hint {
+  margin: 0 0 4px 0;
+  color: var(--color-text-light);
+  font-size: 0.85rem;
+}
+.ws-empty {
+  color: var(--color-text-light);
+  font-size: 0.9rem;
+  font-style: italic;
+  margin: 0;
+}
+.ws-link-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ws-link-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ws-link-list li a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--color-primary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.ws-link-list li a:hover {
+  background: rgba(82, 58, 121, 0.06);
+  text-decoration: underline;
+}
+.ws-link-icon {
+  display: inline-flex;
+  width: 20px;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.ws-mylink-del {
+  flex-shrink: 0;
+}
+.ws-mylink-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+.ws-mylink-form input[type="text"],
+.ws-mylink-form input[type="url"] {
+  flex: 1 1 120px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  min-width: 0;
+}
+.ws-opportunities {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ws-opportunities li {
+  padding: 8px 10px;
+  background: #f6f3fa;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.ws-opp-committee {
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+  margin-left: 6px;
+}
+.ws-waiver-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ws-waiver-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+  font-weight: 500;
+}
+.ws-waiver-form input,
+.ws-waiver-form textarea {
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--color-text);
+}
+.ws-waiver-form textarea {
+  resize: vertical;
+  min-height: 48px;
+}
+.ws-wv-status {
+  font-size: 0.85rem;
+  min-height: 1em;
+}
+.ws-wv-err { color: #b00020; }
+.ws-wv-ok { color: #2a7a2a; }
+.ws-wv-pending { color: #b06a00; }
+.ws-waivers-table-wrap {
+  overflow-x: auto;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+.ws-waivers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.ws-waivers-table th,
+.ws-waivers-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.ws-waivers-table thead th {
+  position: sticky;
+  top: 0;
+  background: #faf8fc;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ws-waivers-table tbody tr:last-child td { border-bottom: none; }
+.workspace-hidden {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: #faf8fc;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.workspace-hidden-label {
+  color: var(--color-text-light);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+@media (max-width: 600px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
