@@ -7260,14 +7260,19 @@
         html += '<div class="coverage-covered-section">';
         html += '<div class="coverage-section-label coverage-section-label-ok">Covered</div>';
         coveredSlots.forEach(function (slot) {
+          var isMyClaim = slot.claimed_by_email && slot.claimed_by_email === email;
           html += '<div class="coverage-slot coverage-slot-covered">';
           html += '<span class="coverage-slot-block">' + slot.block + '</span>';
           html += '<span class="coverage-slot-desc">' + slot.role_description + ' <span class="coverage-slot-for">(' + slot._person + ')</span></span>';
           html += '<span class="coverage-slot-claimer">Covered by <strong>' + (slot.claimed_by_name || slot.claimed_by_email) + '</strong></span>';
-          if (isVpUser) {
+          if (isVpUser || isMyClaim) {
             html += '<span class="coverage-slot-actions">';
-            html += '<button class="btn btn-sm btn-outline btn-reassign" data-slot-id="' + slot.id + '" data-slot-desc="' + (slot.role_description || '').replace(/"/g, '&quot;') + '" data-slot-date="' + date + '">Reassign</button>';
-            html += '<button class="btn btn-sm btn-link btn-unassign" data-slot-id="' + slot.id + '" title="Remove coverage">Unassign</button>';
+            if (isVpUser) {
+              html += '<button class="btn btn-sm btn-outline btn-reassign" data-slot-id="' + slot.id + '" data-slot-desc="' + (slot.role_description || '').replace(/"/g, '&quot;') + '" data-slot-date="' + date + '">Reassign</button>';
+              html += '<button class="btn btn-sm btn-link btn-unassign" data-slot-id="' + slot.id + '" title="Remove coverage">Unassign</button>';
+            } else if (isMyClaim) {
+              html += '<button class="btn btn-sm btn-link btn-cancel-cover" data-slot-id="' + slot.id + '" title="Cancel covering this slot">Cancel</button>';
+            }
             html += '</span>';
           }
           html += '</div>';
@@ -7326,6 +7331,26 @@
           slotId: parseInt(btn.getAttribute('data-slot-id'), 10),
           slotDesc: btn.getAttribute('data-slot-desc') || '',
           slotDate: btn.getAttribute('data-slot-date') || ''
+        });
+      });
+    });
+
+    // Wire self-cancel buttons (claimer cancels their own coverage)
+    el.querySelectorAll('.btn-cancel-cover').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!confirm('Cancel your coverage for this slot? It will go back to Needs Coverage.')) return;
+        var slotId = parseInt(btn.getAttribute('data-slot-id'), 10);
+        btn.disabled = true; btn.textContent = 'Cancelling\u2026';
+        var cred = localStorage.getItem('rw_google_credential');
+        fetch('/api/coverage?id=' + slotId, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + cred }
+        })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          if (!res.ok) { alert('Error: ' + (res.data.error || 'cancel failed')); btn.disabled = false; btn.textContent = 'Cancel'; return; }
+          loadCoverageBoard();
+          loadNotifications();
         });
       });
     });
