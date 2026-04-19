@@ -7031,8 +7031,12 @@
       byDate[dateKey].push(a);
     });
 
-    var coopDates = getCoopDatesInSession(currentSession);
-    var activeDates = coopDates.filter(function (d) { return byDate[d] && byDate[d].length > 0; });
+    // Drive the tab list off the actual absence dates we have, not off the
+    // Wednesday-only session calendar. This is defensive: it means any legacy
+    // absences (e.g. the Tuesday dates from before the co-op day fix) still
+    // render instead of silently being filtered into oblivion.
+    var activeDates = Object.keys(byDate).sort();
+    console.log('[coverage] activeDates:', activeDates, 'byDate keys:', Object.keys(byDate));
     if (activeDates.length === 0) {
       if (isVpUser) {
         el.innerHTML = '<div class="coverage-empty">No absences reported for any upcoming co-op day this session.</div>';
