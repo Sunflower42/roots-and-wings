@@ -7271,7 +7271,7 @@
               html += '<button class="btn btn-sm btn-outline btn-reassign" data-slot-id="' + slot.id + '" data-slot-desc="' + (slot.role_description || '').replace(/"/g, '&quot;') + '" data-slot-date="' + date + '">Reassign</button>';
               html += '<button class="btn btn-sm btn-link btn-unassign" data-slot-id="' + slot.id + '" title="Remove coverage">Unassign</button>';
             } else if (isMyClaim) {
-              html += '<button class="btn btn-sm btn-link btn-cancel-cover" data-slot-id="' + slot.id + '" title="Cancel covering this slot">Cancel</button>';
+              html += '<button class="sc-btn sc-btn-del btn-cancel-cover" data-slot-id="' + slot.id + '" title="Cancel covering this slot">Cancel</button>';
             }
             html += '</span>';
           }
