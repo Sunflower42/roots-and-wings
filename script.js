@@ -4024,19 +4024,35 @@
   }
 
   // Determine the Workspace roles for the currently-viewed user. Respects
-  // View As impersonation via getActiveEmail(); the super-user communications@
-  // account always has the Communications Director role when viewing as self.
+  // View As impersonation via getActiveEmail(). Sources:
+  //   1. Family's boardRole (assigned in applySheetsData from chair rows)
+  //   2. Non-board volunteer-committee roles matched by parent name
+  //   3. Super-user shortcut: communications@ always gets Comms Director
   function getWorkspaceRoles() {
     var active = getActiveEmail();
     if (!active) return [];
+    var lower = active.toLowerCase();
     var out = [];
-    if (active.toLowerCase() === 'communications@rootsandwingsindy.com') {
-      out.push('Communications Director');
-    }
+
+    // Find the family for this email, matching either the personal inbox
+    // (fam.email) or a board role inbox (fam.boardEmail, e.g., communications@).
     var fam = null;
     for (var i = 0; i < FAMILIES.length; i++) {
-      if (FAMILIES[i].email && FAMILIES[i].email.toLowerCase() === active.toLowerCase()) { fam = FAMILIES[i]; break; }
+      var f = FAMILIES[i];
+      var personalMatch = f.email && f.email.toLowerCase() === lower;
+      var boardMatch = f.boardEmail && f.boardEmail.toLowerCase() === lower;
+      if (personalMatch || boardMatch) { fam = f; break; }
     }
+
+    if (fam && fam.boardRole && out.indexOf(fam.boardRole) === -1) {
+      out.push(fam.boardRole);
+    }
+
+    // Super-user shortcut, regardless of family match
+    if (lower === 'communications@rootsandwingsindy.com' && out.indexOf('Communications Director') === -1) {
+      out.push('Communications Director');
+    }
+
     if (fam) {
       var parentNames = (fam.parents || '').split(/\s*&\s*/).map(function (first) {
         return (first.trim() + ' ' + fam.name).trim();

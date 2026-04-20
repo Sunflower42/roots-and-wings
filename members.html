@@ -293,15 +293,20 @@
 
         <div class="portal-tabs fade-in">
           <div class="portal-tab-nav" role="tablist">
-            <button class="portal-tab active" role="tab" data-tab="session">Current Session</button>
+            <button class="portal-tab active" role="tab" data-tab="workspace">My Workspace</button>
+            <button class="portal-tab" role="tab" data-tab="session">Current Session</button>
             <button class="portal-tab" role="tab" data-tab="cleaning">Cleaning Crew</button>
             <button class="portal-tab" role="tab" data-tab="volunteers">Volunteers</button>
             <button class="portal-tab" role="tab" data-tab="events">Special Events</button>
-            <button class="portal-tab" role="tab" data-tab="workspace">My Workspace</button>
+          </div>
+
+          <!-- My Workspace (JS-rendered) — personalised role-based tools -->
+          <div class="portal-tab-panel active" id="tab-workspace" role="tabpanel">
+            <div id="workspaceTabContent"></div>
           </div>
 
           <!-- Current Session (JS-rendered) -->
-          <div class="portal-tab-panel active" id="tab-session" role="tabpanel">
+          <div class="portal-tab-panel" id="tab-session" role="tabpanel">
             <div id="sessionTabContent"></div>
           </div>
 
@@ -318,11 +323,6 @@
           <!-- Special Events (JS-rendered) -->
           <div class="portal-tab-panel" id="tab-events" role="tabpanel">
             <div id="eventsTabContent"></div>
-          </div>
-
-          <!-- My Workspace (JS-rendered) — personalised role-based tools -->
-          <div class="portal-tab-panel" id="tab-workspace" role="tabpanel">
-            <div id="workspaceTabContent"></div>
           </div>
         </div>
       </div>
@@ -487,6 +487,6 @@
   </div><!-- end .dashboard -->
 
   <script src="https://www.paypal.com/sdk/js?client-id=BAAEXrFcNz-Q5sFay27KpbAs3d29W3AdjACtLpfAJXN5XshPFGjdnKD7ueLJcdHCNUNlhk7YigOuyoB1HQ&components=buttons&enable-funding=venmo&currency=USD" data-namespace="paypal_sdk"></script>
-  <script src="script.js?v=20260419b"></script>
+  <script src="script.js?v=20260419c"></script>
 </body>
 </html>
