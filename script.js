@@ -4584,8 +4584,6 @@
     html += '<h3>My Workspace</h3>';
     if (roles.length === 0) {
       html += '<p>A personalised area for your tools and the ways you contribute. As you pick up roles, more cards will appear here.</p>';
-    } else {
-      html += '<p>Personalised tools for your role' + (roles.length > 1 ? 's' : '') + ': <strong>' + roles.map(escapeHtml).join(', ') + '</strong>.</p>';
     }
     html += '</div>';
 
@@ -4609,31 +4607,34 @@
       if (visible.length === 0 && hidden.length === 0 && !opts.showNotes) return '';
 
       var s = '<section class="workspace-role-section">';
-      s += '<header class="ws-role-header"><h4>' + escapeHtml(heading) + '</h4></header>';
+      var role = (opts.showNotes && roleKey) ? getRoleByKey(roleKey) : null;
+      s += '<header class="ws-role-header"><h4>' + escapeHtml(heading) + '</h4>';
+      if (role && role.overview) {
+        s += '<p class="ws-role-description">' + escapeHtml(role.overview) + '</p>';
+      }
+      s += '</header>';
 
       if (opts.showNotes && roleKey) {
-        var role = getRoleByKey(roleKey);
         if (role) {
           // Shared role description + playbook (stored in Postgres, edited
           // via the modal by the current role holder).
           s += '<div class="ws-role-desc-block">';
-          if (role.overview) {
-            s += '<p class="ws-role-description">' + escapeHtml(role.overview) + '</p>';
-          }
           if (role.playbook) {
             s += '<details class="ws-role-playbook"><summary>Playbook &amp; handoff notes</summary>';
             s += '<div class="ws-role-playbook-body">' + renderPlaybookHtml(role.playbook) + '</div>';
             s += '</details>';
           }
+          s += '<div class="ws-role-meta">';
+          s += '<button class="btn btn-sm btn-outline-dark ws-role-edit-btn" data-role-key="' + roleKey + '">Edit description &amp; playbook</button>';
           var uBy = role.updated_by || '';
           var uOn = formatUpdatedAt(role.updated_at);
           if (uBy || uOn) {
-            s += '<p class="ws-role-stamp">Last updated';
+            s += '<span class="ws-role-stamp">Updated';
+            if (uOn) s += ' ' + escapeHtml(uOn);
             if (uBy) s += ' by ' + escapeHtml(uBy);
-            if (uOn) s += ' on ' + escapeHtml(uOn);
-            s += '</p>';
+            s += '</span>';
           }
-          s += '<button class="btn btn-sm btn-outline-dark ws-role-edit-btn" data-role-key="' + roleKey + '">Edit role description &amp; playbook</button>';
+          s += '</div>';
           s += '</div>';
         }
         var notesVal = getWorkspaceNotes(roleKey);
