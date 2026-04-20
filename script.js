@@ -4033,6 +4033,21 @@
     catch (e) { console.error('workspace prefs save failed:', e); }
   }
 
+  // Canonicalise abbreviated volunteer-committee titles to the full form used
+  // by role_descriptions / DUTY_TO_ROLE_KEY. Matches the scoped BOARD_TITLE_MAP
+  // inside applySheetsData and the server-side TITLE_NORMALIZATIONS in
+  // api/_permissions.js — keep all three in sync.
+  var WORKSPACE_TITLE_NORMALIZATIONS = {
+    'membership dir.': 'Membership Director',
+    'sustaining dir.': 'Sustaining Director',
+    'communications dir.': 'Communications Director'
+  };
+  function normalizeWorkspaceTitle(title) {
+    if (!title) return title;
+    var key = String(title).trim().toLowerCase();
+    return WORKSPACE_TITLE_NORMALIZATIONS[key] || title;
+  }
+
   // Determine the Workspace roles for the currently-viewed user. Respects
   // View As impersonation via getActiveEmail(). Sources:
   //   1. Family's boardRole (assigned in applySheetsData from chair rows)
@@ -4043,6 +4058,10 @@
     if (!active) return [];
     var lower = active.toLowerCase();
     var out = [];
+    function addRole(title) {
+      var norm = normalizeWorkspaceTitle(title);
+      if (norm && out.indexOf(norm) === -1) out.push(norm);
+    }
 
     // Find the family for this email, matching either the personal inbox
     // (fam.email) or a board role inbox (fam.boardEmail, e.g., communications@).
@@ -4054,14 +4073,10 @@
       if (personalMatch || boardMatch) { fam = f; break; }
     }
 
-    if (fam && fam.boardRole && out.indexOf(fam.boardRole) === -1) {
-      out.push(fam.boardRole);
-    }
+    if (fam && fam.boardRole) addRole(fam.boardRole);
 
     // Super-user shortcut, regardless of family match
-    if (lower === 'communications@rootsandwingsindy.com' && out.indexOf('Communications Director') === -1) {
-      out.push('Communications Director');
-    }
+    if (lower === 'communications@rootsandwingsindy.com') addRole('Communications Director');
 
     if (fam) {
       var parentNames = (fam.parents || '').split(/\s*&\s*/).map(function (first) {
@@ -4073,11 +4088,11 @@
       }
       (VOLUNTEER_COMMITTEES || []).forEach(function (c) {
         if (c.chair && c.chair.person && parentNames.some(function (n) { return wsMatch(c.chair.person, n); })) {
-          if (out.indexOf(c.chair.title) === -1) out.push(c.chair.title);
+          addRole(c.chair.title);
         }
         (c.roles || []).forEach(function (r) {
           if (r.person && parentNames.some(function (n) { return wsMatch(r.person, n); })) {
-            if (out.indexOf(r.title) === -1) out.push(r.title);
+            addRole(r.title);
           }
         });
       });
@@ -4204,24 +4219,46 @@
     return order;
   }
 
+  // Notes persistence: one textarea per role, scoped to the viewing email.
+  var WORKSPACE_NOTES_KEY_PREFIX = 'rw_workspace_notes_';
+  function workspaceNotesKey(roleKey) {
+    var email = getActiveEmail() || 'anonymous';
+    return WORKSPACE_NOTES_KEY_PREFIX + email + '_' + roleKey;
+  }
+  function getWorkspaceNotes(roleKey) {
+    try { return localStorage.getItem(workspaceNotesKey(roleKey)) || ''; }
+    catch (e) { return ''; }
+  }
+  function saveWorkspaceNotes(roleKey, value) {
+    try { localStorage.setItem(workspaceNotesKey(roleKey), value || ''); }
+    catch (e) { console.error('workspace notes save failed:', e); }
+  }
+
   function renderWorkspaceTab() {
     var container = document.getElementById('workspaceTabContent');
     if (!container) return;
 
     var roles = getWorkspaceRoles();
     var prefs = getWorkspacePrefs();
-    var order = resolveWidgetOrder(roles);
 
-    // Filter widgets: role-gated and not hidden. Hidden widgets render as
-    // a restorable chip row beneath the grid.
-    var visibleTypes = [];
-    var hiddenTypes = [];
-    order.forEach(function (type) {
+    // Split widgets into role-scoped and universal buckets. Each role section
+    // gets its role-gated widgets; universal widgets (roleGate=null) end up in
+    // a trailing "Shared" section regardless of role.
+    function widgetListFor(role) {
+      var list = WORKSPACE_DEFAULTS[role] || [];
+      var out = [];
+      list.forEach(function (type) {
+        var w = WORKSPACE_WIDGETS[type];
+        if (!w || !w.roleGate) return; // universal handled separately
+        if (w.roleGate.indexOf(role) === -1) return;
+        if (out.indexOf(type) === -1) out.push(type);
+      });
+      return out;
+    }
+    var universalTypes = [];
+    (WORKSPACE_DEFAULTS['*'] || []).forEach(function (type) {
       var w = WORKSPACE_WIDGETS[type];
-      if (!w) return;
-      if (w.roleGate && !w.roleGate.some(function (r) { return roles.indexOf(r) !== -1; })) return;
-      if (prefs.hidden.indexOf(type) !== -1) hiddenTypes.push(type);
-      else visibleTypes.push(type);
+      if (w && !w.roleGate && universalTypes.indexOf(type) === -1) universalTypes.push(type);
     });
 
     var html = '<div class="workspace-intro">';
@@ -4229,30 +4266,76 @@
     if (roles.length === 0) {
       html += '<p>A personalised area for your tools and the ways you contribute. As you pick up roles, more cards will appear here.</p>';
     } else {
-      html += '<p>Personalised tools for your role' + (roles.length > 1 ? 's' : '') + ': <strong>' + roles.join(', ') + '</strong>.</p>';
+      html += '<p>Personalised tools for your role' + (roles.length > 1 ? 's' : '') + ': <strong>' + roles.map(escapeHtml).join(', ') + '</strong>.</p>';
     }
     html += '</div>';
 
-    if (visibleTypes.length === 0) {
-      html += '<p class="ws-empty">All your workspace cards are hidden. Restore one below.</p>';
-    } else {
-      html += '<div class="workspace-grid">';
-      visibleTypes.forEach(function (type) {
-        var w = WORKSPACE_WIDGETS[type];
-        html += '<div class="mf-card workspace-card" data-widget-type="' + type + '">';
-        html += '<div class="workspace-card-header">';
-        html += '<h4>' + w.title + '</h4>';
-        html += '<button class="sc-btn ws-hide-btn" data-widget="' + type + '" title="Hide this card">Hide</button>';
-        html += '</div>';
-        html += '<div class="workspace-card-body">' + w.render(prefs, roles) + '</div>';
-        html += '</div>';
+    // Track visible widget types across all sections so afterRender hooks and
+    // form wiring can still iterate a flat list.
+    var allVisibleTypes = [];
+    var allHiddenTypes = [];
+
+    function renderSection(heading, roleKey, widgetTypes, opts) {
+      opts = opts || {};
+      var visible = [];
+      var hidden = [];
+      widgetTypes.forEach(function (type) {
+        if (prefs.hidden.indexOf(type) !== -1) hidden.push(type);
+        else visible.push(type);
       });
-      html += '</div>';
+      visible.forEach(function (t) { if (allVisibleTypes.indexOf(t) === -1) allVisibleTypes.push(t); });
+      hidden.forEach(function (t) { if (allHiddenTypes.indexOf(t) === -1) allHiddenTypes.push(t); });
+
+      // Only skip the whole section if it has no content *and* no notes slot.
+      if (visible.length === 0 && hidden.length === 0 && !opts.showNotes) return '';
+
+      var s = '<section class="workspace-role-section">';
+      s += '<header class="ws-role-header"><h4>' + escapeHtml(heading) + '</h4></header>';
+
+      if (opts.showNotes && roleKey) {
+        var role = getRoleByKey(roleKey);
+        if (role && role.overview) {
+          s += '<p class="ws-role-description">' + escapeHtml(role.overview) + '</p>';
+        }
+        var notesVal = getWorkspaceNotes(roleKey);
+        s += '<div class="ws-role-notes">';
+        s += '<label class="ws-role-notes-label" for="ws-notes-' + roleKey + '">My notes for this role</label>';
+        s += '<textarea class="ws-role-notes-textarea" id="ws-notes-' + roleKey + '" data-role-key="' + roleKey + '" rows="3" placeholder="Reminders, contacts, anything you want to keep handy\u2026">' + escapeHtml(notesVal) + '</textarea>';
+        s += '</div>';
+      }
+
+      if (visible.length === 0) {
+        s += '<p class="ws-empty">All cards for this section are hidden. Restore one below.</p>';
+      } else {
+        s += '<div class="workspace-grid">';
+        visible.forEach(function (type) {
+          var w = WORKSPACE_WIDGETS[type];
+          s += '<div class="mf-card workspace-card" data-widget-type="' + type + '">';
+          s += '<div class="workspace-card-header">';
+          s += '<h4>' + w.title + '</h4>';
+          s += '<button class="sc-btn ws-hide-btn" data-widget="' + type + '" title="Hide this card">Hide</button>';
+          s += '</div>';
+          s += '<div class="workspace-card-body">' + w.render(prefs, roles) + '</div>';
+          s += '</div>';
+        });
+        s += '</div>';
+      }
+      s += '</section>';
+      return s;
     }
 
-    if (hiddenTypes.length > 0) {
+    roles.forEach(function (role) {
+      var roleKey = getRoleKeyForDuty(role);
+      html += renderSection(role, roleKey, widgetListFor(role), { showNotes: !!roleKey });
+    });
+
+    // "Shared" bucket for universal widgets. Always render (even if empty)
+    // so a brand-new member sees the My Links / Ways to Help baseline.
+    html += renderSection('Shared', null, universalTypes, { showNotes: false });
+
+    if (allHiddenTypes.length > 0) {
       html += '<div class="workspace-hidden"><span class="workspace-hidden-label">Hidden:</span> ';
-      hiddenTypes.forEach(function (type) {
+      allHiddenTypes.forEach(function (type) {
         var w = WORKSPACE_WIDGETS[type];
         html += '<button class="sc-btn ws-restore-btn" data-widget="' + type + '">+ ' + w.title + '</button> ';
       });
@@ -4262,11 +4345,19 @@
     container.innerHTML = html;
 
     // Per-widget post-render hooks (e.g. kick off async data fetches).
-    visibleTypes.forEach(function (type) {
+    allVisibleTypes.forEach(function (type) {
       var w = WORKSPACE_WIDGETS[type];
       if (typeof w.afterRender === 'function') {
         try { w.afterRender(); } catch (e) { console.error('workspace widget afterRender ' + type + ':', e); }
       }
+    });
+
+    // Notes: persist on blur (no noise on every keystroke, but save-on-tab-away
+    // is reliable enough for scratch notes).
+    container.querySelectorAll('.ws-role-notes-textarea').forEach(function (ta) {
+      ta.addEventListener('blur', function () {
+        saveWorkspaceNotes(this.getAttribute('data-role-key'), this.value);
+      });
     });
 
     // Hide / restore buttons

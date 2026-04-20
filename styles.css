@@ -8186,6 +8186,58 @@ button.staff-role:hover {
   letter-spacing: 0.04em;
 }
 .ws-waivers-table tbody tr:last-child td { border-bottom: none; }
+.workspace-role-section {
+  margin: 0 0 28px 0;
+}
+.workspace-role-section + .workspace-role-section {
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border);
+}
+.ws-role-header {
+  margin: 0 0 10px 0;
+}
+.ws-role-header h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  letter-spacing: 0.01em;
+}
+.ws-role-description {
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  background: #faf8fc;
+  border-left: 3px solid var(--color-primary);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+.ws-role-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 16px 0;
+}
+.ws-role-notes-label {
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  font-weight: 500;
+}
+.ws-role-notes-textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--color-text);
+  resize: vertical;
+  min-height: 56px;
+}
+.ws-role-notes-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(82, 58, 121, 0.15);
+}
 .workspace-hidden {
   margin-top: 20px;
   padding: 12px 14px;
