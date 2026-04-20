@@ -538,6 +538,7 @@
   };
 
   function getRoleKeyForDuty(dutyText) {
+    if (!dutyText) return '';
     // Normalize abbreviations
     var normalized = dutyText.replace(/\bDir\.\s*$/i, 'Director').replace(/\bDir\.\s/i, 'Director ');
     // Direct match
