@@ -4752,9 +4752,7 @@
       { key: 'waivers', title: 'Waivers Report' }
     ],
     'Membership Director': [
-      { key: 'membership', title: 'Membership Report' },
-      { key: 'registrations-sheet', title: 'View Registrations Sheet',
-        url: 'https://docs.google.com/spreadsheets/d/1du9BvMoe_ulPwN58cuD0OgyuP5IAIB7OGYAZC5K9-K4/edit' }
+      { key: 'membership', title: 'Membership Report' }
     ]
   };
   var ROLE_FORMS = {
@@ -5324,7 +5322,11 @@
 
   function showMembershipReportModal() {
     if (!personDetail || !personDetailCard) return;
-    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    var sheetUrl = 'https://docs.google.com/spreadsheets/d/1du9BvMoe_ulPwN58cuD0OgyuP5IAIB7OGYAZC5K9-K4/edit';
+    var html = '<div class="detail-actions no-print">';
+    html += '<a class="sc-btn" href="' + sheetUrl + '" target="_blank" rel="noopener" aria-label="Open the flat CSV-style Google Sheet of all registrations in a new tab">\uD83D\uDCCA View as Google Sheet</a>';
+    html += '</div>';
+    html += '<button class="detail-close" aria-label="Close">&times;</button>';
     html += '<div class="elective-detail rd-modal">';
     html += '<h3 class="rd-title">Membership Report</h3>';
     html += '<p class="rd-subtitle">Every registration this season, with payment and waiver status.</p>';

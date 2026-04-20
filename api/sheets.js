@@ -1002,7 +1002,7 @@ async function handleBillingGet(req, res, sheets) {
   // say Paid (sheet wins).
   try {
     var sql = getDb();
-    var pendingRows = await sql('SELECT family_name, semester_key, payment_type FROM payments WHERE status = $1', ['Pending']);
+    var pendingRows = await sql`SELECT family_name, semester_key, payment_type FROM payments WHERE status = ${'Pending'}`;
     pendingRows.forEach(function (p) {
       var key = String(p.family_name || '').toLowerCase();
       var fam = parsed.families[key];
@@ -1042,10 +1042,11 @@ async function handleBillingPost(req, res) {
 
   try {
     var sql = getDb();
-    var rows = await sql(
-      'INSERT INTO payments (family_name, semester_key, payment_type, paypal_transaction_id, amount_cents, payer_email, status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at',
-      [familyName, semesterKey, paymentType, paypalId, amountCents, payerEmail, 'Pending']
-    );
+    var rows = await sql`
+      INSERT INTO payments (family_name, semester_key, payment_type, paypal_transaction_id, amount_cents, payer_email, status)
+      VALUES (${familyName}, ${semesterKey}, ${paymentType}, ${paypalId}, ${amountCents}, ${payerEmail}, 'Pending')
+      RETURNING id, created_at
+    `;
     return res.status(200).json({ ok: true, id: rows[0].id, created_at: rows[0].created_at });
   } catch (e) {
     console.error('Billing POST failed:', e.message);
