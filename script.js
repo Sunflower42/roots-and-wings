@@ -977,6 +977,17 @@
   };
   var GCAL_DEFAULT_COLOR = '#33B679'; // Sage — regular co-op days
 
+  // Per-calendar fallback colors. Used when an event has no colorId set
+  // (which is the common case — event-level colors in Google Calendar are
+  // rarely used, but shared calendars each have a default background color
+  // that the app is expected to reflect).
+  var GCAL_SOURCE_COLORS = {
+    // Main R&W co-op calendar (regular Wednesdays, etc.)
+    'c_fdc0b20caba65262b9aac95ac1df638ab892fcdf1ee1ad79a1880dcc2a95b291@group.calendar.google.com': '#33B679', // Sage
+    // R&W Special Events (Field Day, Talent Show, etc.)
+    'c_f7e599c566fa32ba8da0c20bf51c82967e9d8aedffa8f775673db5146646b1b2@group.calendar.google.com': '#D81B60'  // Raspberry
+  };
+
   function renderCalendar(events) {
     var el = document.getElementById('calendarEvents');
     if (!el || !events) return;
@@ -985,14 +996,6 @@
       el.innerHTML = '<div style="text-align:center;color:var(--color-text-light);padding:40px 0;">No upcoming events.</div>';
       return;
     }
-
-    // Diagnostic: log colorId of each event so we can see whether Google is
-    // returning extended-palette IDs (e.g. raspberry) beyond the classic 1–11.
-    try {
-      console.log('[R&W calendar] event colorIds:', events.map(function (e) {
-        return { summary: e.summary, colorId: e.colorId || '(none)' };
-      }));
-    } catch (e) { /* ignore */ }
 
     var html = '';
     var currentMonth = '';
@@ -1014,7 +1017,9 @@
         timeStr = 'All day';
       }
 
-      var color = GCAL_EVENT_COLORS[ev.colorId] || GCAL_DEFAULT_COLOR;
+      var color = GCAL_EVENT_COLORS[ev.colorId]
+        || GCAL_SOURCE_COLORS[ev.sourceCalendarId]
+        || GCAL_DEFAULT_COLOR;
       html += '<div class="cal-event" style="border-left:4px solid ' + color + ';padding-left:12px;">';
       html += '<div class="cal-date"><span class="cal-day-num">' + start.getDate() + '</span><span class="cal-day-name">' + DAYS[start.getDay()] + '</span></div>';
       html += '<div class="cal-details"><strong class="cal-summary">' + ev.summary + '</strong><span class="cal-time">' + timeStr + '</span>';

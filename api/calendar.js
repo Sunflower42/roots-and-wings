@@ -71,6 +71,8 @@ module.exports = async function handler(req, res) {
           maxResults: 50
         });
         if (result.data.items) {
+          var srcId = CALENDAR_IDS[i];
+          result.data.items.forEach(function (ev) { ev.__source = srcId; });
           allEvents = allEvents.concat(result.data.items);
         }
       } catch (e) {
@@ -97,7 +99,8 @@ module.exports = async function handler(req, res) {
         allDay: allDay,
         location: ev.location || '',
         description: ev.description || '',
-        colorId: ev.colorId || ''
+        colorId: ev.colorId || '',
+        sourceCalendarId: ev.__source || ''
       };
     });
 
