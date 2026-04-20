@@ -4712,7 +4712,11 @@
           h += '<li class="ws-empty">No reports configured for this role yet.</li>';
         } else {
           items.forEach(function (r) {
-            h += '<li><button type="button" class="ws-link-btn" data-report-key="' + r.key + '"><span class="ws-link-icon">\uD83D\uDCCA</span>' + escapeHtml(r.title) + '</button></li>';
+            if (r.url) {
+              h += '<li><a class="ws-link-btn" href="' + r.url + '" target="_blank" rel="noopener"><span class="ws-link-icon">\uD83D\uDCCA</span>' + escapeHtml(r.title) + '</a></li>';
+            } else {
+              h += '<li><button type="button" class="ws-link-btn" data-report-key="' + r.key + '"><span class="ws-link-icon">\uD83D\uDCCA</span>' + escapeHtml(r.title) + '</button></li>';
+            }
           });
         }
         h += '</ul>';
@@ -4748,7 +4752,9 @@
       { key: 'waivers', title: 'Waivers Report' }
     ],
     'Membership Director': [
-      { key: 'membership', title: 'Membership Report' }
+      { key: 'membership', title: 'Membership Report' },
+      { key: 'registrations-sheet', title: 'View Registrations Sheet',
+        url: 'https://docs.google.com/spreadsheets/d/1du9BvMoe_ulPwN58cuD0OgyuP5IAIB7OGYAZC5K9-K4/edit' }
     ]
   };
   var ROLE_FORMS = {
