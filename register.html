@@ -380,7 +380,7 @@
     </div>
   </footer>
 
-  <script src="https://www.paypal.com/sdk/js?client-id=BAAEXrFcNz-Q5sFay27KpbAs3d29W3AdjACtLpfAJXN5XshPFGjdnKD7ueLJcdHCNUNlhk7YigOuyoB1HQ&components=buttons&enable-funding=venmo&currency=USD" data-namespace="paypal_sdk"></script>
+  <script src="https://www.paypal.com/sdk/js?client-id=BAAEXrFcNz-Q5sFay27KpbAs3d29W3AdjACtLpfAJXN5XshPFGjdnKD7ueLJcdHCNUNlhk7YigOuyoB1HQ&components=buttons&disable-funding=venmo,paylater,card,credit&currency=USD" data-namespace="paypal_sdk"></script>
   <script>
   (function () {
     'use strict';
@@ -864,6 +864,12 @@
       var amountStr = REGISTRATION_FEE.toFixed(2);
       try {
         paypal_sdk.Buttons({
+          // Lock the widget to the PayPal wallet only — Venmo / PayPal Credit /
+          // Debit-Credit Card were showing up despite disable-funding on the SDK
+          // URL, and the merchant account isn't configured for card/credit flows,
+          // which is what was triggering the generic "Payment could not be
+          // processed" error when members clicked the card button.
+          fundingSource: paypal_sdk.FUNDING && paypal_sdk.FUNDING.PAYPAL,
           style: { layout: 'vertical', color: 'gold', shape: 'pill', label: 'pay', height: 48 },
           createOrder: function (data, actions) {
             return actions.order.create({
@@ -894,7 +900,8 @@
               });
             });
           },
-          onError: function () {
+          onError: function (err) {
+            console.error('PayPal Buttons onError:', err);
             showError('reg-pay-error', 'Payment could not be processed. Please try again or email treasurer@rootsandwingsindy.com.');
           },
           onCancel: function () {
