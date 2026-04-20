@@ -8313,6 +8313,31 @@ button.staff-role:hover {
 }
 .qsb-pill-workspace { /* Workspace pill — no separate treatment needed in the unified header */ }
 
+/* Header "View as" picker for the communications@ super user. Sits left of
+   the My Family pill so it's always within reach regardless of page. */
+.qsb-view-as {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.qsb-view-as[hidden] { display: none; }
+.qsb-view-as-label {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.qsb-view-as .view-as-select {
+  max-width: 220px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.95);
+}
+
 .page-mode-panel#page-workspace {
   padding: 40px 0 60px;
 }
@@ -8607,6 +8632,83 @@ button.staff-role:hover {
 .ws-report-request-hint a {
   color: var(--color-primary);
   font-weight: 600;
+}
+
+/* Sortable + expandable report tables (Waivers, Membership). */
+.ws-sortable-table th.ws-sort {
+  cursor: pointer;
+  user-select: none;
+}
+.ws-sortable-table th.ws-sort:hover {
+  background: rgba(var(--color-accent-light-rgb), 0.25);
+}
+.ws-sort-arrow {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.7em;
+  color: var(--color-primary);
+  min-width: 0.8em;
+  text-align: left;
+}
+.ws-srt-row-expandable { cursor: pointer; }
+.ws-srt-row-expandable:hover { background: rgba(var(--color-accent-light-rgb), 0.15); }
+.ws-srt-caret {
+  width: 1.5em;
+  text-align: center;
+  color: var(--color-primary);
+  font-size: 0.7rem;
+}
+.ws-sort-caret-col { width: 1.5em; }
+.ws-srt-detail-row > td {
+  background: rgba(var(--color-accent-light-rgb), 0.08);
+  padding: 14px 16px !important;
+  border-top: 1px solid var(--color-border);
+}
+.ws-srt-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 0.85rem;
+}
+.ws-reg-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 18px;
+}
+.ws-reg-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-reg-detail-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ws-reg-detail-val { color: var(--color-text); word-break: break-word; }
+.ws-reg-detail-section h5 {
+  margin: 0 0 4px 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ws-reg-detail-kidlist {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ws-reg-detail-notes {
+  white-space: pre-wrap;
+  background: var(--color-white);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
 }
 .workspace-role-section {
   margin: 0 0 24px 0;

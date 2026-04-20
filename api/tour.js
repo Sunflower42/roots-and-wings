@@ -297,15 +297,27 @@ async function handleList(req, res) {
   const sql = getSql();
   try {
     const rows = await sql`
-      SELECT id, season, email, existing_family_name, main_learning_coach, address, phone,
-             track, track_other, kids, placement_notes,
-             waiver_member_agreement, waiver_photo_consent, waiver_liability,
-             signature_name, signature_date, student_signature,
-             payment_status, paypal_transaction_id, payment_amount,
-             created_at, updated_at
-      FROM registrations
-      WHERE season = ${season}
-      ORDER BY created_at DESC
+      SELECT r.id, r.season, r.email, r.existing_family_name, r.main_learning_coach,
+             r.address, r.phone, r.track, r.track_other, r.kids, r.placement_notes,
+             r.waiver_member_agreement, r.waiver_photo_consent, r.waiver_liability,
+             r.signature_name, r.signature_date, r.student_signature,
+             r.payment_status, r.paypal_transaction_id, r.payment_amount,
+             r.created_at, r.updated_at,
+             (
+               SELECT COALESCE(json_agg(json_build_object(
+                 'name', b.name,
+                 'email', b.email,
+                 'sent_at', b.created_at,
+                 'signed_at', b.signed_at,
+                 'signature_name', b.signature_name,
+                 'signature_date', b.signature_date
+               ) ORDER BY b.created_at), '[]'::json)
+               FROM backup_coach_waivers b
+               WHERE b.registration_id = r.id
+             ) AS backup_coaches
+      FROM registrations r
+      WHERE r.season = ${season}
+      ORDER BY r.created_at DESC
     `;
     return res.status(200).json({ registrations: rows });
   } catch (err) {

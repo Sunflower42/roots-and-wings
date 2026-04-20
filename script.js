@@ -271,6 +271,42 @@
     return localStorage.getItem('rw_user_email') === COMMS_EMAIL;
   }
 
+  // Header-level "View as" picker for the communications@ super user.
+  // Lives in the sticky quick-shortcut bar so it stays visible no matter
+  // which page (My Family, Workspace, etc.) is active. Backed by the same
+  // VIEW_AS_KEY session slot as the (legacy) in-page picker so they stay
+  // in sync.
+  function renderHeaderViewAs() {
+    var wrap = document.getElementById('qsbViewAs');
+    var select = document.getElementById('qsbViewAsSelect');
+    if (!wrap || !select) return;
+    if (!isCommsUser() || !Array.isArray(FAMILIES) || FAMILIES.length === 0) {
+      wrap.hidden = true;
+      return;
+    }
+    var viewAsEmail = sessionStorage.getItem(VIEW_AS_KEY) || '';
+    var html = '<option value="">\u2014 My Dashboard \u2014</option>';
+    var sortedFams = FAMILIES.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    sortedFams.forEach(function (f) {
+      if (!f.email) return;
+      var selected = viewAsEmail === f.email ? ' selected' : '';
+      html += '<option value="' + f.email + '"' + selected + '>' + f.name + ' (' + f.parents + ')</option>';
+    });
+    select.innerHTML = html;
+    wrap.hidden = false;
+    if (!select._rwWired) {
+      select.addEventListener('change', function () {
+        if (this.value) sessionStorage.setItem(VIEW_AS_KEY, this.value);
+        else sessionStorage.removeItem(VIEW_AS_KEY);
+        if (typeof renderMyFamily === 'function') renderMyFamily();
+        if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
+        if (typeof loadNotifications === 'function') loadNotifications();
+        if (typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
+      });
+      select._rwWired = true;
+    }
+  }
+
   // True when the active user (respecting View As) is the Vice President,
   // derived from the boardRole assigned in applySheetsData. Backend re-checks
   // via canEditAsRole against the volunteer sheet, so this only drives UI.
@@ -457,6 +493,8 @@
       if (typeof renderDirectory === 'function') renderDirectory();
       if (typeof renderMyFamily === 'function') renderMyFamily();
     }
+    // Header-level View As picker depends on FAMILIES.
+    if (typeof renderHeaderViewAs === 'function') renderHeaderViewAs();
     return true;
   }
 
@@ -2809,46 +2847,30 @@
 
     var html = '';
 
-    // ──── View As switcher (communications@ only) ────
+    // ──── View As banner (communications@ only, when impersonating) ────
+    // The picker itself lives in the sticky header (see renderHeaderViewAs);
+    // the banner below just makes it obvious which family is in view and
+    // offers a one-click "back to my view" button.
     var viewAsEmail = sessionStorage.getItem(VIEW_AS_KEY);
-    if (isCommsUser()) {
+    if (isCommsUser() && viewAsEmail && fam) {
       html += '<div class="view-as-bar">';
-      if (viewAsEmail && fam) {
-        html += '<div class="view-as-banner">';
-        html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-        html += ' Viewing as <strong>' + fam.parents + ' ' + fam.name + '</strong>';
-        html += '<button class="view-as-reset" id="viewAsReset">Back to my view</button>';
-        html += '</div>';
-      }
-      html += '<div class="view-as-picker">';
-      html += '<label>View as:</label>';
-      html += '<select class="view-as-select" id="viewAsSelect">';
-      html += '<option value="">— My Dashboard —</option>';
-      var sortedFams = FAMILIES.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
-      sortedFams.forEach(function (f) {
-        var selected = viewAsEmail === f.email ? ' selected' : '';
-        html += '<option value="' + f.email + '"' + selected + '>' + f.name + ' (' + f.parents + ')</option>';
-      });
-      html += '</select>';
+      html += '<div class="view-as-banner">';
+      html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+      html += ' Viewing as <strong>' + fam.parents + ' ' + fam.name + '</strong>';
+      html += '<button class="view-as-reset" id="viewAsReset">Back to my view</button>';
       html += '</div>';
       html += '</div>';
     }
 
-    // If no matching family (e.g. communications@ with no View As), show picker only
+    // If no matching family (e.g. communications@ with no View As), show
+    // empty-state prompt pointing to the header picker.
     if (!fam) {
+      if (isCommsUser()) {
+        html += '<div class="mf-card mf-card-full"><p>Pick a family from the <strong>View as</strong> dropdown in the header to see their dashboard, or switch to My Workspace.</p></div>';
+      }
       grid.innerHTML = html;
       section.style.display = '';
-      // Wire View As events
-      var viewAsSelect = document.getElementById('viewAsSelect');
-      if (viewAsSelect) {
-        viewAsSelect.onchange = function () {
-          if (this.value) { sessionStorage.setItem(VIEW_AS_KEY, this.value); }
-          else { sessionStorage.removeItem(VIEW_AS_KEY); }
-          renderMyFamily();
-          if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
-          if (typeof loadNotifications === 'function') loadNotifications();
-        };
-      }
+      renderHeaderViewAs();
       if (greeting) greeting.textContent = 'Welcome!';
       return;
     }
@@ -3386,20 +3408,10 @@
     grid.innerHTML = html;
     section.style.display = '';
 
-    // Wire View As switcher
-    var viewAsSelect = document.getElementById('viewAsSelect');
-    if (viewAsSelect) {
-      viewAsSelect.onchange = function () {
-        if (this.value) {
-          sessionStorage.setItem(VIEW_AS_KEY, this.value);
-        } else {
-          sessionStorage.removeItem(VIEW_AS_KEY);
-        }
-        renderMyFamily();
-        if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
-        if (typeof loadNotifications === 'function') loadNotifications();
-      };
-    }
+    // Keep the header picker in sync with the active family.
+    renderHeaderViewAs();
+
+    // "Back to my view" button from the impersonation banner.
     var viewAsReset = document.getElementById('viewAsReset');
     if (viewAsReset) {
       viewAsReset.onclick = function () {
@@ -3407,6 +3419,7 @@
         renderMyFamily();
         if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
         if (typeof loadNotifications === 'function') loadNotifications();
+        if (typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
       };
     }
 
@@ -5064,21 +5077,29 @@
 
       var total = merged.length;
       var unsigned = merged.filter(function (w) { return !w.signed; }).length;
-      var h = '<p class="ws-body-hint"><strong>' + total + '</strong> total waivers \u00b7 <strong class="' + (unsigned > 0 ? 'ws-wv-pending' : 'ws-wv-ok') + '">' + unsigned + ' pending</strong></p>';
+      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> total waivers \u00b7 <strong class="' + (unsigned > 0 ? 'ws-wv-pending' : 'ws-wv-ok') + '">' + unsigned + ' pending</strong></p>';
       if (merged.length === 0) {
-        h += '<p class="ws-empty">No waivers sent yet.</p>';
-      } else {
-        h += '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table"><thead><tr><th>Name</th><th>Email</th><th>Source</th><th>Status</th><th>Sent</th></tr></thead><tbody>';
-        merged.slice(0, 30).forEach(function (w) {
-          var statusCell = w.signed
-            ? '<span class="ws-wv-ok">Signed ' + (w.signed_at ? new Date(w.signed_at).toLocaleDateString() : '') + '</span>'
-            : '<span class="ws-wv-pending">Pending</span>';
-          h += '<tr><td>' + escapeHtmlWs(w.name) + '</td><td>' + escapeHtmlWs(w.email) + '</td><td>' + w.source + '</td><td>' + statusCell + '</td><td>' + (w.sent_at ? new Date(w.sent_at).toLocaleDateString() : '') + '</td></tr>';
-        });
-        h += '</tbody></table></div>';
-        if (merged.length > 30) h += '<p class="ws-body-hint">Showing 30 most recent of ' + merged.length + '.</p>';
+        body.innerHTML = headerHtml + '<p class="ws-empty">No waivers sent yet.</p>';
+        return;
       }
-      body.innerHTML = h;
+      body.innerHTML = headerHtml + '<div id="ws-waivers-table-target"></div>';
+      var tableTarget = body.querySelector('#ws-waivers-table-target');
+      renderSortableTable(tableTarget, [
+        { key: 'name', label: 'Name', type: 'string', render: function (w) { return escapeHtmlWs(w.name); } },
+        { key: 'email', label: 'Email', type: 'string', render: function (w) { return escapeHtmlWs(w.email); } },
+        { key: 'source', label: 'Source', type: 'string' },
+        { key: 'status', label: 'Status', type: 'string',
+          sortValue: function (w) { return w.signed ? 'signed' : 'pending'; },
+          render: function (w) {
+            return w.signed
+              ? '<span class="ws-wv-ok">Signed ' + (w.signed_at ? new Date(w.signed_at).toLocaleDateString() : '') + '</span>'
+              : '<span class="ws-wv-pending">Pending</span>';
+          }
+        },
+        { key: 'sent_at', label: 'Sent', type: 'date',
+          render: function (w) { return w.sent_at ? new Date(w.sent_at).toLocaleDateString() : ''; }
+        }
+      ], merged, { initialSort: { key: 'sent_at', dir: 'desc' } });
     }).catch(function (err) {
       body.innerHTML = '<p class="ws-empty ws-wv-err">Network error loading waivers: ' + ((err && err.message) || 'unknown') + '</p>';
     });
@@ -5086,6 +5107,136 @@
 
   function escapeHtmlWs(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // ─── Sortable report-table helper ───
+  //
+  // Used by the Waivers Report and Membership Report modals. Renders a table
+  // whose column headers toggle ascending/descending sort, and optionally
+  // expands rows into a detail panel when clicked.
+  //
+  // columns: [{
+  //   key,        // field name on the row (or synthetic — whatever the sortValue fn returns)
+  //   label,      // header text
+  //   type,       // 'string' | 'date' | 'number' — controls comparator
+  //   render,     // (row) => cell HTML
+  //   sortValue,  // optional (row) => primitive for comparison; defaults to row[key]
+  //   sortable    // default true — set false to disable sorting on this column
+  // }]
+  // opts: { initialSort: {key, dir}, expandable, renderDetail }
+  //    expandable rows get a toggle caret in the first column; clicking any
+  //    cell (except the caret's row-dedupe) shows renderDetail(row) in a
+  //    full-width row below.
+  function renderSortableTable(containerEl, columns, rows, opts) {
+    if (!containerEl) return;
+    opts = opts || {};
+    var state = {
+      sortKey: (opts.initialSort && opts.initialSort.key) || columns[0].key,
+      sortDir: (opts.initialSort && opts.initialSort.dir) || 'desc',
+      expanded: {} // rowIdx -> true
+    };
+
+    function cmpType(type, a, b) {
+      if (type === 'number') {
+        var na = Number(a); var nb = Number(b);
+        if (isNaN(na)) na = -Infinity;
+        if (isNaN(nb)) nb = -Infinity;
+        return na - nb;
+      }
+      if (type === 'date') {
+        var da = a ? new Date(a).getTime() : 0;
+        var db = b ? new Date(b).getTime() : 0;
+        if (isNaN(da)) da = 0;
+        if (isNaN(db)) db = 0;
+        return da - db;
+      }
+      return String(a == null ? '' : a).toLowerCase().localeCompare(String(b == null ? '' : b).toLowerCase());
+    }
+
+    function getSortValue(col, row) {
+      if (typeof col.sortValue === 'function') return col.sortValue(row);
+      return row[col.key];
+    }
+
+    function currentColumn() {
+      for (var i = 0; i < columns.length; i++) if (columns[i].key === state.sortKey) return columns[i];
+      return columns[0];
+    }
+
+    function sortedIndexes() {
+      var col = currentColumn();
+      var type = col.type || 'string';
+      var idxs = rows.map(function (_, i) { return i; });
+      idxs.sort(function (a, b) {
+        var c = cmpType(type, getSortValue(col, rows[a]), getSortValue(col, rows[b]));
+        return state.sortDir === 'asc' ? c : -c;
+      });
+      return idxs;
+    }
+
+    function render() {
+      var colCount = columns.length + (opts.expandable ? 1 : 0);
+      var h = '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table ws-sortable-table"><thead><tr>';
+      if (opts.expandable) h += '<th class="ws-sort-caret-col" aria-hidden="true"></th>';
+      columns.forEach(function (col) {
+        var sortable = col.sortable !== false;
+        var isActive = sortable && col.key === state.sortKey;
+        var arrow = isActive ? (state.sortDir === 'asc' ? '\u25B2' : '\u25BC') : '';
+        if (sortable) {
+          h += '<th class="ws-sort" data-sort-key="' + escapeHtmlWs(col.key) + '">'
+            + '<span class="ws-sort-label">' + escapeHtmlWs(col.label) + '</span>'
+            + '<span class="ws-sort-arrow">' + arrow + '</span></th>';
+        } else {
+          h += '<th>' + escapeHtmlWs(col.label) + '</th>';
+        }
+      });
+      h += '</tr></thead><tbody>';
+      var idxs = sortedIndexes();
+      idxs.forEach(function (i) {
+        var row = rows[i];
+        var expanded = !!state.expanded[i];
+        h += '<tr class="ws-srt-row' + (opts.expandable ? ' ws-srt-row-expandable' : '') + '" data-row-idx="' + i + '">';
+        if (opts.expandable) {
+          h += '<td class="ws-srt-caret">' + (expanded ? '\u25BC' : '\u25B6') + '</td>';
+        }
+        columns.forEach(function (col) {
+          h += '<td>' + (typeof col.render === 'function' ? col.render(row) : escapeHtmlWs(row[col.key])) + '</td>';
+        });
+        h += '</tr>';
+        if (opts.expandable && expanded && typeof opts.renderDetail === 'function') {
+          h += '<tr class="ws-srt-detail-row"><td colspan="' + colCount + '"><div class="ws-srt-detail">' + opts.renderDetail(row) + '</div></td></tr>';
+        }
+      });
+      h += '</tbody></table></div>';
+      containerEl.innerHTML = h;
+
+      // Header click → sort toggle.
+      containerEl.querySelectorAll('.ws-sort').forEach(function (th) {
+        th.addEventListener('click', function () {
+          var key = this.getAttribute('data-sort-key');
+          if (state.sortKey === key) {
+            state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            state.sortKey = key;
+            state.sortDir = 'asc';
+          }
+          render();
+        });
+      });
+
+      // Row click → toggle expansion (expandable mode).
+      if (opts.expandable) {
+        containerEl.querySelectorAll('.ws-srt-row-expandable').forEach(function (tr) {
+          tr.addEventListener('click', function () {
+            var idx = this.getAttribute('data-row-idx');
+            state.expanded[idx] = !state.expanded[idx];
+            render();
+          });
+        });
+      }
+    }
+
+    render();
   }
 
   // ─── Workspace Reports / Forms modals ───
@@ -5192,41 +5343,148 @@
         body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load registrations: ' + msg + '</p>';
         return;
       }
-      var regs = res.data.registrations || [];
+      var regs = (res.data.registrations || []).map(function (r) {
+        // Normalise kids into a consistent array regardless of whether the
+        // column came back as JSON string or native JSON.
+        var kids = [];
+        try {
+          kids = Array.isArray(r.kids) ? r.kids : (typeof r.kids === 'string' ? JSON.parse(r.kids) : []);
+        } catch (e) { kids = []; }
+        var backups = [];
+        try {
+          backups = Array.isArray(r.backup_coaches) ? r.backup_coaches : (typeof r.backup_coaches === 'string' ? JSON.parse(r.backup_coaches) : []);
+        } catch (e) { backups = []; }
+        return Object.assign({}, r, { kids: kids || [], backup_coaches: backups || [] });
+      });
       var total = regs.length;
       var paid = regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; }).length;
       var signed = regs.filter(function (r) { return !!r.waiver_member_agreement && !!r.signature_name; }).length;
-      var h = '<p class="ws-body-hint"><strong>' + total + '</strong> registered \u00b7 <strong class="ws-wv-ok">' + paid + ' paid</strong> \u00b7 <strong class="ws-wv-ok">' + signed + ' signed</strong></p>';
+      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> registered \u00b7 <strong class="ws-wv-ok">' + paid + ' paid</strong> \u00b7 <strong class="ws-wv-ok">' + signed + ' signed</strong> \u00b7 click a row to expand</p>';
       if (regs.length === 0) {
-        h += '<p class="ws-empty">No registrations yet for this season.</p>';
-      } else {
-        h += '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table"><thead><tr><th>Main Learning Coach</th><th>Email</th><th>Phone</th><th>Track</th><th>Kids</th><th>Paid</th><th>Waiver</th><th>Registered</th></tr></thead><tbody>';
-        regs.forEach(function (r) {
-          var kidsStr = '';
-          try {
-            var kids = Array.isArray(r.kids) ? r.kids : (typeof r.kids === 'string' ? JSON.parse(r.kids) : []);
-            kidsStr = (kids || []).map(function (k) { return escapeHtmlWs((k.name || '') + (k.birthdate ? ' (' + k.birthdate + ')' : '')); }).join('<br>');
-          } catch (e) { kidsStr = ''; }
-          var track = r.track === 'Other' && r.track_other ? r.track + ': ' + r.track_other : (r.track || '');
-          var paidOk = String(r.payment_status || '').toLowerCase() === 'paid';
-          var sigOk = !!r.waiver_member_agreement && !!r.signature_name;
-          h += '<tr>';
-          h += '<td>' + escapeHtmlWs(r.main_learning_coach) + '</td>';
-          h += '<td>' + escapeHtmlWs(r.email) + '</td>';
-          h += '<td>' + escapeHtmlWs(r.phone) + '</td>';
-          h += '<td>' + escapeHtmlWs(track) + '</td>';
-          h += '<td>' + kidsStr + '</td>';
-          h += '<td>' + (paidOk ? '<span class="ws-wv-ok">Paid</span>' : '<span class="ws-wv-pending">' + escapeHtmlWs(r.payment_status || 'Pending') + '</span>') + '</td>';
-          h += '<td>' + (sigOk ? '<span class="ws-wv-ok">Signed ' + (r.signature_date || '') + '</span>' : '<span class="ws-wv-pending">Pending</span>') + '</td>';
-          h += '<td>' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '') + '</td>';
-          h += '</tr>';
-        });
-        h += '</tbody></table></div>';
+        body.innerHTML = headerHtml + '<p class="ws-empty">No registrations yet for this season.</p>';
+        return;
       }
-      body.innerHTML = h;
+      body.innerHTML = headerHtml + '<div id="ws-membership-table-target"></div>';
+      var tableTarget = body.querySelector('#ws-membership-table-target');
+      renderSortableTable(tableTarget, [
+        { key: 'main_learning_coach', label: 'Main Learning Coach', type: 'string',
+          render: function (r) { return escapeHtmlWs(r.main_learning_coach); }
+        },
+        { key: 'email', label: 'Email', type: 'string',
+          render: function (r) { return escapeHtmlWs(r.email); }
+        },
+        { key: 'track', label: 'Track', type: 'string',
+          sortValue: function (r) { return r.track || ''; },
+          render: function (r) {
+            var t = r.track || '';
+            if (r.track === 'Other' && r.track_other) t = 'Other: ' + r.track_other;
+            return escapeHtmlWs(t);
+          }
+        },
+        { key: 'kidsCount', label: 'Kids', type: 'number',
+          sortValue: function (r) { return (r.kids || []).length; },
+          render: function (r) { return String((r.kids || []).length); }
+        },
+        { key: 'payment_status', label: 'Paid', type: 'string',
+          render: function (r) {
+            var ok = String(r.payment_status || '').toLowerCase() === 'paid';
+            return ok ? '<span class="ws-wv-ok">Paid</span>' : '<span class="ws-wv-pending">' + escapeHtmlWs(r.payment_status || 'Pending') + '</span>';
+          }
+        },
+        { key: 'waiverStatus', label: 'Waiver', type: 'string',
+          sortValue: function (r) { return (!!r.waiver_member_agreement && !!r.signature_name) ? 'signed' : 'pending'; },
+          render: function (r) {
+            var ok = !!r.waiver_member_agreement && !!r.signature_name;
+            return ok ? '<span class="ws-wv-ok">Signed ' + escapeHtmlWs(r.signature_date || '') + '</span>' : '<span class="ws-wv-pending">Pending</span>';
+          }
+        },
+        { key: 'created_at', label: 'Registered', type: 'date',
+          render: function (r) { return r.created_at ? new Date(r.created_at).toLocaleDateString() : ''; }
+        }
+      ], regs, {
+        initialSort: { key: 'created_at', dir: 'desc' },
+        expandable: true,
+        renderDetail: renderMembershipRegDetail
+      });
     }).catch(function (err) {
       body.innerHTML = '<p class="ws-empty ws-wv-err">Network error loading registrations: ' + ((err && err.message) || 'unknown') + '</p>';
     });
+  }
+
+  // Full-detail panel for a single registration — shown inside an expanded
+  // Membership Report row. Surfaces every field collected on the registration
+  // form so the Membership Director doesn't have to dig into the DB.
+  function renderMembershipRegDetail(r) {
+    function fld(label, val) {
+      return '<div class="ws-reg-detail-field"><span class="ws-reg-detail-label">' + escapeHtmlWs(label) + '</span><span class="ws-reg-detail-val">' + (val || '<em>\u2014</em>') + '</span></div>';
+    }
+    function yn(v) { return v ? '<span class="ws-wv-ok">Yes</span>' : '<span class="ws-wv-pending">No</span>'; }
+
+    var kidsHtml = '';
+    if (r.kids && r.kids.length) {
+      kidsHtml = '<ul class="ws-reg-detail-kidlist">';
+      r.kids.forEach(function (k) {
+        var row = '<strong>' + escapeHtmlWs(k.name || '') + '</strong>';
+        if (k.birth_date || k.birthdate) row += ' \u00b7 born ' + escapeHtmlWs(k.birth_date || k.birthdate);
+        if (k.group) row += ' \u00b7 ' + escapeHtmlWs(k.group);
+        if (k.notes) row += '<br><em>' + escapeHtmlWs(k.notes) + '</em>';
+        kidsHtml += '<li>' + row + '</li>';
+      });
+      kidsHtml += '</ul>';
+    } else {
+      kidsHtml = '<em>None listed</em>';
+    }
+
+    var backupsHtml = '';
+    if (r.backup_coaches && r.backup_coaches.length) {
+      backupsHtml = '<ul class="ws-reg-detail-kidlist">';
+      r.backup_coaches.forEach(function (b) {
+        var line = '<strong>' + escapeHtmlWs(b.name || '') + '</strong> \u2014 ' + escapeHtmlWs(b.email || '');
+        if (b.signed_at) {
+          line += ' \u00b7 <span class="ws-wv-ok">Signed ' + new Date(b.signed_at).toLocaleDateString() + '</span>';
+          if (b.signature_name) line += ' by ' + escapeHtmlWs(b.signature_name);
+        } else if (b.sent_at) {
+          line += ' \u00b7 <span class="ws-wv-pending">Sent ' + new Date(b.sent_at).toLocaleDateString() + ' \u2014 pending</span>';
+        }
+        backupsHtml += '<li>' + line + '</li>';
+      });
+      backupsHtml += '</ul>';
+    } else {
+      backupsHtml = '<em>None listed</em>';
+    }
+
+    var track = r.track || '';
+    if (r.track === 'Other' && r.track_other) track = 'Other: ' + r.track_other;
+
+    var h = '<div class="ws-reg-detail-grid">';
+    h += fld('Season', escapeHtmlWs(r.season));
+    h += fld('Registered', r.created_at ? escapeHtmlWs(new Date(r.created_at).toLocaleString()) : '');
+    h += fld('Returning family', r.existing_family_name ? escapeHtmlWs(r.existing_family_name) : '<em>(new)</em>');
+    h += fld('Main Learning Coach', escapeHtmlWs(r.main_learning_coach));
+    h += fld('Email', '<a href="mailto:' + escapeHtmlWs(r.email) + '">' + escapeHtmlWs(r.email) + '</a>');
+    h += fld('Phone', escapeHtmlWs(r.phone));
+    h += fld('Address', escapeHtmlWs(r.address));
+    h += fld('Track', escapeHtmlWs(track));
+    h += '</div>';
+
+    h += '<div class="ws-reg-detail-section"><h5>Children</h5>' + kidsHtml + '</div>';
+    h += '<div class="ws-reg-detail-section"><h5>Backup Learning Coaches</h5>' + backupsHtml + '</div>';
+
+    h += '<div class="ws-reg-detail-grid">';
+    h += fld('Member Agreement', yn(r.waiver_member_agreement));
+    h += fld('Liability Waiver', yn(r.waiver_liability));
+    h += fld('Photo Consent', r.waiver_photo_consent ? escapeHtmlWs(r.waiver_photo_consent) : '<em>\u2014</em>');
+    h += fld('Signature', escapeHtmlWs(r.signature_name) + (r.signature_date ? ' on ' + escapeHtmlWs(r.signature_date) : ''));
+    if (r.student_signature) h += fld('Adult student signatures', escapeHtmlWs(r.student_signature));
+    h += fld('Payment status', escapeHtmlWs(r.payment_status));
+    h += fld('Payment amount', r.payment_amount != null ? '$' + escapeHtmlWs(r.payment_amount) : '<em>\u2014</em>');
+    h += fld('PayPal transaction', escapeHtmlWs(r.paypal_transaction_id));
+    h += '</div>';
+
+    if (r.placement_notes) {
+      h += '<div class="ws-reg-detail-section"><h5>Placement notes</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(r.placement_notes) + '</div></div>';
+    }
+    return h;
   }
 
   function showSendRegistrationFormModal() {
