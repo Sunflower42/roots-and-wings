@@ -2101,7 +2101,7 @@ p + p { margin-top: 1rem; }
 /* Dashboard */
 .dashboard {
   display: none;
-  padding-top: var(--portal-header-height, 148px);
+  padding-top: var(--portal-header-height, 108px);
 }
 
 .dashboard.visible {
@@ -2109,7 +2109,7 @@ p + p { margin-top: 1rem; }
 }
 
 @media (max-width: 768px) {
-  .dashboard { padding-top: var(--portal-header-height-mobile, 126px); }
+  .dashboard { padding-top: var(--portal-header-height-mobile, 120px); }
 }
 
 /* ── Unified portal-header (docked + compact) ──
@@ -2142,13 +2142,40 @@ p + p { margin-top: 1rem; }
   transition: none;
 }
 
+/* Flatten the navbar grid to a single flex row inside the portal-header —
+   the 56px row can't fit the old 2-row grid (icons row 1 + links row 2)
+   without overlap, so logo + icons + links all sit on one line. */
 .portal-header .navbar .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding-top: 0;
   padding-bottom: 0;
 }
 
+.portal-header .nav-brand {
+  grid-row: auto;
+  grid-column: auto;
+  flex-shrink: 0;
+}
+
 .portal-header .nav-brand img {
   height: 40px;
+}
+
+.portal-header .nav-quick-icons {
+  grid-row: auto;
+  grid-column: auto;
+  flex: 1;
+  justify-content: flex-end;
+  margin-right: 8px;
+}
+
+.portal-header .nav-links {
+  grid-row: auto;
+  grid-column: auto;
+  flex-shrink: 0;
 }
 
 /* Compact greeting strip — one slim gradient band, centered */
@@ -7751,12 +7778,11 @@ button.staff-role:hover {
 }
 .rd-edit-btn { margin-top: 12px; }
 .rd-playbook {
-  white-space: pre-wrap;
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.95rem;
+  line-height: 1.6;
   color: var(--color-text);
   background: #faf8fc;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-radius: 6px;
   margin: 8px 0 12px 0;
   max-height: 480px;
@@ -7764,11 +7790,62 @@ button.staff-role:hover {
   border-left: 3px solid var(--color-primary);
 }
 .rd-playbook a { color: var(--color-primary); word-break: break-word; }
+.rd-playbook p { margin: 0 0 10px 0; }
+.rd-playbook p:last-child { margin-bottom: 0; }
+.rd-playbook h2, .rd-playbook h3, .rd-playbook h4 {
+  font-family: var(--font-heading);
+  color: var(--color-primary-dark);
+  margin: 14px 0 6px 0;
+}
+.rd-playbook h2 { font-size: 1.1rem; }
+.rd-playbook h3 { font-size: 1rem; }
+.rd-playbook h4 { font-size: 0.95rem; }
+.rd-playbook ul, .rd-playbook ol { margin: 0 0 10px 24px; }
+.rd-playbook li { margin-bottom: 4px; }
+.rd-playbook blockquote {
+  border-left: 3px solid var(--color-accent);
+  margin: 8px 0;
+  padding: 2px 0 2px 12px;
+  color: var(--color-text-light);
+  font-style: italic;
+}
 .rd-playbook-edit {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.82rem;
   line-height: 1.5;
   min-height: 300px;
+}
+
+/* Quill rich-text editor for the playbook — match site typography + shell */
+.rd-playbook-editor-wrap { margin-bottom: 12px; }
+.rd-playbook-editor-wrap .ql-toolbar.ql-snow,
+.rd-playbook-editor-wrap .ql-container.ql-snow {
+  border-color: var(--color-border);
+}
+.rd-playbook-editor-wrap .ql-toolbar.ql-snow {
+  border-top-left-radius: var(--radius-sm);
+  border-top-right-radius: var(--radius-sm);
+  background: var(--color-cream);
+}
+.rd-playbook-editor-wrap .ql-container.ql-snow {
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+  min-height: 260px;
+  background: var(--color-white);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+.rd-playbook-editor-wrap .ql-editor {
+  min-height: 260px;
+}
+.rd-playbook-editor-wrap .ql-editor h2,
+.rd-playbook-editor-wrap .ql-editor h3 {
+  font-family: var(--font-heading);
+  color: var(--color-primary-dark);
+}
+.rd-playbook-editor-wrap .ql-editor a {
+  color: var(--color-primary);
 }
 .rd-hint {
   margin: 2px 0 6px 0;
@@ -8149,14 +8226,40 @@ button.staff-role:hover {
 }
 .quick-shortcut-bar .container {
   display: flex;
-  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.qsb-greeting {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.qsb-greeting strong {
+  color: var(--color-white);
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.qsb-greeting span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.qsb-pills {
+  display: flex;
   gap: 8px;
-  padding-top: 6px;
-  padding-bottom: 6px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  justify-content: center;
+  flex-shrink: 0;
 }
 .quick-shortcut-bar .container::-webkit-scrollbar { display: none; }
 .qsb-pill {
@@ -8201,15 +8304,27 @@ button.staff-role:hover {
   padding: 40px 0 60px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .quick-shortcut-bar .container {
-    gap: 5px;
-    padding-top: 7px;
-    padding-bottom: 7px;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
+  .qsb-greeting {
+    justify-content: center;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .qsb-greeting strong { font-size: 0.92rem; }
+  .qsb-greeting span { display: none; }
+  .qsb-pills { justify-content: center; }
+}
+
+@media (max-width: 640px) {
   .qsb-pill {
-    padding: 7px 11px;
-    font-size: 0.82rem;
+    padding: 5px 12px;
+    font-size: 0.8rem;
   }
   .qsb-pill svg { width: 14px; height: 14px; }
 }
@@ -8470,9 +8585,8 @@ button.staff-role:hover {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--color-border);
-  white-space: pre-wrap;
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.92rem;
+  line-height: 1.55;
   color: var(--color-text);
   max-height: 460px;
   overflow-y: auto;
@@ -8480,6 +8594,25 @@ button.staff-role:hover {
 .ws-role-playbook-body a {
   color: var(--color-primary);
   word-break: break-word;
+}
+.ws-role-playbook-body p { margin: 0 0 8px 0; }
+.ws-role-playbook-body p:last-child { margin-bottom: 0; }
+.ws-role-playbook-body h2, .ws-role-playbook-body h3, .ws-role-playbook-body h4 {
+  font-family: var(--font-heading);
+  color: var(--color-primary-dark);
+  margin: 12px 0 4px 0;
+}
+.ws-role-playbook-body h2 { font-size: 1rem; }
+.ws-role-playbook-body h3 { font-size: 0.95rem; }
+.ws-role-playbook-body h4 { font-size: 0.9rem; }
+.ws-role-playbook-body ul, .ws-role-playbook-body ol { margin: 0 0 8px 22px; }
+.ws-role-playbook-body li { margin-bottom: 3px; }
+.ws-role-playbook-body blockquote {
+  border-left: 3px solid var(--color-accent);
+  margin: 6px 0;
+  padding: 2px 0 2px 10px;
+  color: var(--color-text-light);
+  font-style: italic;
 }
 .ws-role-stamp {
   margin: 0 0 8px 0;

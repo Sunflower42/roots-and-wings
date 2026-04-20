@@ -672,8 +672,9 @@
     html += '<label class="rd-label">Responsibilities (one per line)</label>';
     html += '<textarea class="rd-textarea" id="rdEditDuties" rows="10">' + (role.duties || []).map(escapeHtml).join('\n') + '</textarea>';
     html += '<label class="rd-label">Playbook &amp; Handoff Notes</label>';
-    html += '<p class="rd-hint">Long-form guide for whoever holds this role. Timelines, instructions, troubleshooting, links\u2014anything the next person will need. URLs become clickable automatically.</p>';
-    html += '<textarea class="rd-textarea rd-playbook-edit" id="rdEditPlaybook" rows="20">' + escapeHtml(role.playbook || '') + '</textarea>';
+    html += '<p class="rd-hint">Long-form guide for whoever holds this role. Timelines, instructions, troubleshooting, links\u2014anything the next person will need. Use the toolbar to format.</p>';
+    html += '<div class="rd-playbook-editor-wrap"><div id="rdEditPlaybookQuill"></div></div>';
+    html += '<textarea id="rdEditPlaybook" style="display:none;"></textarea>';
     html += '<label class="rd-label">Reviewed by</label>';
     html += '<input class="rd-input" id="rdEditReviewedBy" value="' + escapeHtml(role.last_reviewed_by || '') + '">';
     html += '<label class="rd-label">Review date</label>';
@@ -696,11 +697,40 @@
     });
 
     if (canEdit) {
+      var quillInstance = null;
+      function initPlaybookQuill() {
+        if (quillInstance || typeof Quill === 'undefined') return;
+        var quillEl = personDetailCard.querySelector('#rdEditPlaybookQuill');
+        if (!quillEl) return;
+        quillInstance = new Quill(quillEl, {
+          theme: 'snow',
+          placeholder: 'Timelines, instructions, troubleshooting, links…',
+          modules: {
+            toolbar: [
+              [{ header: [2, 3, false] }],
+              ['bold', 'italic', 'underline'],
+              [{ list: 'ordered' }, { list: 'bullet' }],
+              ['link', 'blockquote'],
+              ['clean']
+            ]
+          }
+        });
+        // Seed with existing playbook. If legacy plain text (no HTML tags),
+        // wrap newlines in <br> so it renders readably; Quill's HTML setter
+        // accepts HTML either way.
+        var existing = role.playbook || '';
+        var seedHtml = existing;
+        if (existing && !/<[a-z][\s\S]*>/i.test(existing)) {
+          seedHtml = escapeHtml(existing).replace(/\n/g, '<br>');
+        }
+        if (seedHtml) quillInstance.clipboard.dangerouslyPasteHTML(seedHtml);
+      }
       var editBtn = personDetailCard.querySelector('#rdEditBtn');
       if (editBtn) {
         editBtn.addEventListener('click', function () {
           personDetailCard.querySelector('#rdView').style.display = 'none';
           personDetailCard.querySelector('#rdEdit').style.display = '';
+          initPlaybookQuill();
         });
       }
       var cancelBtn = personDetailCard.querySelector('#rdCancelBtn');
@@ -720,8 +750,15 @@
           var newDuties = personDetailCard.querySelector('#rdEditDuties').value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
           var newReviewedBy = personDetailCard.querySelector('#rdEditReviewedBy').value;
           var newReviewedDate = personDetailCard.querySelector('#rdEditReviewedDate').value;
-          var playbookEl = personDetailCard.querySelector('#rdEditPlaybook');
-          var newPlaybook = playbookEl ? playbookEl.value : (role.playbook || '');
+          var newPlaybook;
+          if (quillInstance) {
+            var raw = quillInstance.root.innerHTML;
+            // Quill represents an empty editor as "<p><br></p>" — treat as empty
+            newPlaybook = (raw === '<p><br></p>') ? '' : raw;
+          } else {
+            var playbookEl = personDetailCard.querySelector('#rdEditPlaybook');
+            newPlaybook = playbookEl ? playbookEl.value : (role.playbook || '');
+          }
           var googleCred = localStorage.getItem('rw_google_credential');
           fetch('/api/cleaning?action=roles&id=' + role.id, {
             method: 'PATCH',
@@ -777,11 +814,56 @@
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  // Render a block of free-form text as HTML: escape, preserve newlines (the
-  // container uses white-space: pre-wrap), and auto-linkify URLs. Used for
-  // the role playbook / handoff document.
+  // Render the playbook for display. New content saved by Quill is HTML; legacy
+  // content is plain text. If we detect HTML tags, sanitize with an allow-list
+  // (strip <script>/<style>/<iframe>, drop on* handlers, force external links
+  // to open safely). Otherwise fall back to escape + newline + autolink.
+  var PLAYBOOK_ALLOWED_TAGS = {
+    P:1, BR:1, STRONG:1, B:1, EM:1, I:1, U:1, A:1,
+    UL:1, OL:1, LI:1, H2:1, H3:1, H4:1, BLOCKQUOTE:1,
+    SPAN:1, DIV:1
+  };
+  function sanitizePlaybookHtml(html) {
+    var doc = document.implementation.createHTMLDocument('');
+    doc.body.innerHTML = html;
+    (function walk(node) {
+      var child = node.firstChild;
+      while (child) {
+        var next = child.nextSibling;
+        if (child.nodeType === 1) {
+          if (!PLAYBOOK_ALLOWED_TAGS[child.tagName]) {
+            // Replace disallowed element with its text content
+            var text = doc.createTextNode(child.textContent || '');
+            node.replaceChild(text, child);
+          } else {
+            // Strip every attribute except safe ones on <a>
+            var attrs = Array.prototype.slice.call(child.attributes);
+            for (var i = 0; i < attrs.length; i++) {
+              var a = attrs[i];
+              var keep = false;
+              if (child.tagName === 'A' && (a.name === 'href' || a.name === 'title')) {
+                var href = (a.value || '').trim();
+                if (/^(https?:|mailto:|tel:|#|\/)/i.test(href)) keep = true;
+              }
+              if (!keep) child.removeAttribute(a.name);
+            }
+            if (child.tagName === 'A') {
+              child.setAttribute('target', '_blank');
+              child.setAttribute('rel', 'noopener noreferrer');
+            }
+            walk(child);
+          }
+        }
+        child = next;
+      }
+    })(doc.body);
+    return doc.body.innerHTML;
+  }
   function renderPlaybookHtml(text) {
     if (!text) return '';
+    if (/<[a-z][\s\S]*>/i.test(text)) {
+      return sanitizePlaybookHtml(text);
+    }
     var escaped = escapeHtml(text);
     return escaped.replace(/(https?:\/\/[^\s<]+)/g, function (url) {
       var trailing = '';
@@ -903,6 +985,14 @@
       el.innerHTML = '<div style="text-align:center;color:var(--color-text-light);padding:40px 0;">No upcoming events.</div>';
       return;
     }
+
+    // Diagnostic: log colorId of each event so we can see whether Google is
+    // returning extended-palette IDs (e.g. raspberry) beyond the classic 1–11.
+    try {
+      console.log('[R&W calendar] event colorIds:', events.map(function (e) {
+        return { summary: e.summary, colorId: e.colorId || '(none)' };
+      }));
+    } catch (e) { /* ignore */ }
 
     var html = '';
     var currentMonth = '';
