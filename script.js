@@ -997,6 +997,12 @@
       return;
     }
 
+    try {
+      console.log('[R&W calendar] diag:', events.map(function (e) {
+        return { summary: e.summary, colorId: e.colorId || '(none)', src: (e.sourceCalendarId || '').slice(0, 14) };
+      }));
+    } catch (e) { /* ignore */ }
+
     var html = '';
     var currentMonth = '';
     events.forEach(function(ev) {
