@@ -7357,46 +7357,6 @@
     waiverBtn.addEventListener('click', showWaiverModal);
   }
 
-  // Policies & Guidelines launcher — shows a chooser modal with three options:
-  // Handbook (external Drive PDF), Member Agreement & Waivers (in-app modal),
-  // Google Chat Guide (external Drive doc).
-  function showPoliciesModal() {
-    if (!personDetail || !personDetailCard) return;
-    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
-    html += '<div class="policies-modal">';
-    html += '<h2 class="policies-title">Policies &amp; Guidelines</h2>';
-    html += '<p class="policies-sub">Key documents for Roots &amp; Wings members.</p>';
-    html += '<div class="policies-options">';
-    html += '<a class="policies-option" href="https://drive.google.com/file/d/1okPkRloZtr4D3_lsavayx-TKZn2fuzHp/view?usp=drive_link" target="_blank" rel="noopener noreferrer">';
-    html += '<div class="policies-option-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>';
-    html += '<div class="policies-option-text"><h3>Member Handbook</h3><p>Policies, guidelines, and co-op expectations</p></div>';
-    html += '<span class="policies-option-arrow">&rsaquo;</span>';
-    html += '</a>';
-    html += '<button type="button" class="policies-option" id="policiesWaiverBtn">';
-    html += '<div class="policies-option-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>';
-    html += '<div class="policies-option-text"><h3>Member Agreement &amp; Waivers</h3><p>Membership expectations, photo consent, data/AI use, and liability release</p></div>';
-    html += '<span class="policies-option-arrow">&rsaquo;</span>';
-    html += '</button>';
-    html += '<a class="policies-option" href="https://docs.google.com/document/d/1y3Ru6dCnKnfejb2kwHmNh42jUI8D6Q4D4f_APSGnpz0/edit?usp=drive_link" target="_blank" rel="noopener noreferrer">';
-    html += '<div class="policies-option-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>';
-    html += '<div class="policies-option-text"><h3>Google Chat Guide</h3><p>Our chat spaces and which ones to join</p></div>';
-    html += '<span class="policies-option-arrow">&rsaquo;</span>';
-    html += '</a>';
-    html += '</div></div>';
-    personDetailCard.innerHTML = html;
-    personDetail.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
-    personDetail.onclick = function (ev) { if (ev.target === personDetail) closeDetail(); };
-    var waiverOpt = document.getElementById('policiesWaiverBtn');
-    if (waiverOpt) waiverOpt.addEventListener('click', showWaiverModal);
-  }
-
-  var policiesBtn = document.getElementById('policiesBtn');
-  if (policiesBtn) {
-    policiesBtn.addEventListener('click', showPoliciesModal);
-  }
-
   // Render all coordination tabs
   function renderCoordinationTabs() {
     renderSessionTab();

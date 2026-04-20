@@ -5246,8 +5246,7 @@ button.staff-role:hover {
 .person-detail-card:has(.sc-modal),
 .person-detail-card:has(.cl-modal),
 .person-detail-card:has(.rd-modal),
-.person-detail-card:has(.wv-modal),
-.person-detail-card:has(.policies-modal) {
+.person-detail-card:has(.wv-modal) {
   max-width: 880px;
 }
 .wv-modal {
@@ -5256,79 +5255,66 @@ button.staff-role:hover {
 }
 
 /* ==========================================================================
-   Policies & Guidelines chooser modal
+   Policies & Guidelines card — three inline sub-links
    ========================================================================== */
-.policies-modal {
-  max-width: 640px;
-  width: 100%;
-  padding: 8px 4px 4px;
+.link-card-policies {
+  cursor: default;
 }
-.policies-title {
-  font-family: var(--font-heading);
-  color: var(--color-primary-dark);
-  margin: 0 0 6px;
-  font-size: 1.5rem;
+.link-card-policies:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
+  border-color: var(--color-border);
 }
-.policies-sub {
-  color: var(--color-text-light);
-  margin: 0 0 20px;
-  font-size: 0.95rem;
+.link-card-policies h3 {
+  margin-bottom: 10px;
 }
-.policies-options {
+.policy-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  width: 100%;
 }
-.policies-option {
+.policy-links li { margin: 0; }
+.policy-links a,
+.policy-links button {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
-  background: var(--color-white);
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary-dark);
   text-decoration: none;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
   font: inherit;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
-.policies-option:hover,
-.policies-option:focus-visible {
+.policy-links a:hover,
+.policy-links a:focus-visible,
+.policy-links button:hover,
+.policy-links button:focus-visible {
   border-color: var(--color-primary);
-  box-shadow: 0 2px 8px rgba(82, 58, 121, 0.12);
-  transform: translateY(-1px);
+  background: var(--color-white);
+  color: var(--color-primary);
   outline: none;
 }
-.policies-option-icon {
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(82, 58, 121, 0.08);
-  color: var(--color-primary);
-  border-radius: 50%;
-}
-.policies-option-text { flex: 1 1 auto; min-width: 0; }
-.policies-option-text h3 {
-  margin: 0 0 3px;
-  font-size: 1.02rem;
-  color: var(--color-primary-dark);
-  font-family: var(--font-heading);
-}
-.policies-option-text p {
-  margin: 0;
-  font-size: 0.85rem;
+.policy-link-arrow {
   color: var(--color-text-light);
-  line-height: 1.35;
-}
-.policies-option-arrow {
-  color: var(--color-text-light);
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   flex: 0 0 auto;
+}
+.policy-links a:hover .policy-link-arrow,
+.policy-links button:hover .policy-link-arrow {
+  color: var(--color-primary);
 }
 
 /* ==========================================================================
