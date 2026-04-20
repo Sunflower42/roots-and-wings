@@ -637,10 +637,6 @@
       });
       html += '</ul>';
     }
-    if (role.playbook) {
-      html += '<h4 class="rd-section-title">Playbook &amp; Handoff Notes</h4>';
-      html += '<div class="rd-playbook">' + renderPlaybookHtml(role.playbook) + '</div>';
-    }
     var updatedBy = role.updated_by || '';
     var updatedOn = formatUpdatedAt(role.updated_at);
     if (updatedBy || updatedOn) {
@@ -671,10 +667,6 @@
     html += '<input class="rd-input" id="rdEditJobLength" value="' + escapeHtml(role.job_length || '') + '">';
     html += '<label class="rd-label">Responsibilities (one per line)</label>';
     html += '<textarea class="rd-textarea" id="rdEditDuties" rows="10">' + (role.duties || []).map(escapeHtml).join('\n') + '</textarea>';
-    html += '<label class="rd-label">Playbook &amp; Handoff Notes</label>';
-    html += '<p class="rd-hint">Long-form guide for whoever holds this role. Timelines, instructions, troubleshooting, links\u2014anything the next person will need. Use the toolbar to format.</p>';
-    html += '<div class="rd-playbook-editor-wrap"><div id="rdEditPlaybookQuill"></div></div>';
-    html += '<textarea id="rdEditPlaybook" style="display:none;"></textarea>';
     html += '<label class="rd-label">Reviewed by</label>';
     html += '<input class="rd-input" id="rdEditReviewedBy" value="' + escapeHtml(role.last_reviewed_by || '') + '">';
     html += '<label class="rd-label">Review date</label>';
@@ -697,40 +689,11 @@
     });
 
     if (canEdit) {
-      var quillInstance = null;
-      function initPlaybookQuill() {
-        if (quillInstance || typeof Quill === 'undefined') return;
-        var quillEl = personDetailCard.querySelector('#rdEditPlaybookQuill');
-        if (!quillEl) return;
-        quillInstance = new Quill(quillEl, {
-          theme: 'snow',
-          placeholder: 'Timelines, instructions, troubleshooting, links…',
-          modules: {
-            toolbar: [
-              [{ header: [2, 3, false] }],
-              ['bold', 'italic', 'underline'],
-              [{ list: 'ordered' }, { list: 'bullet' }],
-              ['link', 'blockquote'],
-              ['clean']
-            ]
-          }
-        });
-        // Seed with existing playbook. If legacy plain text (no HTML tags),
-        // wrap newlines in <br> so it renders readably; Quill's HTML setter
-        // accepts HTML either way.
-        var existing = role.playbook || '';
-        var seedHtml = existing;
-        if (existing && !/<[a-z][\s\S]*>/i.test(existing)) {
-          seedHtml = escapeHtml(existing).replace(/\n/g, '<br>');
-        }
-        if (seedHtml) quillInstance.clipboard.dangerouslyPasteHTML(seedHtml);
-      }
       var editBtn = personDetailCard.querySelector('#rdEditBtn');
       if (editBtn) {
         editBtn.addEventListener('click', function () {
           personDetailCard.querySelector('#rdView').style.display = 'none';
           personDetailCard.querySelector('#rdEdit').style.display = '';
-          initPlaybookQuill();
         });
       }
       var cancelBtn = personDetailCard.querySelector('#rdCancelBtn');
@@ -750,15 +713,6 @@
           var newDuties = personDetailCard.querySelector('#rdEditDuties').value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
           var newReviewedBy = personDetailCard.querySelector('#rdEditReviewedBy').value;
           var newReviewedDate = personDetailCard.querySelector('#rdEditReviewedDate').value;
-          var newPlaybook;
-          if (quillInstance) {
-            var raw = quillInstance.root.innerHTML;
-            // Quill represents an empty editor as "<p><br></p>" — treat as empty
-            newPlaybook = (raw === '<p><br></p>') ? '' : raw;
-          } else {
-            var playbookEl = personDetailCard.querySelector('#rdEditPlaybook');
-            newPlaybook = playbookEl ? playbookEl.value : (role.playbook || '');
-          }
           var googleCred = localStorage.getItem('rw_google_credential');
           fetch('/api/cleaning?action=roles&id=' + role.id, {
             method: 'PATCH',
@@ -768,28 +722,22 @@
               job_length: newJobLength,
               duties: newDuties,
               last_reviewed_by: newReviewedBy,
-              last_reviewed_date: newReviewedDate,
-              playbook: newPlaybook
+              last_reviewed_date: newReviewedDate
             })
           })
           .then(function (res) { return res.json(); })
           .then(function (data) {
             if (data.ok) {
-              // Update local cache
               role.overview = newOverview;
               role.job_length = newJobLength;
               role.duties = newDuties;
               role.last_reviewed_by = newReviewedBy;
               role.last_reviewed_date = newReviewedDate;
-              role.playbook = newPlaybook;
               role.updated_at = new Date().toISOString();
-              // Active email (respects View As) for the stamp preview.
               role.updated_by = (typeof getActiveEmail === 'function' && getActiveEmail()) || role.updated_by || '';
               try { localStorage.setItem(CACHE_ROLES_KEY, JSON.stringify({ roles: roleDescriptions })); } catch (e) { /* quota */ }
               closeDetail();
               showRoleDescriptionModal(roleKey, canEdit);
-              // Workspace may be open — re-render so the Edit button section
-              // shows the fresh playbook and updated-by stamp immediately.
               if (typeof renderWorkspaceTab === 'function') {
                 try { renderWorkspaceTab(); } catch (e) { /* workspace tab not rendered — fine */ }
               }
