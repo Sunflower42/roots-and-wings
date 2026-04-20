@@ -3344,16 +3344,22 @@
       html += '<span>$' + sem.subtotal.toFixed(2) + '</span>';
       html += '</div>';
 
-      // Processing fee
-      html += '<div class="mf-billing-line mf-billing-fee-line">';
-      html += '<span>Processing fee</span>';
-      html += '<span>$' + sem.paypalFee.toFixed(2) + '</span>';
-      html += '</div>';
+      // Processing fee (only relevant for unpaid balances)
+      if (!isPaid) {
+        html += '<div class="mf-billing-line mf-billing-fee-line">';
+        html += '<span>Processing fee</span>';
+        html += '<span>$' + sem.paypalFee.toFixed(2) + '</span>';
+        html += '</div>';
+      }
 
-      // Balance due
+      // Bottom line: relabel to match status so Paid families don't see
+      // a confusing "Balance due" next to a Paid badge.
+      var bottomLabel = isPaid ? 'Amount paid'
+        : isPending ? 'Payment submitted' : 'Balance due';
+      var bottomAmount = isPaid ? sem.subtotal : sem.total;
       html += '<div class="mf-billing-line mf-billing-balance">';
-      html += '<span>Balance due</span>';
-      html += '<span>$' + sem.total.toFixed(2) + '</span>';
+      html += '<span>' + bottomLabel + '</span>';
+      html += '<span>$' + bottomAmount.toFixed(2) + '</span>';
       html += '</div>';
       html += '</div>';
 
