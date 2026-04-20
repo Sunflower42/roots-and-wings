@@ -1094,10 +1094,20 @@
       this.classList.add('active');
       var panel = document.getElementById('tab-' + tabId);
       if (panel) panel.classList.add('active');
-      // Workspace pulls async data (waivers report) — refresh on activation
-      if (tabId === 'workspace' && typeof renderWorkspaceTab === 'function') {
-        renderWorkspaceTab();
-      }
+    });
+  });
+
+  // Page-level mode switcher: Workspace / Info (top-level, peer of each other)
+  document.querySelectorAll('.page-mode-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var mode = this.getAttribute('data-mode');
+      document.querySelectorAll('.page-mode-btn').forEach(function (b) { b.classList.remove('active'); });
+      this.classList.add('active');
+      var ws = document.getElementById('page-workspace');
+      var info = document.getElementById('page-info');
+      if (ws) ws.style.display = mode === 'workspace' ? '' : 'none';
+      if (info) info.style.display = mode === 'info' ? '' : 'none';
+      if (mode === 'workspace' && typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
     });
   });
 
@@ -4350,7 +4360,11 @@
     }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
     .then(function (res) {
       if (!res.ok) {
-        body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load waivers: ' + ((res.data && res.data.error) || 'error') + '</p>';
+        var msg = (res.data && res.data.error) || 'error';
+        if (res.data && res.data.youAre) {
+          msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+        }
+        body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load waivers: ' + msg + '</p>';
         return;
       }
       var backup = res.data.backup || [];
@@ -7108,11 +7122,11 @@
     renderCleaningTab();
     renderVolunteersTab();
     renderEventsTab();
-    if (typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
   }
 
   // Render tabs on load
   renderCoordinationTabs();
+  if (typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
 
   // Render on load if already logged in with a non-expired credential.
   if (localStorage.getItem(SESSION_KEY) === 'true' && hasValidStoredCredential()) {

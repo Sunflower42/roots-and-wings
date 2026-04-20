@@ -11,7 +11,7 @@ const { Resend } = require('resend');
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { ALLOWED_ORIGINS } = require('./_config');
-const { canEditAsRole } = require('./_permissions');
+const { canEditAsRole, getRoleHolderEmail } = require('./_permissions');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
@@ -469,7 +469,12 @@ async function handleWaiversReport(req, res) {
   const user = await verifyWorkspaceAuth(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   if (!(await canEditAsRole(user.email, 'Communications Director'))) {
-    return res.status(403).json({ error: 'Only the Communications Director can view this report.' });
+    const expected = await getRoleHolderEmail('Communications Director');
+    return res.status(403).json({
+      error: 'Only the Communications Director can view this report.',
+      youAre: user.email,
+      expected: expected || '(unknown — sheet lookup failed)'
+    });
   }
   try {
     const sql = getSql();
@@ -498,7 +503,12 @@ async function handleWaiverSend(body, req, res) {
   const user = await verifyWorkspaceAuth(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   if (!(await canEditAsRole(user.email, 'Communications Director'))) {
-    return res.status(403).json({ error: 'Only the Communications Director can send one-off waivers.' });
+    const expected = await getRoleHolderEmail('Communications Director');
+    return res.status(403).json({
+      error: 'Only the Communications Director can send one-off waivers.',
+      youAre: user.email,
+      expected: expected || '(unknown — sheet lookup failed)'
+    });
   }
 
   const name = String(body.name || '').trim();
