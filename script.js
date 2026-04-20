@@ -809,6 +809,148 @@
     }
   }
 
+  // Dedicated Playbook & Handoff Notes modal with a view ↔ edit toggle.
+  // Persists via the same /api/cleaning?action=roles endpoint that the
+  // full role-description modal uses, but only touches the playbook
+  // column — overview/duties/etc. are unaffected.
+  function showRolePlaybookModal(roleKey, canEdit) {
+    var role = getRoleByKey(roleKey);
+    if (!role || !personDetail || !personDetailCard) return;
+
+    function renderPlaybookBody() {
+      if (!role.playbook) {
+        return '<p class="ws-empty">No playbook yet. ' + (canEdit ? 'Click Edit to add the first notes.' : '') + '</p>';
+      }
+      return '<div class="rd-playbook">' + renderPlaybookHtml(role.playbook) + '</div>';
+    }
+
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail rd-modal">';
+
+    // View mode
+    html += '<div class="rd-view" id="rpbView">';
+    html += '<h3 class="rd-title">' + escapeHtml(role.title) + '</h3>';
+    html += '<p class="rd-subtitle">Playbook &amp; Handoff Notes</p>';
+    html += '<div id="rpbViewBody">' + renderPlaybookBody() + '</div>';
+    if (canEdit) {
+      html += '<button class="btn btn-sm btn-outline-dark" id="rpbEditBtn" style="margin-top:12px;">';
+      html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+      html += ' Edit</button>';
+    }
+    html += '</div>';
+
+    // Edit mode (hidden initially)
+    if (canEdit) {
+      html += '<div class="rd-edit" id="rpbEdit" style="display:none;">';
+      html += '<h3 class="rd-title">Edit Playbook</h3>';
+      html += '<p class="rd-hint">Long-form guide for whoever holds this role. Timelines, instructions, troubleshooting, links\u2014anything the next person will need.</p>';
+      html += '<div class="rd-playbook-editor-wrap"><div id="rpbQuill"></div></div>';
+      html += '<div class="rd-btn-row">';
+      html += '<button class="btn rd-save-btn" id="rpbSaveBtn">Save</button>';
+      html += '<button class="btn rd-cancel-btn" id="rpbCancelBtn">Cancel</button>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) {
+      if (e.target === personDetail) closeDetail();
+    });
+
+    if (!canEdit) return;
+
+    var viewEl = personDetailCard.querySelector('#rpbView');
+    var editEl = personDetailCard.querySelector('#rpbEdit');
+    var viewBodyEl = personDetailCard.querySelector('#rpbViewBody');
+    var quillInstance = null;
+
+    function initQuill() {
+      if (quillInstance || typeof Quill === 'undefined') return;
+      var quillEl = personDetailCard.querySelector('#rpbQuill');
+      if (!quillEl) return;
+      quillInstance = new Quill(quillEl, {
+        theme: 'snow',
+        placeholder: 'Timelines, instructions, troubleshooting, links\u2026',
+        modules: {
+          toolbar: [
+            [{ header: [2, 3, false] }],
+            ['bold', 'italic', 'underline'],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            ['link', 'blockquote'],
+            ['clean']
+          ]
+        }
+      });
+      var existing = role.playbook || '';
+      var seedHtml = existing;
+      if (existing && !/<[a-z][\s\S]*>/i.test(existing)) {
+        seedHtml = escapeHtml(existing).replace(/\n/g, '<br>');
+      }
+      if (seedHtml) quillInstance.clipboard.dangerouslyPasteHTML(seedHtml);
+    }
+
+    personDetailCard.querySelector('#rpbEditBtn').addEventListener('click', function () {
+      viewEl.style.display = 'none';
+      editEl.style.display = '';
+      initQuill();
+    });
+
+    personDetailCard.querySelector('#rpbCancelBtn').addEventListener('click', function () {
+      editEl.style.display = 'none';
+      viewEl.style.display = '';
+    });
+
+    personDetailCard.querySelector('#rpbSaveBtn').addEventListener('click', function () {
+      var saveBtn = this;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+      var newPlaybook = '';
+      if (quillInstance) {
+        var raw = quillInstance.root.innerHTML;
+        newPlaybook = (raw === '<p><br></p>') ? '' : raw;
+      }
+      var googleCred = localStorage.getItem('rw_google_credential');
+      fetch('/api/cleaning?action=roles&id=' + role.id, {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + googleCred, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playbook: newPlaybook })
+      })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          role.playbook = newPlaybook;
+          role.updated_at = new Date().toISOString();
+          role.updated_by = (typeof getActiveEmail === 'function' && getActiveEmail()) || role.updated_by || '';
+          try { localStorage.setItem(CACHE_ROLES_KEY, JSON.stringify({ roles: roleDescriptions })); } catch (e) { /* quota */ }
+          // Swap view body content + flip back to view mode without closing.
+          viewBodyEl.innerHTML = renderPlaybookBody();
+          editEl.style.display = 'none';
+          viewEl.style.display = '';
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save';
+          if (typeof renderWorkspaceTab === 'function') {
+            try { renderWorkspaceTab(); } catch (e) { /* workspace tab not rendered — fine */ }
+          }
+        } else {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save';
+          alert('Save failed: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+        alert('Save failed. Please try again.');
+      });
+    });
+  }
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -4614,40 +4756,53 @@
 
       var s = '<section class="workspace-role-section">';
       var role = (opts.showNotes && roleKey) ? getRoleByKey(roleKey) : null;
-      s += '<header class="ws-role-header"><h4>' + escapeHtml(heading) + '</h4>';
-      if (role && role.overview) {
-        s += '<p class="ws-role-description">' + escapeHtml(role.overview) + '</p>';
-      }
-      s += '</header>';
+      s += '<header class="ws-role-header"><h4>' + escapeHtml(heading) + '</h4></header>';
 
       if (opts.showNotes && roleKey) {
+        // Combined handoff card: Job Description link, Playbook link, private notes.
+        s += '<div class="mf-card ws-handoff-card">';
+        s += '<div class="ws-handoff-links">';
+
+        // Job Description link — shows updated_by/updated_at stamp.
+        s += '<button class="ws-handoff-link" data-role-key="' + roleKey + '" data-handoff-action="jobdesc">';
+        s += '<span class="ws-handoff-link-icon" aria-hidden="true">';
+        s += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
+        s += '</span>';
+        s += '<span class="ws-handoff-link-body"><span class="ws-handoff-link-title">Job Description</span>';
         if (role) {
-          // Shared role description + playbook (stored in Postgres, edited
-          // via the modal by the current role holder).
-          s += '<div class="ws-role-desc-block">';
-          if (role.playbook) {
-            s += '<details class="ws-role-playbook"><summary>Playbook &amp; handoff notes</summary>';
-            s += '<div class="ws-role-playbook-body">' + renderPlaybookHtml(role.playbook) + '</div>';
-            s += '</details>';
-          }
-          s += '<div class="ws-role-meta">';
-          s += '<button class="btn btn-sm btn-outline-dark ws-role-edit-btn" data-role-key="' + roleKey + '">Edit description &amp; playbook</button>';
           var uBy = role.updated_by || '';
           var uOn = formatUpdatedAt(role.updated_at);
           if (uBy || uOn) {
-            s += '<span class="ws-role-stamp">Updated';
+            s += '<span class="ws-handoff-link-meta">Updated';
             if (uOn) s += ' ' + escapeHtml(uOn);
             if (uBy) s += ' by ' + escapeHtml(uBy);
             s += '</span>';
           }
-          s += '</div>';
-          s += '</div>';
         }
+        s += '</span>';
+        s += '<span class="ws-handoff-link-chev" aria-hidden="true">›</span>';
+        s += '</button>';
+
+        // Playbook & Handoff Notes link
+        s += '<button class="ws-handoff-link" data-role-key="' + roleKey + '" data-handoff-action="playbook">';
+        s += '<span class="ws-handoff-link-icon" aria-hidden="true">';
+        s += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+        s += '</span>';
+        s += '<span class="ws-handoff-link-body"><span class="ws-handoff-link-title">Playbook &amp; Handoff Notes</span>';
+        s += '<span class="ws-handoff-link-meta">' + (role && role.playbook ? 'View or edit' : 'Add the first notes') + '</span>';
+        s += '</span>';
+        s += '<span class="ws-handoff-link-chev" aria-hidden="true">›</span>';
+        s += '</button>';
+
+        s += '</div>'; // /.ws-handoff-links
+
         var notesVal = getWorkspaceNotes(roleKey);
         s += '<div class="ws-role-notes">';
         s += '<label class="ws-role-notes-label" for="ws-notes-' + roleKey + '">My private notes <span class="ws-role-notes-scope">(only you)</span></label>';
         s += '<textarea class="ws-role-notes-textarea" id="ws-notes-' + roleKey + '" data-role-key="' + roleKey + '" rows="3" placeholder="Reminders, scratch work, anything just for you. Not visible to the next role holder.">' + escapeHtml(notesVal) + '</textarea>';
         s += '</div>';
+
+        s += '</div>'; // /.ws-handoff-card
       }
 
       if (visible.length === 0) {
@@ -4706,13 +4861,17 @@
       });
     });
 
-    // Edit role description / playbook: opens the shared modal in edit mode.
+    // Handoff card links: route to Job Description or Playbook modal.
     // canEdit=true is safe — the section only renders for roles the current
     // viewer actually holds (getWorkspaceRoles put it there).
-    container.querySelectorAll('.ws-role-edit-btn').forEach(function (btn) {
+    container.querySelectorAll('.ws-handoff-link').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var key = this.getAttribute('data-role-key');
-        if (key && typeof showRoleDescriptionModal === 'function') {
+        var action = this.getAttribute('data-handoff-action');
+        if (!key) return;
+        if (action === 'playbook' && typeof showRolePlaybookModal === 'function') {
+          showRolePlaybookModal(key, true);
+        } else if (typeof showRoleDescriptionModal === 'function') {
           showRoleDescriptionModal(key, true);
         }
       });
