@@ -8351,6 +8351,8 @@ button.staff-role:hover {
 .workspace-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .workspace-card-header {
   display: flex;
@@ -8377,6 +8379,7 @@ button.staff-role:hover {
   gap: 10px;
   font-family: var(--font-body);
   color: var(--color-text);
+  min-width: 0;
 }
 .ws-body-hint {
   margin: 0 0 4px 0;
@@ -8564,6 +8567,8 @@ button.staff-role:hover {
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .ws-waivers-table thead th {
   position: sticky;
@@ -8595,11 +8600,11 @@ button.staff-role:hover {
   line-height: 1.3;
 }
 .ws-role-description {
-  margin: 0 0 12px 0;
-  padding: 12px 14px;
-  background: rgba(var(--color-primary-rgb), 0.06);
-  border-left: 3px solid var(--color-primary);
-  border-radius: var(--radius-sm);
+  margin: 0 0 14px 0;
+  padding: 0;
+  background: transparent;
+  border-left: none;
+  border-radius: 0;
   font-family: var(--font-body);
   font-size: 0.95rem;
   line-height: 1.6;
@@ -8617,13 +8622,43 @@ button.staff-role:hover {
 }
 .ws-role-playbook summary {
   cursor: pointer;
-  font-family: var(--font-body);
+  font-family: var(--font-heading);
   font-weight: 700;
-  color: var(--color-primary);
-  font-size: 0.9rem;
+  color: var(--color-primary-dark);
+  font-size: 1rem;
   padding: 2px 0;
+  letter-spacing: 0.01em;
 }
 .ws-role-playbook summary:hover { text-decoration: underline; }
+
+/* Wednesday Routine collapsible in the Co-op Calendar modal */
+.cal-routine-details { padding: 14px 18px; }
+.cal-routine-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  font-size: 1.05rem;
+  list-style: none;
+}
+.cal-routine-summary::-webkit-details-marker { display: none; }
+.cal-routine-summary::marker { content: ''; }
+.cal-routine-summary::after {
+  content: '';
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-primary);
+  border-bottom: 2px solid var(--color-primary);
+  transform: rotate(-45deg);
+  transition: transform var(--transition-fast);
+}
+.cal-routine-details[open] .cal-routine-summary::after {
+  transform: rotate(45deg);
+}
 .ws-role-playbook-body {
   margin-top: 10px;
   padding-top: 10px;
@@ -8677,19 +8712,20 @@ button.staff-role:hover {
   margin: 0 0 16px 0;
 }
 .ws-role-notes-label {
-  font-family: var(--font-body);
-  font-size: 0.8rem;
-  color: var(--color-text-light);
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  color: var(--color-primary-dark);
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.5px;
   display: flex;
   align-items: baseline;
   gap: 6px;
 }
 .ws-role-notes-scope {
+  font-family: var(--font-body);
   font-weight: 400;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   color: var(--color-text-light);
   font-style: italic;
   text-transform: none;

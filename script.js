@@ -4628,7 +4628,7 @@
             if (uOn) s += ' on ' + escapeHtml(uOn);
             s += '</p>';
           }
-          s += '<button class="sc-btn ws-role-edit-btn" data-role-key="' + roleKey + '">Edit role description &amp; playbook</button>';
+          s += '<button class="btn btn-sm btn-outline-dark ws-role-edit-btn" data-role-key="' + roleKey + '">Edit role description &amp; playbook</button>';
           s += '</div>';
         }
         var notesVal = getWorkspaceNotes(roleKey);
