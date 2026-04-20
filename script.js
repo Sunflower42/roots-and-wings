@@ -2223,6 +2223,43 @@
   // Initial render
   renderDirectory();
 
+  // Directory modal — opened from the nav quick-icons row. Person-card
+  // taps still open the shared #personDetail overlay, which stacks on top
+  // (higher z-index) so Close returns the user to the directory grid.
+  var directoryOverlay = document.getElementById('directoryOverlay');
+  function showDirectoryModal() {
+    if (!directoryOverlay) return;
+    renderDirectory();
+    directoryOverlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+  function closeDirectoryModal() {
+    if (!directoryOverlay) return;
+    directoryOverlay.style.display = 'none';
+    if (!personDetail || personDetail.style.display === 'none') {
+      document.body.style.overflow = '';
+    }
+  }
+  var directoryNavBtn = document.getElementById('directoryNavBtn');
+  if (directoryNavBtn) directoryNavBtn.addEventListener('click', showDirectoryModal);
+  if (directoryOverlay) {
+    var directoryCloseBtn = directoryOverlay.querySelector('.directory-close');
+    if (directoryCloseBtn) directoryCloseBtn.addEventListener('click', closeDirectoryModal);
+    directoryOverlay.addEventListener('click', function (e) {
+      if (e.target === directoryOverlay) closeDirectoryModal();
+    });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    // Only close the directory if the person-detail overlay isn't the
+    // top-most modal — otherwise let the existing Escape handler close
+    // the person card first.
+    if (directoryOverlay && directoryOverlay.style.display === 'flex'
+        && (!personDetail || personDetail.style.display === 'none')) {
+      closeDirectoryModal();
+    }
+  });
+
   // Board card click handlers
   document.querySelectorAll('.portal-board-card[data-board]').forEach(function (card) {
     card.style.cursor = 'pointer';
@@ -3081,17 +3118,14 @@
       });
     });
 
-    // Wire up "View Class" buttons
+    // Wire up "View Class" buttons — opens the AM class detail modal
+    // (same popup used for duties), giving a focused view of the class's
+    // teacher, topic, and students rather than dumping the user into
+    // the full Directory filtered view.
     grid.querySelectorAll('.mf-class-link').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var group = this.getAttribute('data-group');
-        activeFilter = group;
-        document.querySelectorAll('.filter-pill').forEach(function (p) {
-          p.classList.toggle('active', p.getAttribute('data-filter') === group);
-        });
-        renderDirectory();
-        var dirSection = document.getElementById('directory');
-        if (dirSection) dirSection.scrollIntoView({behavior: 'smooth'});
+        showDutyDetail({ popup: { type: 'amClass', group: group, session: currentSession } });
       });
     });
 
@@ -3433,17 +3467,11 @@
       });
     });
 
-    // Wire up full row clicks → jump to directory with that class filter
+    // Wire up full row clicks → open the AM class detail modal for that group
     container.querySelectorAll('.session-class-row').forEach(function (row) {
       row.onclick = function () {
         var group = this.getAttribute('data-group');
-        activeFilter = group;
-        document.querySelectorAll('.filter-pill').forEach(function (p) {
-          p.classList.toggle('active', p.getAttribute('data-filter') === group);
-        });
-        renderDirectory();
-        var dirSection = document.getElementById('directory');
-        if (dirSection) dirSection.scrollIntoView({ behavior: 'smooth' });
+        showDutyDetail({ popup: { type: 'amClass', group: group, session: currentSession } });
       };
     });
   }

@@ -3144,6 +3144,49 @@ p + p { margin-top: 1rem; }
   padding: 20px;
 }
 
+/* Directory modal — wider/taller container than the shared person-detail
+   card, because it hosts filter pills, search, and the yearbook grid.
+   Sits below #personDetail in the z-index stack so person cards can
+   stack on top when a face is tapped. */
+.directory-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.directory-modal-card {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  max-width: 1100px;
+  width: 100%;
+  padding: 28px 28px 32px;
+  position: relative;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+}
+.directory-modal-title {
+  font-family: var(--font-heading);
+  color: var(--color-primary-dark);
+  margin: 0 0 6px;
+  text-align: center;
+}
+.directory-modal-sub {
+  color: var(--color-text-light);
+  margin: 0 0 20px;
+  text-align: center;
+  font-size: 0.95rem;
+}
+@media (max-width: 640px) {
+  .directory-overlay { padding: 16px 8px; }
+  .directory-modal-card { padding: 20px 16px 24px; max-height: calc(100vh - 32px); }
+}
+
 .person-detail-card {
   background: var(--color-white);
   border-radius: var(--radius-lg);
