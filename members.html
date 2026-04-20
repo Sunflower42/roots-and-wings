@@ -19,7 +19,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="preload" href="logo-combined.png?v=20260417d" as="image">
   <link rel="preload" href="logo-combined-mark.png?v=20260417d" as="image">
-  <link rel="stylesheet" href="styles.css?v=20260420l">
+  <link rel="stylesheet" href="styles.css?v=20260420m">
   <link rel="icon" href="favicon-32.png?v=20260417d" type="image/png" sizes="32x32">
   <script src="https://accounts.google.com/gsi/client" async defer onload="if(window.__initGSI)window.__initGSI()"></script>
 </head>
@@ -62,7 +62,15 @@
       </div>
     </div>
 
-    <!-- Nav -->
+    <!-- ====== Unified Portal Header ======
+         One cohesive chrome that fuses the top nav (brand + icons + menu),
+         the greeting hero (name + next-co-op subtitle + watermark), and the
+         view-mode pills (My Family / My Workspace). Shared gradient + a single
+         container keeps them reading as ONE element instead of three stacked
+         bars. The inner .navbar stays position:fixed for the whole-app scroll
+         behavior; the hero and pills sit in normal flow beneath it. -->
+    <header class="portal-header" role="banner">
+    <!-- Nav (fixed to top of viewport; styled to blend with the gradient below) -->
     <nav class="navbar scrolled" role="navigation" aria-label="Member navigation">
       <div class="container">
         <a href="index.html" class="nav-brand" aria-label="Roots & Wings Indy home">
@@ -155,7 +163,18 @@
       </div>
     </nav>
 
-    <!-- ====== Sticky Quick-Access Shortcut Bar (desktop + mobile) ====== -->
+    <!-- Greeting hero — scrolls with the page, watermark behind -->
+    <div class="dashboard-header">
+      <div class="hero-watermark" aria-hidden="true">
+        <img src="logo-combined-mark.png?v=20260417d" alt="">
+      </div>
+      <div class="container" style="position: relative; z-index: 1;">
+        <h1 id="dashboardGreeting">Welcome, Roots & Wings Family!</h1>
+        <p id="dashboardSubtitle">Your hub for co-op resources, schedules, and communication.</p>
+      </div>
+    </div>
+
+    <!-- View-mode pills — stick to the bottom of the fixed navbar once the greeting scrolls away -->
     <nav class="quick-shortcut-bar" aria-label="Quick access">
       <div class="container">
         <a href="#myFamily" class="qsb-pill active" data-view="info">
@@ -168,17 +187,7 @@
         </a>
       </div>
     </nav>
-
-    <!-- Dashboard Header -->
-    <header class="dashboard-header">
-      <div class="hero-watermark" aria-hidden="true">
-        <img src="logo-combined-mark.png?v=20260417d" alt="">
-      </div>
-      <div class="container" style="position: relative; z-index: 1;">
-        <h1 id="dashboardGreeting">Welcome, Roots & Wings Family!</h1>
-        <p id="dashboardSubtitle">Your hub for co-op resources, schedules, and communication.</p>
-      </div>
-    </header>
+    </header><!-- /.portal-header -->
 
     <!-- ====== My Workspace (toggles in when a Workspace nav-link is clicked) ====== -->
     <section class="page-mode-panel" id="page-workspace" role="region" aria-label="My Workspace" style="display:none;">
@@ -422,6 +431,6 @@
   </div><!-- end .dashboard -->
 
   <script src="https://www.paypal.com/sdk/js?client-id=BAAEXrFcNz-Q5sFay27KpbAs3d29W3AdjACtLpfAJXN5XshPFGjdnKD7ueLJcdHCNUNlhk7YigOuyoB1HQ&components=buttons&enable-funding=venmo&currency=USD" data-namespace="paypal_sdk"></script>
-  <script src="script.js?v=20260420l"></script>
+  <script src="script.js?v=20260420m"></script>
 </body>
 </html>
