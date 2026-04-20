@@ -3121,11 +3121,14 @@
     // Wire up "View Class" buttons — opens the AM class detail modal
     // (same popup used for duties), giving a focused view of the class's
     // teacher, topic, and students rather than dumping the user into
-    // the full Directory filtered view.
+    // the full Directory filtered view. Normalize "Teens" → "Pigeons"
+    // because AM_CLASSES is keyed by the canonical name.
     grid.querySelectorAll('.mf-class-link').forEach(function (btn) {
-      btn.addEventListener('click', function () {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
         var group = this.getAttribute('data-group');
-        showDutyDetail({ popup: { type: 'amClass', group: group, session: currentSession } });
+        var lookup = group === 'Teens' ? 'Pigeons' : group;
+        showDutyDetail({ popup: { type: 'amClass', group: lookup, session: currentSession } });
       });
     });
 
