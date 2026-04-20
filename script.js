@@ -4706,68 +4706,79 @@
       var role = (opts.showNotes && roleKey) ? getRoleByKey(roleKey) : null;
       s += '<header class="ws-role-header"><h4>' + escapeHtml(heading) + '</h4></header>';
 
-      if (opts.showNotes && roleKey) {
-        // Combined handoff card: Job Description link, Playbook link, private notes.
-        s += '<div class="mf-card ws-handoff-card">';
-        s += '<div class="ws-handoff-links">';
+      var showHandoff = !!(opts.showNotes && roleKey);
 
-        // Job Description link — shows updated_by/updated_at stamp.
-        s += '<button class="ws-handoff-link" data-role-key="' + roleKey + '" data-handoff-action="jobdesc">';
-        s += '<span class="ws-handoff-link-icon" aria-hidden="true">';
-        s += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
-        s += '</span>';
-        s += '<span class="ws-handoff-link-body"><span class="ws-handoff-link-title">Job Description</span>';
-        if (role) {
-          var uBy = role.updated_by || '';
-          var uOn = formatUpdatedAt(role.updated_at);
-          if (uBy || uOn) {
-            s += '<span class="ws-handoff-link-meta">Updated';
-            if (uOn) s += ' ' + escapeHtml(uOn);
-            if (uBy) s += ' by ' + escapeHtml(uBy);
-            s += '</span>';
-          }
-        }
-        s += '</span>';
-        s += '<span class="ws-handoff-link-chev" aria-hidden="true">›</span>';
-        s += '</button>';
-
-        // Playbook & Handoff Notes link
-        s += '<button class="ws-handoff-link" data-role-key="' + roleKey + '" data-handoff-action="playbook">';
-        s += '<span class="ws-handoff-link-icon" aria-hidden="true">';
-        s += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
-        s += '</span>';
-        s += '<span class="ws-handoff-link-body"><span class="ws-handoff-link-title">Playbook &amp; Handoff Notes</span>';
-        s += '<span class="ws-handoff-link-meta">' + (role && role.playbook ? 'View or edit' : 'Add the first notes') + '</span>';
-        s += '</span>';
-        s += '<span class="ws-handoff-link-chev" aria-hidden="true">›</span>';
-        s += '</button>';
-
-        s += '</div>'; // /.ws-handoff-links
-
-        var notesVal = getWorkspaceNotes(roleKey);
-        s += '<div class="ws-role-notes">';
-        s += '<label class="ws-role-notes-label" for="ws-notes-' + roleKey + '">My private notes <span class="ws-role-notes-scope">(only you)</span></label>';
-        s += '<textarea class="ws-role-notes-textarea" id="ws-notes-' + roleKey + '" data-role-key="' + roleKey + '" rows="3" placeholder="Reminders, scratch work, anything just for you. Not visible to the next role holder.">' + escapeHtml(notesVal) + '</textarea>';
-        s += '</div>';
-
-        s += '</div>'; // /.ws-handoff-card
-      }
-
-      if (visible.length === 0) {
+      if (!showHandoff && visible.length === 0) {
         s += '<p class="ws-empty">All cards for this section are hidden. Restore one below.</p>';
       } else {
         s += '<div class="workspace-grid">';
-        visible.forEach(function (type) {
-          var w = WORKSPACE_WIDGETS[type];
-          s += '<div class="mf-card workspace-card" data-widget-type="' + type + '">';
-          s += '<div class="workspace-card-header">';
-          s += '<h4>' + w.title + '</h4>';
-          s += '<button class="sc-btn ws-hide-btn" data-widget="' + type + '" title="Hide this card">Hide</button>';
+
+        if (showHandoff) {
+          s += '<div class="mf-card workspace-card ws-handoff-card" data-widget-type="handoff">';
+          s += '<div class="workspace-card-header"><h4>Role Overview</h4></div>';
+          s += '<div class="workspace-card-body">';
+
+          s += '<div class="ws-handoff-links">';
+
+          // Job Description link — shows updated_by/updated_at stamp.
+          s += '<button class="ws-handoff-link" data-role-key="' + roleKey + '" data-handoff-action="jobdesc">';
+          s += '<span class="ws-handoff-link-icon" aria-hidden="true">';
+          s += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>';
+          s += '</span>';
+          s += '<span class="ws-handoff-link-body"><span class="ws-handoff-link-title">Job Description</span>';
+          if (role) {
+            var uBy = role.updated_by || '';
+            var uOn = formatUpdatedAt(role.updated_at);
+            if (uBy || uOn) {
+              s += '<span class="ws-handoff-link-meta">Updated';
+              if (uOn) s += ' ' + escapeHtml(uOn);
+              if (uBy) s += ' by ' + escapeHtml(uBy);
+              s += '</span>';
+            }
+          }
+          s += '</span>';
+          s += '<span class="ws-handoff-link-chev" aria-hidden="true">›</span>';
+          s += '</button>';
+
+          // Playbook & Handoff Notes link
+          s += '<button class="ws-handoff-link" data-role-key="' + roleKey + '" data-handoff-action="playbook">';
+          s += '<span class="ws-handoff-link-icon" aria-hidden="true">';
+          s += '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+          s += '</span>';
+          s += '<span class="ws-handoff-link-body"><span class="ws-handoff-link-title">Playbook &amp; Handoff Notes</span>';
+          s += '<span class="ws-handoff-link-meta">' + (role && role.playbook ? 'View or edit' : 'Add the first notes') + '</span>';
+          s += '</span>';
+          s += '<span class="ws-handoff-link-chev" aria-hidden="true">›</span>';
+          s += '</button>';
+
+          s += '</div>'; // /.ws-handoff-links
+
+          var notesVal = getWorkspaceNotes(roleKey);
+          s += '<div class="ws-role-notes">';
+          s += '<label class="ws-role-notes-label" for="ws-notes-' + roleKey + '">My private notes <span class="ws-role-notes-scope">(only you)</span></label>';
+          s += '<textarea class="ws-role-notes-textarea" id="ws-notes-' + roleKey + '" data-role-key="' + roleKey + '" rows="3" placeholder="Reminders, scratch work, anything just for you. Not visible to the next role holder.">' + escapeHtml(notesVal) + '</textarea>';
           s += '</div>';
-          s += '<div class="workspace-card-body">' + w.render(prefs, roles) + '</div>';
-          s += '</div>';
-        });
-        s += '</div>';
+
+          s += '</div>'; // /.workspace-card-body
+          s += '</div>'; // /.ws-handoff-card
+        }
+
+        if (visible.length === 0 && showHandoff) {
+          // Handoff card shown alone — no additional widgets.
+        } else {
+          visible.forEach(function (type) {
+            var w = WORKSPACE_WIDGETS[type];
+            s += '<div class="mf-card workspace-card" data-widget-type="' + type + '">';
+            s += '<div class="workspace-card-header">';
+            s += '<h4>' + w.title + '</h4>';
+            s += '<button class="sc-btn ws-hide-btn" data-widget="' + type + '" title="Hide this card">Hide</button>';
+            s += '</div>';
+            s += '<div class="workspace-card-body">' + w.render(prefs, roles) + '</div>';
+            s += '</div>';
+          });
+        }
+
+        s += '</div>'; // /.workspace-grid
       }
       s += '</section>';
       return s;

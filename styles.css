@@ -8696,13 +8696,10 @@ button.staff-role:hover {
   color: var(--color-text-light);
   font-style: italic;
 }
-.ws-handoff-card {
-  margin: 0 0 16px 0;
-  padding: 16px 18px;
+.ws-handoff-card .workspace-card-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-width: 0;
 }
 .ws-handoff-links {
   display: flex;
