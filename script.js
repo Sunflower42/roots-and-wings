@@ -4688,34 +4688,68 @@
         return h;
       }
     },
-    'send-waiver': {
-      title: 'Send One-Off Waiver',
-      roleGate: ['Communications Director'],
-      render: function () {
-        var h = '<p class="ws-body-hint">Email a signing link to a last-minute adult. They sign via <code>/waiver.html</code> — you\u2019ll see it reflected in the Waivers report.</p>';
-        h += '<div class="ws-waiver-form">';
-        h += '<label>Recipient name<input type="text" id="ws-wv-name" maxlength="200" placeholder="Jane Doe"></label>';
-        h += '<label>Recipient email<input type="email" id="ws-wv-email" maxlength="200" placeholder="jane@example.com"></label>';
-        h += '<label>Note (optional)<textarea id="ws-wv-note" maxlength="500" rows="2" placeholder="Added context that appears in the email..."></textarea></label>';
-        h += '<button class="btn btn-primary btn-sm" id="ws-wv-send">Send Waiver</button>';
-        h += '<div class="ws-wv-status" id="ws-wv-status"></div>';
-        h += '</div>';
+    'reports': {
+      title: 'Reports',
+      roleGate: ['Communications Director', 'Membership Director'],
+      render: function (prefs, roles, role) {
+        var items = (ROLE_REPORTS[role] || []);
+        var h = '<p class="ws-body-hint">Live reports scoped to your role.</p>';
+        h += '<ul class="ws-link-list">';
+        if (items.length === 0) {
+          h += '<li class="ws-empty">No reports configured for this role yet.</li>';
+        } else {
+          items.forEach(function (r) {
+            h += '<li><button type="button" class="ws-link-btn" data-report-key="' + r.key + '"><span class="ws-link-icon">\uD83D\uDCCA</span>' + escapeHtml(r.title) + '</button></li>';
+          });
+        }
+        h += '</ul>';
+        h += '<p class="ws-report-request-hint">Need a different report? Email the <a href="mailto:communications@rootsandwingsindy.com">Communications Director</a>.</p>';
         return h;
       }
     },
-    'waivers-report': {
-      title: 'Waivers Report',
-      roleGate: ['Communications Director'],
-      render: function () {
-        // Async — body is a placeholder; loadWaiversReport() fills it in.
-        return '<div id="ws-waivers-report-body"><p class="ws-empty">Loading waivers\u2026</p></div>';
-      },
-      afterRender: function () { loadWaiversReport(); }
+    'forms': {
+      title: 'Forms',
+      roleGate: ['Communications Director', 'Membership Director'],
+      render: function (prefs, roles, role) {
+        var items = (ROLE_FORMS[role] || []);
+        var h = '<p class="ws-body-hint">Send a form or invite to someone outside the co-op.</p>';
+        h += '<ul class="ws-link-list">';
+        if (items.length === 0) {
+          h += '<li class="ws-empty">No forms configured for this role yet.</li>';
+        } else {
+          items.forEach(function (f) {
+            h += '<li><button type="button" class="ws-link-btn" data-form-key="' + f.key + '"><span class="ws-link-icon">\u270D</span>' + escapeHtml(f.title) + '</button></li>';
+          });
+        }
+        h += '</ul>';
+        return h;
+      }
     }
   };
 
+  // Per-role report and form registries. Each entry opens a modal via the
+  // handlers in renderWorkspaceTab. Keep keys lowercase-kebab so they can be
+  // safely embedded in data-* attributes.
+  var ROLE_REPORTS = {
+    'Communications Director': [
+      { key: 'waivers', title: 'Waivers Report' }
+    ],
+    'Membership Director': [
+      { key: 'membership', title: 'Membership Report' }
+    ]
+  };
+  var ROLE_FORMS = {
+    'Communications Director': [
+      { key: 'send-waiver', title: 'Send One-Off Waiver' }
+    ],
+    'Membership Director': [
+      { key: 'send-registration', title: 'Send Registration Form' }
+    ]
+  };
+
   var WORKSPACE_DEFAULTS = {
-    'Communications Director': ['waivers-report', 'send-waiver', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
+    'Communications Director': ['reports', 'forms', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
+    'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
     '*': ['my-links', 'ways-to-help', 'resources']
   };
 
@@ -4872,7 +4906,7 @@
             s += '<h4>' + w.title + '</h4>';
             s += '<button class="sc-btn ws-hide-btn" data-widget="' + type + '" title="Hide this card">Hide</button>';
             s += '</div>';
-            s += '<div class="workspace-card-body">' + w.render(prefs, roles) + '</div>';
+            s += '<div class="workspace-card-body">' + w.render(prefs, roles, heading) + '</div>';
             s += '</div>';
           });
         }
@@ -4979,40 +5013,23 @@
       });
     });
 
-    // Send waiver button
-    var sendBtn = container.querySelector('#ws-wv-send');
-    if (sendBtn) {
-      sendBtn.addEventListener('click', function () {
-        var nameEl = container.querySelector('#ws-wv-name');
-        var emailEl = container.querySelector('#ws-wv-email');
-        var noteEl = container.querySelector('#ws-wv-note');
-        var statusEl = container.querySelector('#ws-wv-status');
-        var name = (nameEl.value || '').trim();
-        var emailVal = (emailEl.value || '').trim();
-        var note = (noteEl.value || '').trim();
-        if (!name || !emailVal) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = 'Name and email are required.'; return; }
-        sendBtn.disabled = true; var origLabel = sendBtn.textContent; sendBtn.textContent = 'Sending\u2026';
-        statusEl.className = 'ws-wv-status'; statusEl.textContent = '';
-        var cred = localStorage.getItem('rw_google_credential');
-        fetch('/api/tour', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind: 'waiver-send', name: name, email: emailVal, note: note })
-        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-        .then(function (res) {
-          sendBtn.disabled = false; sendBtn.textContent = origLabel;
-          if (!res.ok) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = (res.data && res.data.error) || 'Send failed.'; return; }
-          statusEl.className = 'ws-wv-status ws-wv-ok';
-          statusEl.textContent = res.data.emailed ? 'Sent. They\u2019ll get the waiver link by email shortly.' : 'Stored. Email delivery hiccupped — copy the link from the report row: ' + res.data.link;
-          nameEl.value = ''; emailEl.value = ''; noteEl.value = '';
-          loadWaiversReport();
-        }).catch(function (err) {
-          sendBtn.disabled = false; sendBtn.textContent = origLabel;
-          statusEl.className = 'ws-wv-status ws-wv-err';
-          statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
-        });
+    // Reports card: open the appropriate modal.
+    container.querySelectorAll('[data-report-key]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var key = this.getAttribute('data-report-key');
+        if (key === 'waivers') showWaiversReportModal();
+        else if (key === 'membership') showMembershipReportModal();
       });
-    }
+    });
+
+    // Forms card: open the appropriate modal.
+    container.querySelectorAll('[data-form-key]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var key = this.getAttribute('data-form-key');
+        if (key === 'send-waiver') showSendWaiverModal();
+        else if (key === 'send-registration') showSendRegistrationFormModal();
+      });
+    });
   }
 
   // Async loader for the Waivers Report widget body.
@@ -5069,6 +5086,201 @@
 
   function escapeHtmlWs(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // ─── Workspace Reports / Forms modals ───
+  //
+  // The Workspace "Reports" and "Forms" cards are just per-role link lists.
+  // Each button opens one of the modals below. Modals reuse the shared
+  // personDetail / personDetailCard chrome and .elective-detail shell so the
+  // look & feel matches Job Description / Playbook / Waiver modals.
+
+  function showWaiversReportModal() {
+    if (!personDetail || !personDetailCard) return;
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail rd-modal">';
+    html += '<h3 class="rd-title">Waivers Report</h3>';
+    html += '<p class="rd-subtitle">Everyone who has been sent a waiver — registration backups + one-off sends.</p>';
+    html += '<div id="ws-waivers-report-body"><p class="ws-empty">Loading waivers\u2026</p></div>';
+    html += '</div>';
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+    loadWaiversReport();
+  }
+
+  function showSendWaiverModal() {
+    if (!personDetail || !personDetailCard) return;
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail rd-modal">';
+    html += '<h3 class="rd-title">Send One-Off Waiver</h3>';
+    html += '<p class="rd-subtitle">Email a signing link to a last-minute adult. They sign via <code>/waiver.html</code> and it shows up in the Waivers report.</p>';
+    html += '<div class="ws-waiver-form">';
+    html += '<label>Recipient name<input type="text" id="ws-wv-name" maxlength="200" placeholder="Jane Doe"></label>';
+    html += '<label>Recipient email<input type="email" id="ws-wv-email" maxlength="200" placeholder="jane@example.com"></label>';
+    html += '<label>Note (optional)<textarea id="ws-wv-note" maxlength="500" rows="2" placeholder="Added context that appears in the email..."></textarea></label>';
+    html += '<button class="btn btn-primary btn-sm" id="ws-wv-send">Send Waiver</button>';
+    html += '<div class="ws-wv-status" id="ws-wv-status"></div>';
+    html += '</div>';
+    html += '</div>';
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+
+    var sendBtn = personDetailCard.querySelector('#ws-wv-send');
+    sendBtn.addEventListener('click', function () {
+      var nameEl = personDetailCard.querySelector('#ws-wv-name');
+      var emailEl = personDetailCard.querySelector('#ws-wv-email');
+      var noteEl = personDetailCard.querySelector('#ws-wv-note');
+      var statusEl = personDetailCard.querySelector('#ws-wv-status');
+      var name = (nameEl.value || '').trim();
+      var emailVal = (emailEl.value || '').trim();
+      var note = (noteEl.value || '').trim();
+      if (!name || !emailVal) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = 'Name and email are required.'; return; }
+      sendBtn.disabled = true; var orig = sendBtn.textContent; sendBtn.textContent = 'Sending\u2026';
+      statusEl.className = 'ws-wv-status'; statusEl.textContent = '';
+      var cred = localStorage.getItem('rw_google_credential');
+      fetch('/api/tour', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'waiver-send', name: name, email: emailVal, note: note })
+      }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        sendBtn.disabled = false; sendBtn.textContent = orig;
+        if (!res.ok) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = (res.data && res.data.error) || 'Send failed.'; return; }
+        statusEl.className = 'ws-wv-status ws-wv-ok';
+        statusEl.textContent = res.data.emailed
+          ? 'Sent. They\u2019ll get the waiver link by email shortly.'
+          : 'Stored. Email delivery hiccupped — copy the link: ' + res.data.link;
+        nameEl.value = ''; emailEl.value = ''; noteEl.value = '';
+      }).catch(function (err) {
+        sendBtn.disabled = false; sendBtn.textContent = orig;
+        statusEl.className = 'ws-wv-status ws-wv-err';
+        statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+      });
+    });
+  }
+
+  function showMembershipReportModal() {
+    if (!personDetail || !personDetailCard) return;
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail rd-modal">';
+    html += '<h3 class="rd-title">Membership Report</h3>';
+    html += '<p class="rd-subtitle">Every registration this season, with payment and waiver status.</p>';
+    html += '<div id="ws-membership-report-body"><p class="ws-empty">Loading registrations\u2026</p></div>';
+    html += '</div>';
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+
+    var body = personDetailCard.querySelector('#ws-membership-report-body');
+    var cred = localStorage.getItem('rw_google_credential');
+    fetch('/api/tour?list=registrations', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (res) {
+      if (!res.ok) {
+        var msg = (res.data && res.data.error) || 'error';
+        if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+        body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load registrations: ' + msg + '</p>';
+        return;
+      }
+      var regs = res.data.registrations || [];
+      var total = regs.length;
+      var paid = regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; }).length;
+      var signed = regs.filter(function (r) { return !!r.waiver_member_agreement && !!r.signature_name; }).length;
+      var h = '<p class="ws-body-hint"><strong>' + total + '</strong> registered \u00b7 <strong class="ws-wv-ok">' + paid + ' paid</strong> \u00b7 <strong class="ws-wv-ok">' + signed + ' signed</strong></p>';
+      if (regs.length === 0) {
+        h += '<p class="ws-empty">No registrations yet for this season.</p>';
+      } else {
+        h += '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table"><thead><tr><th>Main Learning Coach</th><th>Email</th><th>Phone</th><th>Track</th><th>Kids</th><th>Paid</th><th>Waiver</th><th>Registered</th></tr></thead><tbody>';
+        regs.forEach(function (r) {
+          var kidsStr = '';
+          try {
+            var kids = Array.isArray(r.kids) ? r.kids : (typeof r.kids === 'string' ? JSON.parse(r.kids) : []);
+            kidsStr = (kids || []).map(function (k) { return escapeHtmlWs((k.name || '') + (k.birthdate ? ' (' + k.birthdate + ')' : '')); }).join('<br>');
+          } catch (e) { kidsStr = ''; }
+          var track = r.track === 'Other' && r.track_other ? r.track + ': ' + r.track_other : (r.track || '');
+          var paidOk = String(r.payment_status || '').toLowerCase() === 'paid';
+          var sigOk = !!r.waiver_member_agreement && !!r.signature_name;
+          h += '<tr>';
+          h += '<td>' + escapeHtmlWs(r.main_learning_coach) + '</td>';
+          h += '<td>' + escapeHtmlWs(r.email) + '</td>';
+          h += '<td>' + escapeHtmlWs(r.phone) + '</td>';
+          h += '<td>' + escapeHtmlWs(track) + '</td>';
+          h += '<td>' + kidsStr + '</td>';
+          h += '<td>' + (paidOk ? '<span class="ws-wv-ok">Paid</span>' : '<span class="ws-wv-pending">' + escapeHtmlWs(r.payment_status || 'Pending') + '</span>') + '</td>';
+          h += '<td>' + (sigOk ? '<span class="ws-wv-ok">Signed ' + (r.signature_date || '') + '</span>' : '<span class="ws-wv-pending">Pending</span>') + '</td>';
+          h += '<td>' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '') + '</td>';
+          h += '</tr>';
+        });
+        h += '</tbody></table></div>';
+      }
+      body.innerHTML = h;
+    }).catch(function (err) {
+      body.innerHTML = '<p class="ws-empty ws-wv-err">Network error loading registrations: ' + ((err && err.message) || 'unknown') + '</p>';
+    });
+  }
+
+  function showSendRegistrationFormModal() {
+    if (!personDetail || !personDetailCard) return;
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail rd-modal">';
+    html += '<h3 class="rd-title">Send Registration Form</h3>';
+    html += '<p class="rd-subtitle">Email the registration link to a prospective family. They\u2019ll fill out <code>/register.html</code> themselves.</p>';
+    html += '<div class="ws-waiver-form">';
+    html += '<label>Recipient name<input type="text" id="ws-ri-name" maxlength="200" placeholder="Jane Doe"></label>';
+    html += '<label>Recipient email<input type="email" id="ws-ri-email" maxlength="200" placeholder="jane@example.com"></label>';
+    html += '<label>Note (optional)<textarea id="ws-ri-note" maxlength="500" rows="2" placeholder="Added context that appears in the email..."></textarea></label>';
+    html += '<button class="btn btn-primary btn-sm" id="ws-ri-send">Send Registration Link</button>';
+    html += '<div class="ws-wv-status" id="ws-ri-status"></div>';
+    html += '</div>';
+    html += '</div>';
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+
+    var sendBtn = personDetailCard.querySelector('#ws-ri-send');
+    sendBtn.addEventListener('click', function () {
+      var nameEl = personDetailCard.querySelector('#ws-ri-name');
+      var emailEl = personDetailCard.querySelector('#ws-ri-email');
+      var noteEl = personDetailCard.querySelector('#ws-ri-note');
+      var statusEl = personDetailCard.querySelector('#ws-ri-status');
+      var name = (nameEl.value || '').trim();
+      var emailVal = (emailEl.value || '').trim();
+      var note = (noteEl.value || '').trim();
+      if (!name || !emailVal) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = 'Name and email are required.'; return; }
+      sendBtn.disabled = true; var orig = sendBtn.textContent; sendBtn.textContent = 'Sending\u2026';
+      statusEl.className = 'ws-wv-status'; statusEl.textContent = '';
+      var cred = localStorage.getItem('rw_google_credential');
+      fetch('/api/tour', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'registration-invite', name: name, email: emailVal, note: note })
+      }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        sendBtn.disabled = false; sendBtn.textContent = orig;
+        if (!res.ok) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = (res.data && res.data.error) || 'Send failed.'; return; }
+        statusEl.className = 'ws-wv-status ws-wv-ok';
+        statusEl.textContent = res.data.emailed
+          ? 'Sent. They\u2019ll get the registration link by email shortly.'
+          : 'Email delivery hiccupped — copy this link to them: ' + res.data.link;
+        nameEl.value = ''; emailEl.value = ''; noteEl.value = '';
+      }).catch(function (err) {
+        sendBtn.disabled = false; sendBtn.textContent = orig;
+        statusEl.className = 'ws-wv-status ws-wv-err';
+        statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+      });
+    });
   }
 
   // Class Ideas popup (from Resources card)

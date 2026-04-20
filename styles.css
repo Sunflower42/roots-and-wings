@@ -8595,6 +8595,19 @@ button.staff-role:hover {
   letter-spacing: 1px;
 }
 .ws-waivers-table tbody tr:last-child td { border-bottom: none; }
+.ws-report-request-hint {
+  margin: 12px 0 0 0;
+  padding: 10px 12px;
+  background: rgba(var(--color-accent-light-rgb), 0.12);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+}
+.ws-report-request-hint a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
 .workspace-role-section {
   margin: 0 0 24px 0;
 }

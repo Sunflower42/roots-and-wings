@@ -276,10 +276,22 @@ async function handleRegistration(body, req, res) {
   }
 }
 
-// ── List registrations (Workspace auth required) ──
+// ── List registrations (Workspace auth + Comms/Membership Director role) ──
 async function handleList(req, res) {
   const auth = await verifyWorkspaceAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const isMembership = await canEditAsRole(auth.email, 'Membership Director');
+  const isComms = !isMembership && await canEditAsRole(auth.email, 'Communications Director');
+  if (!isMembership && !isComms) {
+    const expectedM = await getRoleHolderEmail('Membership Director');
+    const expectedC = await getRoleHolderEmail('Communications Director');
+    return res.status(403).json({
+      error: 'Only the Membership or Communications Director can view registrations.',
+      youAre: auth.email,
+      expected: (expectedM || expectedC || '(unknown — sheet lookup failed)')
+    });
+  }
 
   const season = String(req.query.season || DEFAULT_SEASON);
   const sql = getSql();
@@ -565,6 +577,60 @@ async function handleWaiverSend(body, req, res) {
   }
 }
 
+// ── Membership Workspace: email a registration link to a prospective family ──
+async function handleRegistrationInvite(body, req, res) {
+  const user = await verifyWorkspaceAuth(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const isMembership = await canEditAsRole(user.email, 'Membership Director');
+  const isComms = !isMembership && await canEditAsRole(user.email, 'Communications Director');
+  if (!isMembership && !isComms) {
+    const expected = await getRoleHolderEmail('Membership Director');
+    return res.status(403).json({
+      error: 'Only the Membership or Communications Director can send registration links.',
+      youAre: user.email,
+      expected: expected || '(unknown — sheet lookup failed)'
+    });
+  }
+
+  const name = String(body.name || '').trim();
+  const email = String(body.email || '').trim().toLowerCase();
+  const note = String(body.note || '').trim().slice(0, 500);
+
+  if (!name) return res.status(400).json({ error: 'Recipient name is required.' });
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid recipient email is required.' });
+  if (name.length > 200) return res.status(400).json({ error: 'Name too long.' });
+
+  const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
+    ? `${req.headers['x-forwarded-proto']}://${req.headers.host}`
+    : 'https://roots-and-wings-topaz.vercel.app';
+  const link = `${baseUrl}/register.html`;
+
+  let emailed = false;
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+      to: email,
+      replyTo: 'membership@rootsandwingsindy.com',
+      subject: `Roots & Wings Co-op: Your registration link`,
+      html: `
+        <h2>Welcome to Roots &amp; Wings!</h2>
+        <p>Hi ${escapeHtml(name)},</p>
+        <p>Thanks for your interest in joining our co-op. When you're ready, use the link below to complete registration for your family.</p>
+        ${note ? `<p style="background:#f5f0f8;padding:10px 14px;border-left:3px solid #523A79;border-radius:4px;"><em>${escapeHtml(note)}</em></p>` : ''}
+        <p><a href="${escapeHtml(link)}" style="display:inline-block;background:#523A79;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Complete registration</a></p>
+        <p style="color:#666;font-size:0.9rem;">Or copy this link into your browser:<br><span style="word-break:break-all;">${escapeHtml(link)}</span></p>
+        <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+      `,
+    });
+    emailed = true;
+  } catch (mailErr) {
+    console.error('Registration invite email error (non-fatal):', mailErr);
+  }
+
+  return res.status(200).json({ success: true, emailed, link });
+}
+
 module.exports = async function handler(req, res) {
   setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -584,6 +650,7 @@ module.exports = async function handler(req, res) {
     if (kind === 'registration') return handleRegistration(body, req, res);
     if (kind === 'backup-waiver-sign') return handleBackupWaiverSign(body, req, res);
     if (kind === 'waiver-send') return handleWaiverSend(body, req, res);
+    if (kind === 'registration-invite') return handleRegistrationInvite(body, req, res);
     return res.status(400).json({ error: 'Unknown kind.' });
   }
 
