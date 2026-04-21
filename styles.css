@@ -2532,8 +2532,9 @@ p + p { margin-top: 1rem; }
     flex-direction: column;
     padding: 24px;
     box-shadow: var(--shadow-lg);
-    transform: translateY(-120%);
+    transform: translateY(-100vh);
     transition: transform var(--transition-base);
+    visibility: hidden;
     z-index: 999;
     width: auto;
     grid-row: auto;
@@ -2543,6 +2544,7 @@ p + p { margin-top: 1rem; }
 
   .nav-links.open {
     transform: translateY(0);
+    visibility: visible;
   }
 
   .nav-links a {
