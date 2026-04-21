@@ -199,6 +199,20 @@
   var COMMS_EMAIL = 'communications@rootsandwingsindy.com';
   var VIEW_AS_KEY = 'rw_view_as_email';
 
+  // Compute a whole-number age from a birth date string ('YYYY-MM-DD' or any
+  // Date-parseable form). Returns 0 on empty/invalid input so downstream
+  // "Age N" strings stay out of the UI when we don't know the birthday.
+  function computeAge(birthDate) {
+    if (!birthDate) return 0;
+    var bd = new Date(birthDate);
+    if (isNaN(bd.getTime())) return 0;
+    var today = new Date();
+    var age = today.getFullYear() - bd.getFullYear();
+    var m = today.getMonth() - bd.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+    return age > 0 ? age : 0;
+  }
+
   // Treat sentinel values like "None", "N/A", "-", "no" as empty so allergy
   // callouts don't trigger for kids whose parents filled the field with a
   // negative answer instead of leaving it blank.
@@ -398,7 +412,8 @@
                 email: fam.email || '',
                 phone: fam.phone || '',
                 group: kid.group || '',
-                age: kid.age || 0,
+                age: kid.age || computeAge(kid.birthDate),
+                birthDate: kid.birthDate || '',
                 pronouns: kid.pronouns || '',
                 allergies: normalizeAllergies(kid.allergies),
                 schedule: kid.schedule || 'all-day',
@@ -1211,6 +1226,41 @@
       });
   }
 
+  // DB-only photo lookup — used for kids, who don't have Workspace accounts
+  // and whose family email would resolve to the parent's photo via the
+  // memberPhotos map if we fell through.
+  function getDbPhotoForPerson(personName, email, familyName) {
+    if (typeof FAMILIES === 'undefined' || !Array.isArray(FAMILIES) || !personName) return null;
+    var firstNameLower = String(personName).trim().split(/\s+/)[0].toLowerCase();
+    var matchFam = null;
+    if (email) {
+      var emailLower = String(email).toLowerCase();
+      for (var fi = 0; fi < FAMILIES.length; fi++) {
+        if (String(FAMILIES[fi].email || '').toLowerCase() === emailLower) { matchFam = FAMILIES[fi]; break; }
+      }
+    }
+    if (!matchFam && familyName) {
+      var famLower = String(familyName).toLowerCase();
+      for (var fj = 0; fj < FAMILIES.length; fj++) {
+        if (String(FAMILIES[fj].name || '').toLowerCase() === famLower) { matchFam = FAMILIES[fj]; break; }
+      }
+    }
+    if (!matchFam) return null;
+    var pInfo = matchFam.parentInfo || [];
+    for (var pk = 0; pk < pInfo.length; pk++) {
+      if (pInfo[pk].photoUrl && String(pInfo[pk].name || '').trim().split(/\s+/)[0].toLowerCase() === firstNameLower) {
+        return pInfo[pk].photoUrl;
+      }
+    }
+    var famKids = matchFam.kids || [];
+    for (var kk = 0; kk < famKids.length; kk++) {
+      if (famKids[kk].photoUrl && String(famKids[kk].name || '').trim().split(/\s+/)[0].toLowerCase() === firstNameLower) {
+        return famKids[kk].photoUrl;
+      }
+    }
+    return null;
+  }
+
   function getPhotoUrl(personName, email, familyName) {
     if (!email && !familyName && !personName) return null;
     // DB-sourced photo (set via Edit My Info -> Vercel Blob) wins over Workspace
@@ -1294,8 +1344,14 @@
       if (!person) return;
       var photoDiv = card.querySelector('.yb-photo');
       if (!photoDiv) return;
-      if (person.type === 'kid') return; // Skip kids — they share parent's Workspace photo
-      var url = getPhotoUrl(person.name, person.email, person.family);
+      var url;
+      if (person.type === 'kid') {
+        // Kids don't have Workspace photos; only apply a DB-sourced photo
+        // (uploaded via Edit My Info). Skip Workspace fallback entirely.
+        url = getDbPhotoForPerson(person.name, person.email, person.family);
+      } else {
+        url = getPhotoUrl(person.name, person.email, person.family);
+      }
       if (url && !photoDiv.querySelector('img')) {
         var hiRes = url.replace(/=s\d+-c/, '=s256-c');
         photoDiv.innerHTML = '<img src="' + hiRes + '" alt="' + person.name + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'\'"><span style="display:none">' + person.name.charAt(0) + '</span>';
@@ -1597,7 +1653,8 @@
         email: fam.email,
         phone: fam.phone,
         group: kid.group,
-        age: kid.age,
+        age: kid.age || computeAge(kid.birthDate),
+        birthDate: kid.birthDate || '',
         pronouns: kid.pronouns || '',
         allergies: normalizeAllergies(kid.allergies),
         schedule: kid.schedule || 'all-day',
@@ -2031,7 +2088,9 @@
 
     var html = '<button class="detail-close" aria-label="Close">&times;</button>';
     html += '<div class="detail-header">';
-    var detailPhotoUrl = person.type !== 'kid' ? getPhotoUrl(person.name, person.email, person.family) : null;
+    var detailPhotoUrl = person.type !== 'kid'
+      ? getPhotoUrl(person.name, person.email, person.family)
+      : getDbPhotoForPerson(person.name, person.email, person.family);
     if (detailPhotoUrl) {
       var hiResDetail = detailPhotoUrl.replace(/=s\d+-c/, '=s256-c');
       html += '<div class="detail-photo" style="background:' + faceColor(person.name) + '"><img src="' + hiResDetail + '" alt="' + person.name + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'\'"><span style="display:none">' + person.name.charAt(0) + '</span></div>';
@@ -9617,7 +9676,8 @@
       info.students.forEach(function (s) {
         var p = lookupPerson(s);
         var pron = p && p.pronouns ? ' <em style="color:#666;font-size:8.5pt;">(' + esc(p.pronouns) + ')</em>' : '';
-        html += '<li>' + esc(s) + pron + '</li>';
+        var ageTag = p && p.age ? ' <span style="color:#555;font-size:8.5pt;">· age ' + p.age + '</span>' : '';
+        html += '<li>' + esc(s) + ageTag + pron + '</li>';
         if (p && p.allergies) allergyCallouts.push({ name: s, allergies: p.allergies });
       });
       html += '</ul></div>';
@@ -10025,22 +10085,23 @@
       })
     };
 
-    function scheduleOptionsHtml(selected) {
-      var opts = [['all-day', 'All day'], ['morning', 'Morning'], ['afternoon', 'Afternoon']];
-      return opts.map(function (o) {
-        return '<option value="' + o[0] + '"' + (selected === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
-      }).join('');
-    }
-
-    function thumbHtml(p, initial) {
+    function thumbHtml(p, initial, opts) {
       var src = p._queuedPhoto || p.photo_url || '';
+      // Fallback: show the existing Workspace photo so people see what they
+      // currently have in the directory instead of a blank initial. If they
+      // don't upload a new photo, we DON'T save the Workspace URL to the DB
+      // (those rotate) — the directory keeps reading Workspace via getPhotoUrl.
+      if (!src && opts && opts.wsFallback) {
+        var wsUrl = getPhotoUrl(p.name || '', state.family_email, state.family_name);
+        if (wsUrl) src = wsUrl.replace(/=s\d+-c/, '=s256-c');
+      }
       if (src) return '<img src="' + escapeHtml(src) + '" alt="">';
       return '<span>' + escapeHtml((initial || '?').charAt(0).toUpperCase()) + '</span>';
     }
 
     function parentRowHtml(p, idx) {
       var h = '<div class="emi-row" data-parent-idx="' + idx + '">';
-      h += '<div class="emi-photo-thumb">' + thumbHtml(p, p.name) +
+      h += '<div class="emi-photo-thumb">' + thumbHtml(p, p.name, { wsFallback: true }) +
            '<button type="button" class="emi-photo-btn" data-role="upload-parent" data-idx="' + idx + '" aria-label="Upload photo">' +
            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
            '</button></div>';
@@ -10055,7 +10116,7 @@
 
     function kidRowHtml(k, idx) {
       var h = '<div class="emi-row emi-kid-row" data-kid-idx="' + idx + '">';
-      h += '<div class="emi-photo-thumb">' + thumbHtml(k, k.name) +
+      h += '<div class="emi-photo-thumb">' + thumbHtml(k, k.name, { wsFallback: true }) +
            '<button type="button" class="emi-photo-btn" data-role="upload-kid" data-idx="' + idx + '" aria-label="Upload photo">' +
            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
            '</button></div>';
@@ -10063,7 +10124,16 @@
       h += '<input class="rd-input" placeholder="First name" data-field="name" value="' + escapeHtml(k.name) + '">';
       h += '<input class="rd-input" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(k.pronouns) + '">';
       h += '<label class="emi-inline-label">Birthday<input type="date" class="rd-input" data-field="birth_date" value="' + escapeHtml(k.birth_date) + '"></label>';
-      h += '<label class="emi-inline-label">Schedule<select class="rd-input" data-field="schedule">' + scheduleOptionsHtml(k.schedule) + '</select></label>';
+      // Schedule is read-only here because changing it has billing implications
+      // (half-day vs. full-day dues). Members contact the Membership Director to
+      // change schedules; we may enable self-service once billing is integrated.
+      var schedLabel = k.schedule === 'morning' ? 'Morning only'
+                    : k.schedule === 'afternoon' ? 'Afternoon only'
+                    : 'All day';
+      h += '<label class="emi-inline-label">Schedule' +
+           '<input class="rd-input emi-readonly" value="' + escapeHtml(schedLabel) + '" readonly tabindex="-1" title="Contact the Membership Director to change schedule — affects dues.">' +
+           '<input type="hidden" data-field="schedule" value="' + escapeHtml(k.schedule) + '">' +
+           '</label>';
       h += '<label class="emi-inline-label emi-full">Allergies &amp; notes<input class="rd-input" placeholder="None" data-field="allergies" value="' + escapeHtml(k.allergies) + '"></label>';
       h += '</div>';
       h += '<button type="button" class="sc-btn sc-btn-del emi-remove" data-role="remove-kid" data-idx="' + idx + '" aria-label="Remove kid">&times;</button>';
@@ -10173,63 +10243,101 @@
       if (el) { el.style.display = 'none'; el.textContent = ''; }
     }
 
-    function wire() {
-      personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
-      personDetail.addEventListener('click', function (e) {
-        if (e.target === personDetail) closeDetail();
-      });
-      document.getElementById('emiCancelBtn').addEventListener('click', closeDetail);
-
-      personDetailCard.addEventListener('click', function (e) {
-        var upBtn = e.target.closest('[data-role="upload-parent"], [data-role="upload-kid"]');
-        if (upBtn) {
-          var role = upBtn.getAttribute('data-role');
-          var idx = parseInt(upBtn.getAttribute('data-idx'), 10);
-          var fileInput = document.createElement('input');
-          fileInput.type = 'file';
-          fileInput.accept = 'image/png,image/jpeg,image/webp';
-          fileInput.addEventListener('change', function () {
-            var f = fileInput.files && fileInput.files[0];
-            if (!f) return;
-            if (f.size > 12 * 1024 * 1024) { showError('Photo is too large (max 12 MB before resize).'); return; }
-            readAndResize(f, function (err, dataUrl) {
-              if (err) { showError(err.message || 'Could not load image.'); return; }
-              syncStateFromDom();
-              if (role === 'upload-parent' && state.parents[idx]) state.parents[idx]._queuedPhoto = dataUrl;
-              if (role === 'upload-kid' && state.kids[idx]) state.kids[idx]._queuedPhoto = dataUrl;
-              render();
-            });
+    // Card-level delegated click handler. Attach ONCE per modal open (stored
+    // on the card element so subsequent render() calls don't stack multiple
+    // listeners — the previous bug where the file picker opened N times).
+    function cardClickHandler(e) {
+      var upBtn = e.target.closest('[data-role="upload-parent"], [data-role="upload-kid"]');
+      if (upBtn) {
+        var role = upBtn.getAttribute('data-role');
+        var idx = parseInt(upBtn.getAttribute('data-idx'), 10);
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/png,image/jpeg,image/webp';
+        fileInput.addEventListener('change', function () {
+          var f = fileInput.files && fileInput.files[0];
+          if (!f) return;
+          if (f.size > 12 * 1024 * 1024) { showError('Photo is too large (max 12 MB before resize).'); return; }
+          readAndResize(f, function (err, dataUrl) {
+            if (err) { showError(err.message || 'Could not load image.'); return; }
+            syncStateFromDom();
+            if (role === 'upload-parent' && state.parents[idx]) state.parents[idx]._queuedPhoto = dataUrl;
+            if (role === 'upload-kid' && state.kids[idx]) state.kids[idx]._queuedPhoto = dataUrl;
+            render();
           });
-          fileInput.click();
-          return;
+        });
+        fileInput.click();
+        return;
+      }
+      var rmBtn = e.target.closest('[data-role="remove-parent"], [data-role="remove-kid"]');
+      if (rmBtn) {
+        var rmRole = rmBtn.getAttribute('data-role');
+        var rmIdx = parseInt(rmBtn.getAttribute('data-idx'), 10);
+        syncStateFromDom();
+        if (rmRole === 'remove-parent') {
+          if (state.parents.length <= 1) { showError('Families need at least one adult.'); return; }
+          state.parents.splice(rmIdx, 1);
+        } else {
+          state.kids.splice(rmIdx, 1);
         }
-        var rmBtn = e.target.closest('[data-role="remove-parent"], [data-role="remove-kid"]');
-        if (rmBtn) {
-          var rmRole = rmBtn.getAttribute('data-role');
-          var rmIdx = parseInt(rmBtn.getAttribute('data-idx'), 10);
-          syncStateFromDom();
-          if (rmRole === 'remove-parent') {
-            if (state.parents.length <= 1) { showError('Families need at least one adult.'); return; }
-            state.parents.splice(rmIdx, 1);
-          } else {
-            state.kids.splice(rmIdx, 1);
-          }
-          render();
-          return;
-        }
-      });
+        render();
+        return;
+      }
+    }
+    function overlayClickHandler(e) {
+      if (e.target === personDetail) closeDetail();
+    }
 
-      document.getElementById('emiAddParent').addEventListener('click', function () {
+    // wire() runs after every render to (re)attach listeners to freshly-minted
+    // child nodes. The card/overlay delegated listeners are attached once via
+    // installModalListeners() below and NOT re-added here.
+    function wire() {
+      var closeBtn = personDetailCard.querySelector('.detail-close');
+      if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+      var cancelBtn = document.getElementById('emiCancelBtn');
+      if (cancelBtn) cancelBtn.addEventListener('click', closeDetail);
+      var addParentBtn = document.getElementById('emiAddParent');
+      if (addParentBtn) addParentBtn.addEventListener('click', function () {
         syncStateFromDom();
         state.parents.push({ name: '', pronouns: '', photo_url: '', _queuedPhoto: null });
         render();
       });
-      document.getElementById('emiAddKid').addEventListener('click', function () {
+      var addKidBtn = document.getElementById('emiAddKid');
+      if (addKidBtn) addKidBtn.addEventListener('click', function () {
         syncStateFromDom();
         state.kids.push({ name: '', birth_date: '', pronouns: '', allergies: '', schedule: 'all-day', photo_url: '', _queuedPhoto: null });
         render();
       });
-      document.getElementById('emiSaveBtn').addEventListener('click', onSave);
+      var saveBtn = document.getElementById('emiSaveBtn');
+      if (saveBtn) saveBtn.addEventListener('click', onSave);
+    }
+
+    function installModalListeners() {
+      // Remove any stale handlers from a previous Edit My Info session, then
+      // attach fresh ones. Stored on the elements so we can remove them on
+      // close (see teardown below).
+      if (personDetailCard._emiCardHandler) personDetailCard.removeEventListener('click', personDetailCard._emiCardHandler);
+      if (personDetail._emiOverlayHandler) personDetail.removeEventListener('click', personDetail._emiOverlayHandler);
+      personDetailCard._emiCardHandler = cardClickHandler;
+      personDetail._emiOverlayHandler = overlayClickHandler;
+      personDetailCard.addEventListener('click', cardClickHandler);
+      personDetail.addEventListener('click', overlayClickHandler);
+    }
+
+    function teardownModalListeners() {
+      if (personDetailCard._emiCardHandler) {
+        personDetailCard.removeEventListener('click', personDetailCard._emiCardHandler);
+        personDetailCard._emiCardHandler = null;
+      }
+      if (personDetail._emiOverlayHandler) {
+        personDetail.removeEventListener('click', personDetail._emiOverlayHandler);
+        personDetail._emiOverlayHandler = null;
+      }
+    }
+
+    function closeAndCleanup() {
+      teardownModalListeners();
+      closeDetail();
     }
 
     function onSave() {
@@ -10329,6 +10437,7 @@
       });
     }
 
+    installModalListeners();
     render();
     personDetail.style.display = 'flex';
     document.body.style.overflow = 'hidden';

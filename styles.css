@@ -9102,6 +9102,11 @@ button.staff-role:hover {
   font-size: 0.88rem;
   padding: 8px 10px;
 }
+.emi-readonly {
+  background: #f5f4ef;
+  color: #6f6f6f;
+  cursor: not-allowed;
+}
 .emi-full {
   grid-column: 1 / -1;
 }
