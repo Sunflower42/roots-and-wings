@@ -2214,7 +2214,15 @@ p + p { margin-top: 1rem; }
 .portal-header .hero-watermark { display: none; }
 
 @media (max-width: 768px) {
-  .portal-header .navbar { height: 52px; }
+  /* Pad the entire header for phones with a notch/camera cutout so the
+     top of the navbar is never hidden by the physical device chrome. */
+  .portal-header {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .portal-header .navbar {
+    height: 56px;
+    min-height: 56px;
+  }
   .portal-header .nav-brand img { height: 34px; }
   .dashboard-header p { display: none; }
   /* Dedicated icon-nav row sits between the navbar and the greeting band */
