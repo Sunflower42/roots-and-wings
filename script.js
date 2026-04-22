@@ -3666,6 +3666,13 @@
     if (Object.keys(classLinks).length > 0) {
       updateClassLinkButtons();
     }
+    // Repopulate the PM class submissions card from already-fetched state.
+    // renderMyFamily is called many times per session (on login, after sheets
+    // load, after billing loads, etc.) — without this, every re-render leaves
+    // the card stuck on its "Loading…" placeholder.
+    if (typeof renderClassSubsCardBody === 'function') {
+      renderClassSubsCardBody();
+    }
 
     // Build PayPal note with family details
     function buildPaypalNote(fam, semKey, paymentType) {
