@@ -1334,10 +1334,23 @@
     return '<span>' + name.charAt(0) + '</span>';
   }
 
+  // Temporary debug hook so we can inspect state from the browser console.
+  // Exposes the in-IIFE objects without altering behavior. Safe to leave in
+  // for now — there's nothing sensitive that isn't already rendered in the UI.
+  window.__rwDebug = {
+    getFamilies: function () { return FAMILIES; },
+    getAllPeople: function () { return allPeople; },
+    getMemberPhotos: function () { return memberPhotos; },
+    getDbPhotoForPerson: function (n, e, f) { return getDbPhotoForPerson(n, e, f); },
+    getPhotoUrl: function (n, e, f) { return getPhotoUrl(n, e, f); },
+    applyPhotos: function () { return applyPhotos(); }
+  };
+
   function applyPhotos() {
     // Find all yb-cards and update photos by matching family email
     if (!allPeople || allPeople.length === 0) return;
     var cards = document.querySelectorAll('.yb-card');
+    var dbg = [];
     cards.forEach(function(card) {
       var idx = parseInt(card.getAttribute('data-idx'));
       var person = allPeople[idx];
@@ -1352,11 +1365,15 @@
       } else {
         url = getPhotoUrl(person.name, person.email, person.family);
       }
+      if (person.type === 'kid') {
+        dbg.push({ name: person.name, family: person.family, email: person.email, url: url || '(none)', hasImg: !!photoDiv.querySelector('img') });
+      }
       if (url && !photoDiv.querySelector('img')) {
         var hiRes = url.replace(/=s\d+-c/, '=s256-c');
         photoDiv.innerHTML = '<img src="' + hiRes + '" alt="' + person.name + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'\'"><span style="display:none">' + person.name.charAt(0) + '</span>';
       }
     });
+    if (dbg.length) console.log('[rw-debug] applyPhotos kids:', dbg);
 
     // Update board cards with Workspace photos
     document.querySelectorAll('.portal-board-card[data-board]').forEach(function(card) {
