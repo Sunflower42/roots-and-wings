@@ -1276,9 +1276,15 @@ async function participationFetchSheetData(sheetsClient) {
   var directorySheetId = process.env.DIRECTORY_SHEET_ID;
   var masterSheetId = process.env.MASTER_SHEET_ID;
 
+  // Fetch both sheets in parallel — on Vercel Hobby we're on a 10s budget
+  // and the DB rollup still has to run after this.
   var directoryTabs = {}, masterTabs = {};
-  try { directoryTabs = await fetchSheet(sheetsClient, directorySheetId); } catch (e) { console.error('Directory fetch failed:', e.message); }
-  try { masterTabs = await fetchSheet(sheetsClient, masterSheetId); } catch (e) { console.error('Master fetch failed:', e.message); }
+  var results = await Promise.all([
+    fetchSheet(sheetsClient, directorySheetId).catch(function (e) { console.error('Directory fetch failed:', e.message); return {}; }),
+    fetchSheet(sheetsClient, masterSheetId).catch(function (e) { console.error('Master fetch failed:', e.message); return {}; })
+  ]);
+  directoryTabs = results[0] || {};
+  masterTabs = results[1] || {};
 
   var dirTab = directoryTabs['Directory'] || null;
   var classTab = directoryTabs['Classlist'] || null;
