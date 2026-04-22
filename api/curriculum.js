@@ -317,6 +317,59 @@ function normalizeSubmission(body) {
   };
 }
 
+// Valid status values for a reviewer PATCH. `withdrawn` is intentionally
+// excluded — only the submitter can withdraw (via DELETE).
+const REVIEWER_STATUS_VALUES = ['submitted', 'drafted', 'scheduled', 'declined'];
+const SCHEDULED_HOUR_VALUES = ['PM1', 'PM2', 'both'];
+
+// Normalize a reviewer PATCH body. Returns the cleaned fields + the status
+// that was chosen. Throws Error on invalid input.
+function normalizeReviewerPatch(body) {
+  body = body || {};
+  const status = String(body.status || '').trim();
+  if (REVIEWER_STATUS_VALUES.indexOf(status) === -1) {
+    throw new Error('Invalid status — must be submitted, drafted, scheduled, or declined.');
+  }
+
+  let scheduled_session = null;
+  let scheduled_hour = null;
+  let scheduled_age_range = '';
+  let scheduled_room = '';
+
+  if (body.scheduled_session != null && body.scheduled_session !== '') {
+    const s = parseInt(body.scheduled_session, 10);
+    if (!Number.isFinite(s) || s < 1 || s > 5) throw new Error('scheduled_session must be 1–5.');
+    scheduled_session = s;
+  }
+  if (body.scheduled_hour) {
+    const h = String(body.scheduled_hour).trim();
+    if (SCHEDULED_HOUR_VALUES.indexOf(h) === -1) {
+      throw new Error('scheduled_hour must be PM1, PM2, or both.');
+    }
+    scheduled_hour = h;
+  }
+  if (typeof body.scheduled_age_range === 'string') {
+    scheduled_age_range = body.scheduled_age_range.trim().slice(0, 100);
+  }
+  if (typeof body.scheduled_room === 'string') {
+    scheduled_room = body.scheduled_room.trim().slice(0, 100);
+  }
+
+  // If scheduling, hour + session are required. Age range is strongly
+  // recommended but not strictly enforced — VP may want to park something
+  // in a section before finalising the exact group.
+  if (status === 'scheduled' && (!scheduled_session || !scheduled_hour)) {
+    throw new Error('Scheduling requires a session and an hour (PM1, PM2, or both).');
+  }
+
+  const reviewer_notes = String(body.reviewer_notes || '').slice(0, 2000);
+
+  return {
+    status, scheduled_session, scheduled_hour,
+    scheduled_age_range, scheduled_room, reviewer_notes
+  };
+}
+
 // VP, Afternoon Class Liaison, and the super user can review all submissions.
 async function canReviewSubmissions(email) {
   if (!email) return false;
@@ -489,14 +542,21 @@ module.exports = async function handler(req, res) {
             SELECT * FROM class_submissions
             ORDER BY created_at DESC
           `;
-          return res.status(200).json({ submissions: rows.map(serializeSubmission) });
+          return res.status(200).json({
+            submissions: rows.map(serializeSubmission),
+            is_reviewer: true
+          });
         }
-        const rows = await sql`
-          SELECT * FROM class_submissions
-          WHERE LOWER(submitted_by_email) = LOWER(${user.email})
-          ORDER BY created_at DESC
-        `;
-        return res.status(200).json({ submissions: rows.map(serializeSubmission) });
+        const [rows, isReviewer] = await Promise.all([
+          sql`SELECT * FROM class_submissions
+              WHERE LOWER(submitted_by_email) = LOWER(${user.email})
+              ORDER BY created_at DESC`,
+          canReviewSubmissions(user.email)
+        ]);
+        return res.status(200).json({
+          submissions: rows.map(serializeSubmission),
+          is_reviewer: !!isReviewer
+        });
       }
 
       // Single submission fetch — owner or reviewer can view.
@@ -632,6 +692,41 @@ module.exports = async function handler(req, res) {
 
     // ── PATCH update ──
     if (req.method === 'PATCH') {
+      // Reviewer schedule/unschedule/decline path — VP + Afternoon Class
+      // Liaison + super user can change status + scheduled_* fields without
+      // touching the submitter's 13 form fields.
+      if (action === 'class-submission' && req.query.review === '1') {
+        if (!id) return res.status(400).json({ error: 'id query param required' });
+        if (!(await canReviewSubmissions(user.email))) {
+          return res.status(403).json({ error: 'Reviewer access only' });
+        }
+        const existing = await sql`SELECT * FROM class_submissions WHERE id = ${id}`;
+        if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
+        if (existing[0].status === 'withdrawn') {
+          return res.status(409).json({ error: 'Submission was withdrawn by the submitter; contact them before rescheduling.' });
+        }
+        let clean;
+        try { clean = normalizeReviewerPatch(req.body || {}); }
+        catch (validationErr) {
+          return res.status(400).json({ error: validationErr.message });
+        }
+        const updated = await sql`
+          UPDATE class_submissions SET
+            status = ${clean.status},
+            scheduled_session = ${clean.scheduled_session},
+            scheduled_hour = ${clean.scheduled_hour},
+            scheduled_age_range = ${clean.scheduled_age_range},
+            scheduled_room = ${clean.scheduled_room},
+            reviewer_notes = ${clean.reviewer_notes},
+            reviewed_by_email = ${user.email},
+            reviewed_at = NOW(),
+            updated_at = NOW()
+          WHERE id = ${id}
+          RETURNING *
+        `;
+        return res.status(200).json({ submission: serializeSubmission(updated[0]) });
+      }
+
       // Edit own PM class submission (only while still 'submitted' — once the
       // reviewers draft it, further edits have to go through them).
       if (action === 'class-submission') {
