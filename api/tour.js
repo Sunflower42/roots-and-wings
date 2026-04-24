@@ -327,7 +327,7 @@ async function handleRegistration(body, req, res) {
         cc: [
           'communications@rootsandwingsindy.com',
           'treasurer@rootsandwingsindy.com',
-          'vicepresident@rootsandwingsindy.com'
+          'membership@rootsandwingsindy.com'
         ],
         replyTo: 'membership@rootsandwingsindy.com',
         subject: `Roots & Wings ${season} Registration Confirmed — ${main_learning_coach} family`,
