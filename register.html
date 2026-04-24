@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="preload" href="logo-combined.png?v=20260417d" as="image">
-  <link rel="stylesheet" href="styles.css?v=20260417d">
+  <link rel="stylesheet" href="styles.css?v=20260423a">
   <link rel="icon" href="logo-combined-mark.png?v=20260417d" type="image/png">
 
   <style>
@@ -65,19 +65,22 @@
     .reg-radio-group label { font-weight: 500; color: #333; display: flex; align-items: center; gap: 8px; cursor: pointer; }
     .reg-radio-group input[type=radio] { width: 18px; height: 18px; accent-color: var(--color-primary); }
 
-    .reg-kids-list { display: flex; flex-direction: column; gap: 12px; }
-    .reg-kid-row { display: grid; grid-template-columns: 1fr 180px auto; gap: 10px; align-items: end; }
+    .reg-kids-list { display: flex; flex-direction: column; gap: 18px; }
+    .reg-kid-row { display: grid; grid-template-columns: 1fr 180px auto; gap: 10px; align-items: end; padding: 14px; background: rgba(var(--color-primary-rgb), 0.03); border: 1px solid rgba(var(--color-primary-rgb), 0.12); border-radius: 10px; }
     @media (max-width: 560px) { .reg-kid-row { grid-template-columns: 1fr 1fr; } .reg-kid-row .reg-kid-remove { grid-column: span 2; } }
     .reg-kid-remove { background: transparent; border: 1.5px solid var(--color-error); color: var(--color-error); border-radius: 50px; padding: 8px 16px; cursor: pointer; font-size: 0.9rem; height: 42px; font-weight: 600; }
     .reg-kid-remove:hover { background: var(--color-error); color: #fff; }
+    .reg-kid-photo-optout-wrap { grid-column: 1 / -1; margin-top: 8px; background: rgba(255, 248, 225, 0.6); border-color: rgba(var(--color-primary-rgb), 0.18); }
+    @media (max-width: 560px) { .reg-kid-photo-optout-wrap { grid-column: span 2; } }
     .reg-add-kid-btn { background: rgba(var(--color-primary-rgb), 0.08); border: 1.5px dashed var(--color-primary); color: var(--color-primary-dark); border-radius: 50px; padding: 10px 14px; cursor: pointer; font-weight: 600; margin-top: 10px; width: 100%; font-family: inherit; font-size: 0.95rem; }
     .reg-add-kid-btn:hover { background: rgba(var(--color-primary-rgb), 0.14); }
 
     .reg-waiver { background: rgba(var(--color-primary-rgb), 0.04); border-left: 4px solid var(--color-primary); padding: 14px 18px; margin: 14px 0; border-radius: 0 8px 8px 0; font-size: 0.95rem; line-height: 1.6; color: #333; }
     .reg-waiver h3 { font-family: 'Playfair Display', serif; color: var(--color-primary-dark); margin: 0 0 8px; font-size: 1.15rem; }
     .reg-waiver ul { margin: 0 0 0 20px; padding: 0; }
-    .reg-check-label { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; color: #222; margin-top: 10px; cursor: pointer; padding: 10px 12px; background: #fff; border: 1.5px solid rgba(var(--color-primary-rgb), 0.25); border-radius: 8px; }
-    .reg-check-label input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--color-primary); flex-shrink: 0; margin-top: 2px; }
+    .reg-check-label { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: flex-start; font-weight: 500; color: #222; margin-top: 10px; cursor: pointer; padding: 12px 14px; background: #fff; border: 1.5px solid rgba(var(--color-primary-rgb), 0.25); border-radius: 8px; line-height: 1.55; }
+    .reg-check-label input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--color-primary); flex: 0 0 18px; margin: 3px 16px 0 0; }
+    .reg-check-label > span { flex: 1 1 auto; min-width: 0; }
 
     .reg-actions { display: flex; gap: 12px; justify-content: space-between; align-items: center; margin-top: 20px; }
     .reg-actions .btn { min-width: 120px; }
@@ -244,8 +247,9 @@
         </div>
 
         <div class="reg-waiver">
-          <h3>Photo &amp; Media Consent</h3>
-          <p>I consent to Roots and Wings Homeschool Co-op photographing, filming, quoting, or interviewing my family for non-commercial co-op use — including the yearbook, social media, website, and other media — and release the co-op and its agents from any claims related to that use.</p>
+          <h3>Photo, Video &amp; Quote Consent</h3>
+          <p>I consent to Roots and Wings photographing, filming, and quoting me and the child(ren) named above, and using that content for co-op non-profit purposes — yearbook, website, newsletters, printed rosters, and the members portal. I release the co-op and its agents from any claims related to that use.</p>
+          <p><strong>To opt out</strong>, check "Opt out of photo and film" next to me or any child above. We won't use that person's photo, video, or quote in any co-op material. Other adults in my household (co-parents, backup Learning Coaches) make this choice on their own waiver.</p>
         </div>
 
         <div class="reg-waiver">
@@ -260,6 +264,15 @@
           <p>I understand that my family's participation in Roots and Wings Homeschool Co-op Inc. activities — held primarily at First Mennonite Church — is voluntary and could result in injury, including serious injury or death. I affirm that my family is in good physical condition to participate.</p>
           <p>In consideration of our participation, I release Roots and Wings Homeschool Co-op Inc., First Mennonite Church, and their agents and employees from any claims, demands, or causes of action arising from our participation, now or in the future.</p>
         </div>
+
+        <fieldset class="reg-field" style="border: none; padding: 0; margin: 22px 0 0;">
+          <legend style="font-weight: 600; color: var(--color-primary-dark); margin-bottom: 6px; font-size: 0.95rem;">My photo consent</legend>
+          <p class="reg-field-hint" style="margin: 0 0 8px;">This is your personal choice. Co-parents and backup Learning Coaches make their own choice on their own waiver.</p>
+          <label class="reg-check-label" for="reg-lc-photo-optout">
+            <input type="checkbox" id="reg-lc-photo-optout">
+            <span><strong>Opt out of photo and film.</strong> Check this box and Roots and Wings will not use my photo, video, or quote in any co-op material.</span>
+          </label>
+        </fieldset>
 
         <h2 style="margin-top: 28px;">Signature</h2>
         <div class="reg-field">
@@ -484,6 +497,7 @@
       row.className = 'reg-kid-row';
       var nameId = 'reg-kid-name-' + id;
       var bdayId = 'reg-kid-bday-' + id;
+      var optoutId = 'reg-kid-photo-optout-' + id;
       row.innerHTML =
         '<div class="reg-field" style="margin-bottom:0;">' +
           '<label for="' + nameId + '">Name</label>' +
@@ -493,9 +507,14 @@
           '<label for="' + bdayId + '">Birth date</label>' +
           '<input type="date" id="' + bdayId + '" class="reg-kid-bday" min="' + MIN_BIRTH_DATE + '" max="' + MAX_BIRTH_DATE + '">' +
         '</div>' +
-        '<button type="button" class="reg-kid-remove" aria-label="Remove this child">Remove</button>';
+        '<button type="button" class="reg-kid-remove" aria-label="Remove this child">Remove</button>' +
+        '<label class="reg-check-label reg-kid-photo-optout-wrap" for="' + optoutId + '">' +
+          '<input type="checkbox" id="' + optoutId + '" class="reg-kid-photo-optout">' +
+          '<span><strong>Opt out of photo and film.</strong> Check this box and Roots and Wings will not use this child\'s photo, video, or quote in any co-op material.</span>' +
+        '</label>';
       if (prefill && prefill.name) row.querySelector('.reg-kid-name').value = prefill.name;
       if (prefill && prefill.birth_date) row.querySelector('.reg-kid-bday').value = prefill.birth_date;
+      if (prefill && prefill.photo_consent === false) row.querySelector('.reg-kid-photo-optout').checked = true;
       row.querySelector('.reg-kid-remove').addEventListener('click', function () {
         row.parentNode.removeChild(row);
         updateStudentSigVisibility();
@@ -512,7 +531,8 @@
       rows.forEach(function (r) {
         var name = ((r.querySelector('.reg-kid-name') || {}).value || '').trim();
         var bday = ((r.querySelector('.reg-kid-bday') || {}).value || '').trim();
-        if (name || bday) out.push({ name: name, birth_date: bday });
+        var optedOut = !!(r.querySelector('.reg-kid-photo-optout') || {}).checked;
+        if (name || bday) out.push({ name: name, birth_date: bday, photo_consent: !optedOut });
       });
       return out;
     }
@@ -833,9 +853,10 @@
         existing_family_name: state.prefillFamily || '',
         backup_coaches: backupCoaches
       };
+      var lcOptOut = !!(document.getElementById('reg-lc-photo-optout') || {}).checked;
       state.waiver = {
         waiver_member_agreement: true,
-        waiver_photo_consent: 'yes',
+        waiver_photo_consent: lcOptOut ? 'no' : 'yes',
         waiver_data_storage: true,
         waiver_liability: true,
         signature_name: sig,

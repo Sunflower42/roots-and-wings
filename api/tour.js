@@ -164,6 +164,9 @@ async function handleRegistration(body, req, res) {
   const placement_notes = String(body.placement_notes || '').trim().slice(0, 2000);
   const waiver_member_agreement = body.waiver_member_agreement === true;
   const waiver_liability = body.waiver_liability === true;
+  // Main LC's personal photo consent: 'yes' (photos allowed) or 'no' (opted out).
+  // Default 'yes' keeps the pre-opt-out behavior for legacy clients.
+  const waiver_photo_consent = body.waiver_photo_consent === 'no' ? 'no' : 'yes';
   const signature_name = String(body.signature_name || '').trim();
   const signature_date = String(body.signature_date || '').trim();
   const student_signature = String(body.student_signature || '').trim();
@@ -195,6 +198,14 @@ async function handleRegistration(body, req, res) {
     const k = kids[i];
     if (!k || !k.name || !k.birth_date) return res.status(400).json({ error: 'Each child needs a name and birth date.' });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k.birth_date)) return res.status(400).json({ error: 'Birth date must be YYYY-MM-DD.' });
+    // Normalize to a clean { name, birth_date, photo_consent } record so the
+    // per-child photo opt-out is a real boolean in the JSONB column. Default
+    // is consent=true (photos allowed); explicit false opts the child out.
+    kids[i] = {
+      name: String(k.name).trim().slice(0, 200),
+      birth_date: k.birth_date,
+      photo_consent: k.photo_consent !== false
+    };
   }
   if (!waiver_member_agreement) return res.status(400).json({ error: 'Member agreement acknowledgment required.' });
   if (!waiver_liability) return res.status(400).json({ error: 'Liability waiver acknowledgment required.' });
@@ -221,13 +232,29 @@ async function handleRegistration(body, req, res) {
       ) VALUES (
         ${season}, ${email}, ${existing_family_name || null}, ${main_learning_coach}, ${address}, ${phone},
         ${track}, ${track_other}, ${JSON.stringify(kids)}::jsonb, ${placement_notes},
-        ${waiver_member_agreement}, 'yes', ${waiver_liability},
+        ${waiver_member_agreement}, ${waiver_photo_consent}, ${waiver_liability},
         ${signature_name}, ${signature_date}, ${student_signature},
         'paid', ${payment_amount}, ${paypal_transaction_id}
       )
       RETURNING id, created_at
     `;
     const id = inserted[0].id;
+
+    // Propagate the Main LC's photo consent into member_profiles so the portal
+    // + public rendering honors it without the family having to visit Edit My
+    // Info. Non-fatal: if we can't derive a family email, the DB upsert is
+    // skipped and the choice still lives on the registrations row.
+    try {
+      const famName = deriveFamilyName(main_learning_coach, existing_family_name);
+      const famEmail = deriveFamilyEmail(main_learning_coach, famName);
+      if (famEmail) {
+        await upsertParentPhotoConsent(
+          sql, famEmail, famName, main_learning_coach, waiver_photo_consent === 'yes'
+        );
+      }
+    } catch (consentErr) {
+      console.error('Main LC photo consent propagation error (non-fatal):', consentErr);
+    }
 
     // Create a unique signing token per backup Learning Coach and email each one.
     const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
@@ -462,6 +489,8 @@ async function handleBackupWaiverSign(body, req, res) {
   const token = String(body.token || '').trim();
   const signature_name = String(body.signature_name || '').trim();
   const signature_date = String(body.signature_date || '').trim();
+  // Default to consent=true if the client didn't send the field (older clients).
+  const photo_consent = body.photo_consent !== false;
   if (!token || !/^[a-f0-9]{8,64}$/i.test(token)) return res.status(400).json({ error: 'Invalid token.' });
   if (!signature_name) return res.status(400).json({ error: 'Please type your name to sign.' });
   if (signature_name.length > 200) return res.status(400).json({ error: 'Signature too long.' });
@@ -479,7 +508,8 @@ async function handleBackupWaiverSign(body, req, res) {
 
       const updated = await sql`
         UPDATE backup_coach_waivers
-        SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date}
+        SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date},
+            photo_consent = ${photo_consent}
         WHERE token = ${token} AND signed_at IS NULL
         RETURNING id, name, email, registration_id
       `;
@@ -488,10 +518,27 @@ async function handleBackupWaiverSign(body, req, res) {
       // Confirm to the coach + Main LC (best-effort).
       try {
         const related = await sql`
-          SELECT r.main_learning_coach, r.email AS main_email, r.season
+          SELECT r.main_learning_coach, r.email AS main_email, r.season, r.existing_family_name
           FROM registrations r WHERE r.id = ${updated[0].registration_id} LIMIT 1
         `;
         const info = related[0] || {};
+
+        // Propagate co-parent consent into member_profiles.parents[] so photo
+        // rendering honors the backup LC's own choice. Only matters when the
+        // backup LC is actually a parent in the family's Directory listing
+        // (i.e. a spouse); grandparents / friend backups don't appear in the
+        // face cards so skipping the upsert for them is fine.
+        try {
+          const famName = deriveFamilyName(info.main_learning_coach || '', info.existing_family_name || '');
+          const famEmail = deriveFamilyEmail(info.main_learning_coach || '', famName);
+          if (famEmail) {
+            await upsertParentPhotoConsent(
+              sql, famEmail, famName, updated[0].name, photo_consent
+            );
+          }
+        } catch (consentErr) {
+          console.error('Backup LC photo consent propagation error (non-fatal):', consentErr);
+        }
         const resend = new Resend(process.env.RESEND_API_KEY);
         await resend.emails.send({
           from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
@@ -522,7 +569,8 @@ async function handleBackupWaiverSign(body, req, res) {
 
     const updatedOneOff = await sql`
       UPDATE one_off_waivers
-      SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date}
+      SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date},
+          photo_consent = ${photo_consent}
       WHERE token = ${token} AND signed_at IS NULL
       RETURNING id, name, email, sent_by_email
     `;
@@ -726,8 +774,83 @@ function sanitizeParent(p) {
   return {
     name,
     pronouns: String(p.pronouns || '').trim().slice(0, 60),
-    photo_url: String(p.photo_url || '').trim().slice(0, 500)
+    photo_url: String(p.photo_url || '').trim().slice(0, 500),
+    // Per-adult photo opt-out. Default consent = true; explicit false opts out.
+    photo_consent: p.photo_consent !== false
   };
+}
+
+// Derive the family's portal email from Main LC name + family surname — same
+// convention as the Directory parse in api/sheets.js. Returns null if we can't
+// build a plausible email (missing first name or family initial).
+function deriveFamilyEmail(mainLcName, familyName) {
+  const mlc = String(mainLcName || '').trim();
+  const fam = String(familyName || '').trim();
+  const firstFirst = mlc.split(/\s*[&\/,]\s*/)[0].trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
+  const lastInitial = fam.charAt(0).toLowerCase();
+  if (!firstFirst || !lastInitial) return null;
+  return firstFirst + lastInitial + '@rootsandwingsindy.com';
+}
+
+// If existing_family_name was supplied, use it; otherwise take the last token
+// of the Main LC's full name (matches the Directory convention).
+function deriveFamilyName(mainLcName, existingFamilyName) {
+  const existing = String(existingFamilyName || '').trim();
+  if (existing) return existing;
+  const mlc = String(mainLcName || '').trim();
+  const words = mlc.split(/\s+/);
+  return words[words.length - 1] || '';
+}
+
+// Upsert a single parent's photo_consent into member_profiles.parents[]. Used
+// by the registration insert (Main LC's own choice) and the backup LC sign
+// (co-parent's own choice when they happen to be listed in the family). Merges
+// into whatever's already there so we never clobber other portal edits.
+async function upsertParentPhotoConsent(sql, familyEmail, familyName, parentFullName, photoConsent) {
+  if (!familyEmail || !parentFullName) return;
+  const parentFirst = String(parentFullName).trim().split(/\s+/)[0];
+  if (!parentFirst) return;
+  const parentFirstLower = parentFirst.toLowerCase();
+
+  const rows = await sql`
+    SELECT parents FROM member_profiles WHERE family_email = ${familyEmail} LIMIT 1
+  `;
+  const existing = rows[0];
+  const currentParents = (existing && Array.isArray(existing.parents)) ? existing.parents : [];
+
+  let found = false;
+  const mergedParents = currentParents.map(p => {
+    if (!p || !p.name) return p;
+    if (String(p.name).trim().split(/\s+/)[0].toLowerCase() === parentFirstLower) {
+      found = true;
+      return Object.assign({}, p, { photo_consent: photoConsent });
+    }
+    return p;
+  });
+  if (!found) {
+    mergedParents.push({
+      name: parentFirst,
+      pronouns: '',
+      photo_url: '',
+      photo_consent: photoConsent
+    });
+  }
+
+  await sql`
+    INSERT INTO member_profiles (
+      family_email, family_name, phone, address, parents, kids,
+      placement_notes, updated_by
+    ) VALUES (
+      ${familyEmail}, ${familyName || ''}, '', '',
+      ${JSON.stringify(mergedParents)}::jsonb, '[]'::jsonb,
+      '', 'waiver-sign'
+    )
+    ON CONFLICT (family_email) DO UPDATE SET
+      parents = ${JSON.stringify(mergedParents)}::jsonb,
+      family_name = COALESCE(NULLIF(member_profiles.family_name, ''), EXCLUDED.family_name),
+      updated_at = NOW(),
+      updated_by = 'waiver-sign'
+  `;
 }
 
 function sanitizeKid(k) {
@@ -746,7 +869,10 @@ function sanitizeKid(k) {
     pronouns: String(k.pronouns || '').trim().slice(0, 60),
     allergies: String(k.allergies || '').trim().slice(0, 500),
     schedule: sch,
-    photo_url: String(k.photo_url || '').trim().slice(0, 500)
+    photo_url: String(k.photo_url || '').trim().slice(0, 500),
+    // Per-child photo opt-out from the waiver. Default consent = true; families
+    // flip this off to block photo use across the portal and public site.
+    photo_consent: k.photo_consent !== false
   };
 }
 

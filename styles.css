@@ -3233,6 +3233,27 @@ p + p { margin-top: 1rem; }
   margin-top: 3px;
 }
 
+/* Per-child photo opt-out. Slate/gray so it reads as a restriction, not an
+   alert. Card gets a subtle hatched outline so the state is legible even when
+   the viewer misses the pill. */
+.yb-no-photo {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #4b5563;
+  background: rgba(75, 85, 99, 0.12);
+  padding: 2px 8px;
+  border-radius: 50px;
+  margin-top: 5px;
+  display: inline-block;
+}
+.yb-card.yb-card-no-photo {
+  outline: 1.5px dashed rgba(75, 85, 99, 0.45);
+  outline-offset: -3px;
+}
+.yb-card.yb-card-no-photo .yb-photo {
+  opacity: 0.82;
+}
+
 /* Detail overlay */
 .person-detail-overlay {
   position: fixed;
@@ -3737,6 +3758,16 @@ button.staff-role:hover {
   font-weight: 600;
   color: #a04030;
   background: rgba(196, 132, 122, 0.1);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
+
+.detail-no-photo {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  background: rgba(75, 85, 99, 0.1);
   padding: 6px 12px;
   border-radius: var(--radius-sm);
   margin-top: 4px;
@@ -5998,6 +6029,35 @@ button.staff-role:hover {
   margin: 0;
   flex: 1;
   min-width: 0;
+}
+/* Reviewer-only favorite star sits inline with the curriculum title.
+   White outline when not favorited → filled yellow when the kid-favorite
+   flag is on. VP + PMA + super user only. */
+.cl-fav-star {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--color-text-light);
+  line-height: 0;
+  border-radius: 6px;
+  transition: color 0.15s, transform 0.15s, background 0.15s;
+}
+.cl-fav-star:hover {
+  color: var(--color-accent);
+  background: rgba(var(--color-accent-light-rgb), 0.35);
+  transform: scale(1.05);
+}
+.cl-fav-star:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.cl-fav-star.is-fav {
+  color: var(--color-accent);
+}
+.cl-fav-star.is-fav:hover {
+  color: var(--color-accent-dark);
 }
 .cl-icon-btn {
   background: transparent;
@@ -9450,6 +9510,32 @@ button.staff-role:hover {
 }
 .emi-full {
   grid-column: 1 / -1;
+}
+.emi-photo-optout {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text);
+  background: rgba(255, 248, 225, 0.6);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.emi-photo-optout input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.emi-photo-optout strong {
+  color: var(--color-primary-dark);
 }
 .emi-remove {
   align-self: start;

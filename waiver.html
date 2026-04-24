@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="preload" href="logo-combined.png?v=20260417d" as="image">
-  <link rel="stylesheet" href="styles.css?v=20260417d">
+  <link rel="stylesheet" href="styles.css?v=20260423a">
   <link rel="icon" href="logo-combined-mark.png?v=20260417d" type="image/png">
 
   <style>
@@ -97,6 +97,10 @@
           <label for="wv-sig-date" style="display:block;font-weight:600;color:var(--color-primary-dark);margin-bottom:6px;">Date <span aria-hidden="true" style="color:var(--color-error,#c0392b);">*</span></label>
           <input type="date" id="wv-sig-date" required style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:8px;font-size:1rem;box-sizing:border-box;">
         </div>
+        <label for="wv-photo-optout" style="display:flex;gap:10px;align-items:flex-start;font-weight:500;color:#222;margin:0 0 14px;cursor:pointer;padding:12px 14px;background:rgba(255,248,225,0.6);border:1.5px solid rgba(var(--color-primary-rgb),0.18);border-radius:8px;">
+          <input type="checkbox" id="wv-photo-optout" style="width:18px;height:18px;accent-color:var(--color-primary);flex-shrink:0;margin-top:2px;">
+          <span><strong>Opt out of photo and film.</strong> Check this box and Roots and Wings will not use my photo, video, or quote in any co-op material.</span>
+        </label>
         <p style="color:#555;font-size:0.92rem;margin:0 0 14px;">By typing your name to sign below, you agree to the full Member Agreement &amp; Waivers on this page on behalf of yourself.</p>
         <button type="submit" class="btn btn-primary">Sign &amp; Submit</button>
       </form>
@@ -107,7 +111,7 @@
         <strong>Contents</strong>
         <ol>
           <li><a href="#membership">Membership Requirements &amp; Expectations</a></li>
-          <li><a href="#photo">Photo &amp; Media Consent</a></li>
+          <li><a href="#photo">Photo, Video &amp; Quote Consent</a></li>
           <li><a href="#data">Data Storage &amp; AI Use</a></li>
           <li><a href="#liability">Liability Waiver</a></li>
         </ol>
@@ -122,8 +126,9 @@
       </section>
 
       <section class="wv-section" id="photo">
-        <h3>2. Photo &amp; Media Consent</h3>
-        <p>I consent to Roots and Wings Homeschool Co-op photographing, filming, quoting, or interviewing my family for non-commercial co-op use — including the yearbook, social media, website, and other media — and release the co-op and its agents from any claims related to that use.</p>
+        <h3>2. Photo, Video &amp; Quote Consent</h3>
+        <p>I consent to Roots and Wings photographing, filming, and quoting me, and using that content for co-op non-profit purposes — yearbook, website, newsletters, printed rosters, and the members portal. I release the co-op and its agents from any claims related to that use.</p>
+        <p><strong>To opt out</strong>, check "Opt out of photo and film" below. We won't use my photo, video, or quote in any co-op material.</p>
       </section>
 
       <section class="wv-section" id="data">
@@ -285,10 +290,17 @@
         if (!sig) { showStatus('err', 'Please type your name to sign.'); nameInput.focus(); return; }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showStatus('err', 'Please enter a signature date.'); dateInput.focus(); return; }
         showStatus('info', 'Submitting…');
+        var photoOptOut = !!(document.getElementById('wv-photo-optout') || {}).checked;
         fetch('/api/tour', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind: 'backup-waiver-sign', token: token, signature_name: sig, signature_date: date })
+          body: JSON.stringify({
+            kind: 'backup-waiver-sign',
+            token: token,
+            signature_name: sig,
+            signature_date: date,
+            photo_consent: !photoOptOut
+          })
         }).then(function (r) {
           return r.json().then(function (d) { return { ok: r.ok, data: d }; });
         }).then(function (result) {

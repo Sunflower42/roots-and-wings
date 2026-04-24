@@ -301,6 +301,9 @@ CREATE TABLE IF NOT EXISTS backup_coach_waivers (
 );
 CREATE INDEX IF NOT EXISTS backup_coach_waivers_registration_idx ON backup_coach_waivers (registration_id);
 CREATE INDEX IF NOT EXISTS backup_coach_waivers_token_idx ON backup_coach_waivers (token);
+-- Per-adult photo opt-out captured at sign time. NULL means not-yet-signed
+-- (pre-opt-out waivers default to consent=true on the app side).
+ALTER TABLE backup_coach_waivers ADD COLUMN IF NOT EXISTS photo_consent BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- ──────────────────────────────────────────────
 -- One-off waivers (Comms Director sends ad-hoc to a last-minute adult who
@@ -323,6 +326,7 @@ CREATE TABLE IF NOT EXISTS one_off_waivers (
 );
 CREATE INDEX IF NOT EXISTS one_off_waivers_token_idx ON one_off_waivers (token);
 CREATE INDEX IF NOT EXISTS one_off_waivers_email_idx ON one_off_waivers (email);
+ALTER TABLE one_off_waivers ADD COLUMN IF NOT EXISTS photo_consent BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- ──────────────────────────────────────────────
 -- Member Profiles — editable overlay on top of the Directory sheet.

@@ -383,8 +383,14 @@
             var parentNames = (fam.parents || '').split(/\s*&\s*/);
             var pp = fam.parentPronouns || {};
             var diffNameKids = (fam.kids || []).filter(function(k) { return k.lastName && k.lastName !== fam.name; });
+            // Index parentInfo by first name so we can thread photoConsent onto allPeople.
+            var piByFirst = {};
+            (fam.parentInfo || []).forEach(function (pi) {
+              if (pi && pi.name) piByFirst[String(pi.name).trim().split(/\s+/)[0].toLowerCase()] = pi;
+            });
             parentNames.forEach(function (pName) {
               if (!pName.trim()) return;
+              var piHit = piByFirst[pName.trim().split(/\s+/)[0].toLowerCase()] || {};
               allPeople.push({
                 name: pName.trim(),
                 type: 'parent',
@@ -396,6 +402,7 @@
                 pronouns: pp[pName.trim()] || '',
                 allergies: '',
                 schedule: 'all-day',
+                photoConsent: piHit.photoConsent !== false,
                 parentNames: fam.parents,
                 diffNameKids: diffNameKids,
                 kidNames: (fam.kids || []).map(function(k) { return k.name + ' ' + (k.lastName || fam.name); }),
@@ -417,6 +424,7 @@
                 pronouns: kid.pronouns || '',
                 allergies: normalizeAllergies(kid.allergies),
                 schedule: kid.schedule || 'all-day',
+                photoConsent: kid.photo_consent !== false,
                 parentNames: fam.parents
               });
             });
@@ -1254,9 +1262,10 @@
     }
     var famKids = matchFam.kids || [];
     for (var kk = 0; kk < famKids.length; kk++) {
-      if (famKids[kk].photoUrl && String(famKids[kk].name || '').trim().split(/\s+/)[0].toLowerCase() === firstNameLower) {
-        return famKids[kk].photoUrl;
-      }
+      if (String(famKids[kk].name || '').trim().split(/\s+/)[0].toLowerCase() !== firstNameLower) continue;
+      // Per-child photo opt-out honored here so callers don't need to double-check.
+      if (famKids[kk].photo_consent === false) return null;
+      if (famKids[kk].photoUrl) return famKids[kk].photoUrl;
     }
     return null;
   }
@@ -1283,6 +1292,14 @@
       }
       if (matchFam) {
         var pInfo = matchFam.parentInfo || [];
+        // Adult consent gate: if any parentInfo entry for this first name is
+        // opted out, return null before we fall through to Workspace photos.
+        for (var pc = 0; pc < pInfo.length; pc++) {
+          if (String(pInfo[pc].name || '').trim().split(/\s+/)[0].toLowerCase() === firstNameLower) {
+            if (pInfo[pc].photoConsent === false) return null;
+            break;
+          }
+        }
         for (var pk = 0; pk < pInfo.length; pk++) {
           if (pInfo[pk].photoUrl && String(pInfo[pk].name || '').trim().split(/\s+/)[0].toLowerCase() === firstNameLower) {
             return pInfo[pk].photoUrl;
@@ -1290,9 +1307,10 @@
         }
         var famKids = matchFam.kids || [];
         for (var kk = 0; kk < famKids.length; kk++) {
-          if (famKids[kk].photoUrl && String(famKids[kk].name || '').trim().split(/\s+/)[0].toLowerCase() === firstNameLower) {
-            return famKids[kk].photoUrl;
-          }
+          if (String(famKids[kk].name || '').trim().split(/\s+/)[0].toLowerCase() !== firstNameLower) continue;
+          // Per-child photo opt-out honored here so callers don't need to double-check.
+          if (famKids[kk].photo_consent === false) return null;
+          if (famKids[kk].photoUrl) return famKids[kk].photoUrl;
         }
       }
     }
@@ -1370,6 +1388,10 @@
       if (!person) return;
       var photoDiv = card.querySelector('.yb-photo');
       if (!photoDiv) return;
+      // Per-person photo opt-out: never render a photo for anyone (adult or
+      // kid) whose consent is explicitly false. The initial-on-color
+      // placeholder already in the card stays as the fallback.
+      if (person.photoConsent === false) return;
       var url;
       if (person.type === 'kid') {
         // Kids don't have Workspace photos; only apply a DB-sourced photo
@@ -1655,7 +1677,13 @@
     var pp = fam.parentPronouns || {};
     // Collect kids with different last names for parent display
     var diffNameKids = fam.kids.filter(function(k) { return k.lastName && k.lastName !== fam.name; });
+    // Index parentInfo by first name so we can thread photoConsent onto allPeople.
+    var piByFirst2 = {};
+    (fam.parentInfo || []).forEach(function (pi) {
+      if (pi && pi.name) piByFirst2[String(pi.name).trim().split(/\s+/)[0].toLowerCase()] = pi;
+    });
     parentNames.forEach(function (pName) {
+      var piHit2 = piByFirst2[pName.trim().split(/\s+/)[0].toLowerCase()] || {};
       allPeople.push({
         name: pName.trim(),
         type: 'parent',
@@ -1667,6 +1695,7 @@
         pronouns: pp[pName.trim()] || '',
         allergies: '',
         schedule: 'all-day',
+        photoConsent: piHit2.photoConsent !== false,
         parentNames: fam.parents,
         diffNameKids: diffNameKids,
         kidNames: fam.kids.map(function(k) { return k.name + ' ' + (k.lastName || fam.name); }),
@@ -1688,6 +1717,7 @@
         pronouns: kid.pronouns || '',
         allergies: normalizeAllergies(kid.allergies),
         schedule: kid.schedule || 'all-day',
+        photoConsent: kid.photo_consent !== false,
         parentNames: fam.parents
       });
     });
@@ -1833,8 +1863,9 @@
         if (person.pronouns) extras += '<div class="yb-pronouns">' + person.pronouns + '</div>';
         if (person.allergies) extras += '<div class="yb-allergy">' + person.allergies + '</div>';
         if (person.schedule === 'morning') extras += '<div class="yb-schedule">AM only</div>';
+        if (person.photoConsent === false) extras += '<div class="yb-no-photo" title="This child is opted out of photos.">⛔ No Photos</div>';
 
-        html += '<button class="yb-card yb-card-class" data-idx="' + idx + '" aria-label="' + displayName + ' ' + person.family + '">' +
+        html += '<button class="yb-card yb-card-class' + (person.photoConsent === false ? ' yb-card-no-photo' : '') + '" data-idx="' + idx + '" aria-label="' + displayName + ' ' + person.family + '">' +
           '<div class="yb-photo" style="background:' + bgStyle + '"><span>' + person.name.charAt(0) + '</span></div>' +
           '<div class="yb-name">' + displayName + '</div>' +
           '<div class="yb-subtitle">' + (person.age ? 'Age ' + person.age : '') + '</div>' +
@@ -1895,7 +1926,11 @@
           ? absenceTagFor(person.name + ' ' + (person.lastName || person.family))
           : '';
 
-        html += '<button class="yb-card' + (person.boardRole ? ' yb-card-board' : '') + (absenceTag ? ' yb-card-absent' : '') + '" data-idx="' + idx + '" aria-label="' + displayName + ' ' + person.family + '">' +
+        var noPhotoTag = person.photoConsent === false
+          ? '<div class="yb-no-photo" title="Opted out of photos.">⛔ No Photos</div>'
+          : '';
+
+        html += '<button class="yb-card' + (person.boardRole ? ' yb-card-board' : '') + (absenceTag ? ' yb-card-absent' : '') + (person.photoConsent === false ? ' yb-card-no-photo' : '') + '" data-idx="' + idx + '" aria-label="' + displayName + ' ' + person.family + '">' +
           '<div class="yb-photo" style="background:' + bgStyle + '"><span>' + person.name.charAt(0) + '</span></div>' +
           '<div class="yb-name">' + displayName + '</div>' +
           '<div class="yb-subtitle">' + subtitle + '</div>' +
@@ -1904,6 +1939,7 @@
           '<div class="yb-family">' + person.family + ' Family</div>' +
           parentOfTag +
           absenceTag +
+          noPhotoTag +
           '</button>';
         shown++;
       });
@@ -2118,9 +2154,12 @@
 
     var html = '<button class="detail-close" aria-label="Close">&times;</button>';
     html += '<div class="detail-header">';
-    var detailPhotoUrl = person.type !== 'kid'
-      ? getPhotoUrl(person.name, person.email, person.family)
-      : getDbPhotoForPerson(person.name, person.email, person.family);
+    // Opted-out people never resolve a photo URL — the initial placeholder shows instead.
+    var detailPhotoUrl = person.photoConsent === false
+      ? ''
+      : person.type !== 'kid'
+        ? getPhotoUrl(person.name, person.email, person.family)
+        : getDbPhotoForPerson(person.name, person.email, person.family);
     if (detailPhotoUrl) {
       var hiResDetail = detailPhotoUrl.replace(/=s\d+-c/, '=s256-c');
       html += '<div class="detail-photo" style="background:' + faceColor(person.name) + '"><img src="' + hiResDetail + '" alt="' + person.name + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'\'"><span style="display:none">' + person.name.charAt(0) + '</span></div>';
@@ -2140,10 +2179,12 @@
         html += '<p class="detail-schedule">' + (person.schedule === 'morning' ? 'Morning only' : 'Afternoon only') + '</p>';
       }
       if (person.allergies) html += '<p class="detail-allergy-info">Allergies: ' + person.allergies + '</p>';
+      if (person.photoConsent === false) html += '<p class="detail-no-photo">⛔ No Photos — this child is opted out of photos in co-op materials.</p>';
       html += '<p class="detail-parents">Parents: ' + fam.parents + '</p>';
     } else {
       if (!boardInfo) html += '<p class="detail-group">Parent</p>';
       if (person.pronouns) html += '<p class="detail-pronouns">' + person.pronouns + '</p>';
+      if (person.photoConsent === false) html += '<p class="detail-no-photo">⛔ No Photos — opted out of photo and film use.</p>';
       // Kids shown in family grid below
     }
     html += '</div></div>';
@@ -8597,13 +8638,27 @@
 
     html += '<div class="cl-title-row">';
     html += '<h3>' + escapeAttr(curr.title) + '</h3>';
+    // Reviewer-only ⭐ favorite star, inline with the title. Yellow when
+    // favorited, outlined white when not. Silent for non-reviewers.
+    if (classSubmissionReviewer) {
+      var favActive = !!curr.is_favorite;
+      var favLabel = favActive ? 'Remove favorite' : 'Mark as favorite';
+      html += '<button class="cl-fav-star' + (favActive ? ' is-fav' : '') + '"'
+        + ' id="cl-fav-btn-top" data-id="' + curr.id + '"'
+        + ' data-fav="' + (favActive ? '1' : '0') + '"'
+        + ' aria-label="' + favLabel + '" title="' + favLabel + '">';
+      // Filled when favorited, outlined when not.
+      html += '<svg viewBox="0 0 24 24" width="26" height="26" fill="' + (favActive ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">';
+      html += '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
+      html += '</svg>';
+      html += '</button>';
+    }
     html += '</div>';
-    // Block + favorite badges under the title
+    // Block badge under the title — favorite status now lives on the star.
     var detailBadges = '';
     if (curr.block === 'AM') detailBadges += '<span class="cl-badge cl-badge-am">AM Class</span>';
     else if (curr.block === 'PM') detailBadges += '<span class="cl-badge cl-badge-pm">PM Elective</span>';
     else if (curr.block === 'both') detailBadges += '<span class="cl-badge cl-badge-both">AM or PM</span>';
-    if (curr.is_favorite) detailBadges += '<span class="cl-badge cl-badge-fav" title="Kid favorite">⭐ Favorite</span>';
     if (detailBadges) html += '<div class="cl-detail-badges">' + detailBadges + '</div>';
 
     html += '<div class="cl-detail-actions cl-detail-actions-top">';
@@ -8611,12 +8666,6 @@
     if (canEdit) {
       html += '<button class="cl-action-btn" id="cl-edit-btn-top" data-id="' + curr.id + '">Edit</button>';
       html += '<button class="cl-action-btn cl-action-del" id="cl-delete-btn-top" data-id="' + curr.id + '">Delete</button>';
-    }
-    // Reviewer-only ⭐ favorite toggle — a kid-loved class earns a star from VP/PMA.
-    if (classSubmissionReviewer) {
-      html += '<button class="cl-action-btn" id="cl-fav-btn-top" data-id="' + curr.id + '" data-fav="' + (curr.is_favorite ? '1' : '0') + '">';
-      html += curr.is_favorite ? '★ Unfavorite' : '☆ Mark as Favorite';
-      html += '</button>';
     }
     html += '</div>';
     var metaParts = [];
@@ -11354,7 +11403,10 @@
         var p = lookupPerson(s);
         var pron = p && p.pronouns ? ' <em style="color:#666;font-size:8.5pt;">(' + esc(p.pronouns) + ')</em>' : '';
         var ageTag = p && p.age ? ' <span style="color:#555;font-size:8.5pt;">· age ' + p.age + '</span>' : '';
-        html += '<li>' + esc(s) + ageTag + pron + '</li>';
+        var noPhotoTag = p && p.photoConsent === false
+          ? ' <strong style="color:#b3381a;font-size:8.5pt;">⛔ No Photos</strong>'
+          : '';
+        html += '<li>' + esc(s) + ageTag + pron + noPhotoTag + '</li>';
         if (p && p.allergies) allergyCallouts.push({ name: s, allergies: p.allergies });
       });
       html += '</ul></div>';
@@ -11734,14 +11786,26 @@
     var parentSeed;
     if (Array.isArray(fam.parentInfo) && fam.parentInfo.length) {
       parentSeed = fam.parentInfo.map(function (p) {
-        return { name: p.name || '', pronouns: p.pronouns || '', photo_url: p.photoUrl || '', _queuedPhoto: null };
+        return {
+          name: p.name || '',
+          pronouns: p.pronouns || '',
+          photo_url: p.photoUrl || '',
+          photo_consent: p.photoConsent !== false,
+          _queuedPhoto: null
+        };
       });
     } else {
       parentSeed = String(fam.parents || '').split(/\s*&\s*/).map(function (s) { return s.trim(); }).filter(Boolean).map(function (n) {
-        return { name: n, pronouns: (fam.parentPronouns && fam.parentPronouns[n]) || '', photo_url: '', _queuedPhoto: null };
+        return {
+          name: n,
+          pronouns: (fam.parentPronouns && fam.parentPronouns[n]) || '',
+          photo_url: '',
+          photo_consent: true,
+          _queuedPhoto: null
+        };
       });
     }
-    if (parentSeed.length === 0) parentSeed.push({ name: '', pronouns: '', photo_url: '', _queuedPhoto: null });
+    if (parentSeed.length === 0) parentSeed.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, _queuedPhoto: null });
 
     var state = {
       family_email: fam.email,
@@ -11758,6 +11822,7 @@
           allergies: k.allergies || '',
           schedule: k.schedule || 'all-day',
           photo_url: k.photoUrl || '',
+          photo_consent: k.photo_consent !== false,
           _queuedPhoto: null
         };
       })
@@ -11786,6 +11851,11 @@
       h += '<div class="emi-fields">';
       h += '<input class="rd-input" placeholder="First name" data-field="name" value="' + escapeHtml(p.name) + '">';
       h += '<input class="rd-input" placeholder="Pronouns (e.g. she/her)" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
+      var pOptOut = p.photo_consent === false;
+      h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
+           '<input type="checkbox" data-field="photo_consent_optout"' + (pOptOut ? ' checked' : '') + '>' +
+           '<span><strong>Opt out of photo and film.</strong> Roots and Wings will not use my photo, video, or quote in any co-op material.</span>' +
+           '</label>';
       h += '</div>';
       h += '<button type="button" class="sc-btn sc-btn-del emi-remove" data-role="remove-parent" data-idx="' + idx + '" aria-label="Remove adult">&times;</button>';
       h += '</div>';
@@ -11813,6 +11883,11 @@
            '<input type="hidden" data-field="schedule" value="' + escapeHtml(k.schedule) + '">' +
            '</label>';
       h += '<label class="emi-inline-label emi-full">Allergies &amp; notes<input class="rd-input" placeholder="None" data-field="allergies" value="' + escapeHtml(k.allergies) + '"></label>';
+      var optOut = k.photo_consent === false;
+      h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
+           '<input type="checkbox" data-field="photo_consent_optout"' + (optOut ? ' checked' : '') + '>' +
+           '<span><strong>Opt out of photo and film.</strong> Roots and Wings will not use this child\'s photo, video, or quote in any co-op material.</span>' +
+           '</label>';
       h += '</div>';
       h += '<button type="button" class="sc-btn sc-btn-del emi-remove" data-role="remove-kid" data-idx="' + idx + '" aria-label="Remove kid">&times;</button>';
       h += '</div>';
@@ -11896,7 +11971,12 @@
         var idx = parseInt(row.getAttribute('data-parent-idx'), 10);
         if (!state.parents[idx]) return;
         row.querySelectorAll('[data-field]').forEach(function (el) {
-          state.parents[idx][el.getAttribute('data-field')] = el.value;
+          var field = el.getAttribute('data-field');
+          if (field === 'photo_consent_optout') {
+            state.parents[idx].photo_consent = !el.checked;
+          } else {
+            state.parents[idx][field] = el.value;
+          }
         });
       });
       var kRows = personDetailCard.querySelectorAll('#emiKidList [data-kid-idx]');
@@ -11904,7 +11984,13 @@
         var idx = parseInt(row.getAttribute('data-kid-idx'), 10);
         if (!state.kids[idx]) return;
         row.querySelectorAll('[data-field]').forEach(function (el) {
-          state.kids[idx][el.getAttribute('data-field')] = el.value;
+          var field = el.getAttribute('data-field');
+          if (field === 'photo_consent_optout') {
+            // Checkbox inverts: checked = opted-out = consent false.
+            state.kids[idx].photo_consent = !el.checked;
+          } else {
+            state.kids[idx][field] = el.value;
+          }
         });
       });
     }
@@ -11977,13 +12063,13 @@
       var addParentBtn = document.getElementById('emiAddParent');
       if (addParentBtn) addParentBtn.addEventListener('click', function () {
         syncStateFromDom();
-        state.parents.push({ name: '', pronouns: '', photo_url: '', _queuedPhoto: null });
+        state.parents.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, _queuedPhoto: null });
         render();
       });
       var addKidBtn = document.getElementById('emiAddKid');
       if (addKidBtn) addKidBtn.addEventListener('click', function () {
         syncStateFromDom();
-        state.kids.push({ name: '', birth_date: '', pronouns: '', allergies: '', schedule: 'all-day', photo_url: '', _queuedPhoto: null });
+        state.kids.push({ name: '', birth_date: '', pronouns: '', allergies: '', schedule: 'all-day', photo_url: '', photo_consent: true, _queuedPhoto: null });
         render();
       });
       var saveBtn = document.getElementById('emiSaveBtn');
@@ -12083,8 +12169,8 @@
           phone: state.phone,
           address: state.address,
           placement_notes: state.placement_notes,
-          parents: state.parents.map(function (p) { return { name: p.name, pronouns: p.pronouns, photo_url: p.photo_url }; }),
-          kids: state.kids.map(function (k) { return { name: k.name, birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url }; })
+          parents: state.parents.map(function (p) { return { name: p.name, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false }; }),
+          kids: state.kids.map(function (k) { return { name: k.name, birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
         };
         return fetch('/api/tour', {
           method: 'POST',

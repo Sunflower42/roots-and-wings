@@ -76,55 +76,24 @@ function cell(row, col) {
 // ══════════════════════════════════════════════
 // DIRECTORY / FAMILIES
 // ══════════════════════════════════════════════
-// Directory tab: col 0 = Parent name(s), col 1 = phone, col 2+ = children "Name (pronouns)"
-// Classlist tab: row 0 = group names, row 1 = liaisons, row 2 = rooms, row 3+ = kids "FirstName LastInitial"
-// Allergies tab: paired cols — group name, allergy — kids listed below
+// Directory tab: col 0 = Parent name(s), col 1 = phone, col 2+ = children names.
+// Classlist tab:  row 0 = group names, row 1 = liaisons, row 2 = rooms,
+//                 row 3+ = kids "FirstName LastInitial".
+//
+// Pronouns and allergies used to be parsed from the Directory / Allergies tabs
+// here; they now live on member_profiles.kids (and .parents) in Postgres and
+// are applied via applyMemberProfileOverlay below. The Allergies tab is no
+// longer read. Parenthetical "(pronouns)" text in the Directory tab is still
+// stripped for display hygiene but the pronoun values themselves are ignored.
 
 function parseDirectory(dirRows, classlistRows, allergyRows) {
   var families = [];
 
   if (!dirRows || dirRows.length < 2) return [];
 
-  // Build allergy lookup from Allergies tab: { "firstname lastinitial" -> allergy }
-  // Also track PM-only kids from the Allergies tab
+  // Allergies and pronouns are sourced from member_profiles (DB) via the
+  // overlay. allergyRows is accepted for signature compatibility but ignored.
   var allergyMap = {};
-  var allergyPmOnly = {}; // lowercase name -> allergy
-  if (allergyRows && allergyRows.length > 1) {
-    // Paired columns: col 0 = group, col 1 = allergies, col 2 = group, col 3 = allergies...
-    // Find PM ONLY column(s) - check headers for "PM ONLY" label
-    var pmOnlyAllergyCol = -1;
-    for (var r = 0; r < allergyRows.length; r++) {
-      for (var c = 0; c < (allergyRows[r] ? allergyRows[r].length : 0); c++) {
-        if (cell(allergyRows[r], c).match(/^PM ONLY$/i)) {
-          pmOnlyAllergyCol = c;
-          break;
-        }
-      }
-      if (pmOnlyAllergyCol >= 0) break;
-    }
-
-    for (var c = 0; c < (allergyRows[0] ? allergyRows[0].length : 0); c += 2) {
-      for (var r = 1; r < allergyRows.length; r++) {
-        var kidName = cell(allergyRows[r], c).toLowerCase();
-        var allergy = cell(allergyRows[r], c + 1);
-        if (kidName) {
-          allergyMap[kidName] = allergy;
-        }
-      }
-    }
-
-    // Parse PM ONLY column for allergies
-    if (pmOnlyAllergyCol >= 0) {
-      for (var r = 1; r < allergyRows.length; r++) {
-        var kidName = cell(allergyRows[r], pmOnlyAllergyCol).toLowerCase();
-        var allergy = cell(allergyRows[r], pmOnlyAllergyCol + 1);
-        if (kidName && !kidName.match(/^pm only$/i)) {
-          allergyPmOnly[kidName] = allergy;
-          allergyMap[kidName] = allergy;
-        }
-      }
-    }
-  }
 
   // Build classlist lookup: { "firstname lastinitial" -> group }
   // Also build group metadata (liaisons, rooms)
@@ -186,26 +155,10 @@ function parseDirectory(dirRows, classlistRows, allergyRows) {
 
     var phone = cell(dirRows[r], 1);
 
-    // Extract parent name and pronouns
-    // Format: "Amber Furnish (she/her)" or "Amber & Bobby Furnish"
-    // Build parentPronouns map: { "FirstName": "she/her" }
-    // Format: "Amber Furnish (she/her)" or "Amber & Bobby Furnish (she/her)"
-    // Extract all (pronoun) blocks with the name that precedes them
+    // Parent pronouns now come from member_profiles.parents (DB overlay).
+    // Parenthetical text is still stripped from display for legacy rows that
+    // had "(she/her)" embedded in the parent cell.
     var parentPronouns = {};
-    var pronRe = /(\S+)\s+\(([^)]+)\)/g;
-    var pMatch;
-    while ((pMatch = pronRe.exec(parentStr)) !== null) {
-      // pMatch[1] is the word before parens (could be last name)
-      // Walk back to find the first name of this parent
-      var before = parentStr.substring(0, pMatch.index + pMatch[1].length);
-      // Remove any prior parentheticals
-      before = before.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
-      // Split by & to isolate this parent's name portion
-      var segments = before.split(/\s*&\s*/);
-      var lastSeg = segments[segments.length - 1].trim();
-      var firstName = lastSeg.split(/\s+/)[0];
-      if (firstName) parentPronouns[firstName] = pMatch[2].trim();
-    }
     var parentClean = parentStr.replace(/\s*\([^)]*\)\s*/g, '').trim();
     // Extract last name — last word of the parent string
     var parentWords = parentClean.split(/\s+/);
@@ -217,9 +170,9 @@ function parseDirectory(dirRows, classlistRows, allergyRows) {
       var kidStr = cell(dirRows[r], c);
       if (!kidStr) continue;
 
-      // Format: "Mackenna (she/her)" or just "Coen"
-      var pronounMatch = kidStr.match(/\(([^)]+)\)/);
-      var kidPronouns = pronounMatch ? pronounMatch[1] : '';
+      // Kid pronouns come from member_profiles.kids via the DB overlay.
+      // Parentheticals are still stripped for legacy "Name (she/her)" cells.
+      var kidPronouns = '';
       var kidFirst = kidStr.replace(/\s*\([^)]*\)\s*/g, '').trim();
       // Strip family name from kid's name if included (e.g., "Ava Hall" in Hall family → "Ava")
       if (kidFirst.toLowerCase().endsWith(' ' + familyName.toLowerCase())) {
@@ -263,24 +216,14 @@ function parseDirectory(dirRows, classlistRows, allergyRows) {
         if (isPmOnly) schedule = 'afternoon';
       }
 
-      // Look up allergies — try same keys, then scan by first name
-      var allergy = allergyMap[lookupKey1] || allergyMap[lookupKey2] || '';
-      if (!allergy) {
-        var kidFirstLower2 = kidFirst.toLowerCase();
-        for (var key in allergyMap) {
-          if (key.split(' ')[0] === kidFirstLower2) {
-            allergy = allergyMap[key];
-            break;
-          }
-        }
-      }
-
+      // Allergies come from member_profiles.kids via the DB overlay.
       kids.push({
         name: kidFirst,
         group: group,
         schedule: schedule,
         pronouns: kidPronouns,
-        allergies: allergy
+        allergies: '',
+        photo_consent: true
       });
     }
 
@@ -1110,7 +1053,10 @@ async function applyMemberProfileOverlay(families) {
       return {
         name: n,
         pronouns: pronouns,
-        photoUrl: hit.photo_url || ''
+        photoUrl: hit.photo_url || '',
+        // Explicit false opts the adult out; anything else (missing field, true)
+        // stays consented so legacy rows and Directory-only families keep photos.
+        photoConsent: hit.photo_consent !== false
       };
     });
     // Any DB-only parents (name not yet in the sheet) appended so edits are
@@ -1120,7 +1066,12 @@ async function applyMemberProfileOverlay(families) {
       var first = String(pp.name).trim().split(/\s+/)[0];
       var exists = fam.parentInfo.some(function (x) { return x.name.toLowerCase() === first.toLowerCase(); });
       if (!exists) {
-        fam.parentInfo.push({ name: first, pronouns: pp.pronouns || '', photoUrl: pp.photo_url || '' });
+        fam.parentInfo.push({
+          name: first,
+          pronouns: pp.pronouns || '',
+          photoUrl: pp.photo_url || '',
+          photoConsent: pp.photo_consent !== false
+        });
         // Keep the `parents` string in sync so family-name rendering picks it up.
         fam.parents = fam.parents ? fam.parents + ' & ' + first : first;
         if (pp.pronouns) {
@@ -1147,6 +1098,9 @@ async function applyMemberProfileOverlay(families) {
       if (ov.birth_date) kid.birthDate = ov.birth_date;
       if (ov.schedule) kid.schedule = ov.schedule;
       if (ov.photo_url) kid.photoUrl = ov.photo_url;
+      // photo_consent: explicit false opts the child out. Default when the
+      // field is missing is consent=true so legacy rows keep their photos.
+      kid.photo_consent = ov.photo_consent !== false;
     });
     // Append DB-only kids (not yet in the sheet).
     (p.kids || []).forEach(function (k) {
@@ -1164,7 +1118,8 @@ async function applyMemberProfileOverlay(families) {
           pronouns: k.pronouns || '',
           allergies: k.allergies || '',
           birthDate: k.birth_date || '',
-          photoUrl: k.photo_url || ''
+          photoUrl: k.photo_url || '',
+          photo_consent: k.photo_consent !== false
         });
       }
     });
@@ -1894,3 +1849,10 @@ module.exports = async function handler(req, res) {
     res.status(500).json({ error: 'Failed to fetch sheet data' });
   }
 };
+
+// Expose pure helpers for one-off scripts (seed migrations, inspections) so
+// they stay in lockstep with the live parser. Vercel treats the default
+// module.exports function as the handler and ignores attached properties.
+module.exports.parseDirectory = parseDirectory;
+module.exports.fetchSheet = fetchSheet;
+module.exports.getAuth = getAuth;
