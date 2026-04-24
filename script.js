@@ -11324,9 +11324,14 @@
         // Temporary diagnostic — paste the output if the modal still
         // shows everyone as Unassigned despite the DB having rows.
         try {
-          console.debug('[roles-manager] holders response status=' + (holdersRes.ok ? 'ok' : 'err') +
+          console.log('[roles-manager] holders response status=' + (holdersRes.ok ? 'ok' : 'err') +
             ' rawCount=' + holdersArr.length +
             ' groupedRoleIds=' + Object.keys(_rolesMgrState.holdersByRoleId).join(','));
+          if (holdersArr.length > 0) {
+            console.log('[roles-manager] first holder sample:', holdersArr[0]);
+          }
+          console.log('[roles-manager] roles count=' + _rolesMgrState.roles.length +
+            ' first role ids=' + _rolesMgrState.roles.slice(0, 3).map(function (r) { return r.id; }).join(','));
         } catch (e) { /* ignore */ }
         renderRolesManagerTree();
       })
