@@ -251,22 +251,14 @@ ALTER TABLE role_descriptions
 ALTER TABLE role_descriptions
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
 
--- Tightly validate status + category values. Separate DO-blocks so a
--- partially-applied migration can still advance.
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'role_descriptions_status_chk') THEN
-    ALTER TABLE role_descriptions
-      ADD CONSTRAINT role_descriptions_status_chk
-      CHECK (status IN ('active','archived'));
-  END IF;
-END $$;
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'role_descriptions_category_chk') THEN
-    ALTER TABLE role_descriptions
-      ADD CONSTRAINT role_descriptions_category_chk
-      CHECK (category IN ('board','committee_role','cleaning_area','class'));
-  END IF;
-END $$;
+-- Tightly validate status + category values. Postgres has no
+-- "ADD CONSTRAINT IF NOT EXISTS" and the migration runner splits on
+-- semicolons, so DO-blocks break parsing — drop-then-add is the
+-- idempotent equivalent and lets future value tweaks land cleanly.
+ALTER TABLE role_descriptions DROP CONSTRAINT IF EXISTS role_descriptions_status_chk;
+ALTER TABLE role_descriptions ADD CONSTRAINT role_descriptions_status_chk CHECK (status IN ('active','archived'));
+ALTER TABLE role_descriptions DROP CONSTRAINT IF EXISTS role_descriptions_category_chk;
+ALTER TABLE role_descriptions ADD CONSTRAINT role_descriptions_category_chk CHECK (category IN ('board','committee_role','cleaning_area','class'));
 
 CREATE INDEX IF NOT EXISTS role_descriptions_parent_idx
   ON role_descriptions (parent_role_id);
