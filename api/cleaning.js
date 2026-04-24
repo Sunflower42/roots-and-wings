@@ -14,6 +14,52 @@
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { ALLOWED_ORIGINS } = require('./_config');
+const { canEditAsRole, SUPER_USER_EMAIL } = require('./_permissions');
+
+// Editing a role_descriptions row is gated by which bucket of fields
+// you're touching. Meta = title / hierarchy / lifecycle, reserved for
+// the President (and super user). Content = overview / duties /
+// playbook / job_length / last_reviewed_* — those can also be edited
+// by anyone whose volunteer-sheet role is an ancestor of the target
+// row (so the VP can update any Programming Committee role, the
+// Cleaning Crew Liaison can update the area rows they oversee, etc.).
+const META_FIELDS = new Set([
+  'title', 'committee', 'parent_role_id', 'category',
+  'display_order', 'status'
+]);
+const CONTENT_FIELDS = new Set([
+  'overview', 'duties', 'job_length', 'last_reviewed_by',
+  'last_reviewed_date', 'playbook'
+]);
+const VALID_CATEGORIES = ['board', 'committee_role', 'cleaning_area', 'class'];
+const VALID_STATUSES = ['active', 'archived'];
+
+async function canEditRoleMeta(userEmail) {
+  if (!userEmail) return false;
+  if (String(userEmail).toLowerCase() === SUPER_USER_EMAIL) return true;
+  return await canEditAsRole(userEmail, 'President');
+}
+
+// Walks up parent_role_id (max depth 5 — really 3 in practice) and
+// collects titles. User can edit content if they hold ANY of those
+// titles in the volunteer sheet, or if they pass the meta gate.
+async function canEditRoleContent(userEmail, sql, roleId) {
+  if (await canEditRoleMeta(userEmail)) return true;
+  const titles = [];
+  let currentId = roleId;
+  const seen = new Set();
+  for (let depth = 0; depth < 5 && currentId && !seen.has(currentId); depth++) {
+    seen.add(currentId);
+    const row = await sql`SELECT title, parent_role_id FROM role_descriptions WHERE id = ${currentId}`;
+    if (row.length === 0) break;
+    titles.push(row[0].title);
+    currentId = row[0].parent_role_id;
+  }
+  for (const title of titles) {
+    if (await canEditAsRole(userEmail, title)) return true;
+  }
+  return false;
+}
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
@@ -101,41 +147,143 @@ module.exports = async function handler(req, res) {
     // ── Role Descriptions ──
     if (action === 'roles') {
       if (req.method === 'GET') {
-        const roles = await sql`
-          SELECT id, role_key, title, job_length, overview, duties, committee,
-                 last_reviewed_by, last_reviewed_date, playbook, updated_at, updated_by
-          FROM role_descriptions ORDER BY title
-        `;
+        // includeArchived=1 returns every row (for the President's
+        // management page). Default excludes archived so the duty-popup
+        // + directory lookups don't bloat.
+        const includeArchived = req.query.includeArchived === '1';
+        const roles = includeArchived
+          ? await sql`
+              SELECT id, role_key, title, job_length, overview, duties, committee,
+                     parent_role_id, category, display_order, status,
+                     last_reviewed_by, last_reviewed_date, playbook,
+                     updated_at, updated_by
+              FROM role_descriptions
+              ORDER BY category, display_order, title
+            `
+          : await sql`
+              SELECT id, role_key, title, job_length, overview, duties, committee,
+                     parent_role_id, category, display_order, status,
+                     last_reviewed_by, last_reviewed_date, playbook,
+                     updated_at, updated_by
+              FROM role_descriptions
+              WHERE status = 'active'
+              ORDER BY category, display_order, title
+            `;
         return res.status(200).json({ roles });
+      }
+
+      if (req.method === 'POST') {
+        // Create a new role. President + super user only.
+        if (!(await canEditRoleMeta(user.email))) {
+          return res.status(403).json({ error: 'Only the President (or super user) can create roles.' });
+        }
+        const body = req.body || {};
+        const role_key = String(body.role_key || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+        const title = String(body.title || '').trim();
+        if (!role_key || !title) return res.status(400).json({ error: 'role_key and title are required' });
+
+        const category = VALID_CATEGORIES.indexOf(body.category) !== -1 ? body.category : 'committee_role';
+        const status = VALID_STATUSES.indexOf(body.status) !== -1 ? body.status : 'active';
+        const parent_role_id = body.parent_role_id ? parseInt(body.parent_role_id, 10) : null;
+        const committee = String(body.committee || '').trim();
+        const job_length = String(body.job_length || '').trim();
+        const overview = String(body.overview || '').trim();
+        const dutiesArr = Array.isArray(body.duties) ? body.duties.map(d => String(d).trim()).filter(Boolean) : [];
+        const display_order = Number.isFinite(parseInt(body.display_order, 10)) ? parseInt(body.display_order, 10) : 0;
+
+        if (parent_role_id) {
+          const exists = await sql`SELECT id FROM role_descriptions WHERE id = ${parent_role_id}`;
+          if (exists.length === 0) return res.status(400).json({ error: 'parent_role_id does not exist' });
+        }
+
+        try {
+          const inserted = await sql`
+            INSERT INTO role_descriptions (
+              role_key, title, job_length, overview, duties, committee,
+              parent_role_id, category, display_order, status, updated_by
+            ) VALUES (
+              ${role_key}, ${title}, ${job_length}, ${overview}, ${dutiesArr}, ${committee},
+              ${parent_role_id}, ${category}, ${display_order}, ${status}, ${user.email}
+            )
+            RETURNING *
+          `;
+          return res.status(201).json({ role: inserted[0] });
+        } catch (err) {
+          if (String(err.message || '').match(/duplicate key|unique constraint/i)) {
+            return res.status(409).json({ error: 'A role with that role_key already exists' });
+          }
+          throw err;
+        }
       }
 
       if (req.method === 'PATCH') {
         const id = parseInt(req.query.id, 10);
         if (!id) return res.status(400).json({ error: 'id required' });
-        const { overview, duties, job_length, last_reviewed_by, last_reviewed_date, playbook } = req.body || {};
-        if (overview === undefined && duties === undefined && job_length === undefined
-            && last_reviewed_by === undefined && last_reviewed_date === undefined
-            && playbook === undefined) {
-          return res.status(400).json({ error: 'No fields to update' });
+        const body = req.body || {};
+        const touchedFields = Object.keys(body).filter(k => META_FIELDS.has(k) || CONTENT_FIELDS.has(k));
+        if (touchedFields.length === 0) return res.status(400).json({ error: 'No editable fields supplied' });
+
+        const hitsMeta = touchedFields.some(k => META_FIELDS.has(k));
+        if (hitsMeta && !(await canEditRoleMeta(user.email))) {
+          return res.status(403).json({ error: 'Only the President (or super user) can change role title, hierarchy, or lifecycle.' });
         }
-        if (overview !== undefined) {
-          await sql`UPDATE role_descriptions SET overview = ${String(overview)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        // Even for content-only edits, the user needs some stake in the
+        // committee subtree. canEditRoleContent covers super-user + President
+        // + any ancestor-role holder.
+        if (!hitsMeta && !(await canEditRoleContent(user.email, sql, id))) {
+          return res.status(403).json({ error: 'You don\'t have permission to edit this role.' });
         }
-        if (job_length !== undefined) {
-          await sql`UPDATE role_descriptions SET job_length = ${String(job_length)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+
+        // Apply per-field updates.
+        if (body.overview !== undefined) {
+          await sql`UPDATE role_descriptions SET overview = ${String(body.overview)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
-        if (last_reviewed_by !== undefined) {
-          await sql`UPDATE role_descriptions SET last_reviewed_by = ${String(last_reviewed_by)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        if (body.job_length !== undefined) {
+          await sql`UPDATE role_descriptions SET job_length = ${String(body.job_length)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
-        if (last_reviewed_date !== undefined) {
-          await sql`UPDATE role_descriptions SET last_reviewed_date = ${String(last_reviewed_date)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        if (body.last_reviewed_by !== undefined) {
+          await sql`UPDATE role_descriptions SET last_reviewed_by = ${String(body.last_reviewed_by)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
-        if (duties !== undefined) {
-          const dutiesArr = Array.isArray(duties) ? duties.map(d => String(d).trim()).filter(Boolean) : [];
+        if (body.last_reviewed_date !== undefined) {
+          await sql`UPDATE role_descriptions SET last_reviewed_date = ${String(body.last_reviewed_date)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+        if (body.duties !== undefined) {
+          const dutiesArr = Array.isArray(body.duties) ? body.duties.map(d => String(d).trim()).filter(Boolean) : [];
           await sql`UPDATE role_descriptions SET duties = ${dutiesArr}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
-        if (playbook !== undefined) {
-          await sql`UPDATE role_descriptions SET playbook = ${String(playbook)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        if (body.playbook !== undefined) {
+          await sql`UPDATE role_descriptions SET playbook = ${String(body.playbook)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+        if (body.title !== undefined) {
+          const title = String(body.title).trim();
+          if (!title) return res.status(400).json({ error: 'title cannot be empty' });
+          await sql`UPDATE role_descriptions SET title = ${title}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+        if (body.committee !== undefined) {
+          await sql`UPDATE role_descriptions SET committee = ${String(body.committee).trim()}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+        if (body.category !== undefined) {
+          if (VALID_CATEGORIES.indexOf(body.category) === -1) return res.status(400).json({ error: 'Invalid category' });
+          await sql`UPDATE role_descriptions SET category = ${body.category}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+        if (body.status !== undefined) {
+          if (VALID_STATUSES.indexOf(body.status) === -1) return res.status(400).json({ error: 'Invalid status' });
+          await sql`UPDATE role_descriptions SET status = ${body.status}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+        if (body.display_order !== undefined) {
+          const n = parseInt(body.display_order, 10);
+          if (!Number.isFinite(n)) return res.status(400).json({ error: 'display_order must be a number' });
+          await sql`UPDATE role_descriptions SET display_order = ${n}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+        if (body.parent_role_id !== undefined) {
+          const pid = body.parent_role_id === null ? null : parseInt(body.parent_role_id, 10);
+          if (pid !== null && !Number.isFinite(pid)) return res.status(400).json({ error: 'parent_role_id must be a number or null' });
+          if (pid === id) return res.status(400).json({ error: 'A role cannot be its own parent' });
+          if (pid) {
+            const exists = await sql`SELECT id FROM role_descriptions WHERE id = ${pid}`;
+            if (exists.length === 0) return res.status(400).json({ error: 'parent_role_id does not exist' });
+          }
+          await sql`UPDATE role_descriptions SET parent_role_id = ${pid}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         return res.status(200).json({ ok: true });
       }

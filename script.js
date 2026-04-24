@@ -5000,13 +5000,30 @@
         return h;
       }
     },
+    'roles': {
+      // President-only roles manager. Communications sees it while
+      // View-As'ing the President because getWorkspaceRoles resolves
+      // against the active (view-as) email. roleGate is set so it only
+      // appears for the President — the server enforces meta-edits too.
+      title: 'Roles & Committees',
+      roleGate: ['President'],
+      render: function () {
+        var h = '<p class="ws-body-hint">Manage every role’s job description, term, and hierarchy across the co-op.</p>';
+        h += '<ul class="ws-link-list">';
+        h += '<li><button type="button" class="ws-link-btn" data-resource-action="roles-manager"><span class="ws-link-icon">🧭</span>Open Roles Manager<span class="ws-link-count" id="rolesmgr-count" hidden></span></button></li>';
+        h += '</ul>';
+        return h;
+      },
+      afterRender: function () {
+        if (typeof loadRolesManagerCount === 'function') loadRolesManagerCount();
+      }
+    },
     'pm-scheduling': {
-      // Visible to VP + PM Assistant (Afternoon Class Liaison) + Comms
-      // Visible only to the roles that actually run PM scheduling: VP and
-      // the Afternoon Class Liaison (the PM scheduler). communications@ is a
-      // super user server-side (canReviewSubmissions lets her call the API
-      // while impersonating), but we hide the widget from her own profile
-      // so it surfaces only when she View-As's into a VP / PM-scheduler row.
+      // Visible only to the roles that actually run PM scheduling: VP
+      // and the Afternoon Class Liaison (the PM scheduler).
+      // communications@ is a super user server-side but we hide the
+      // widget from her own profile so it surfaces only when she
+      // View-As's into a VP / PM-scheduler row.
       title: 'PM Class Scheduling',
       roleGate: ['Vice President', 'Afternoon Class Liaison'],
       render: function () {
@@ -5100,6 +5117,7 @@
   };
 
   var WORKSPACE_DEFAULTS = {
+    'President': ['roles', 'my-links', 'ways-to-help', 'resources'],
     'Communications Director': ['reports', 'forms', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
     'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
     'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
@@ -9497,6 +9515,7 @@
     else if (action === 'schedule-builder' && typeof showScheduleBuilder === 'function') showScheduleBuilder();
     else if (action === 'pm-submissions-report' && typeof showPmSubmissionsModal === 'function') showPmSubmissionsModal();
     else if (action === 'submit-pm-class' && typeof showClassSubmissionModal === 'function') showClassSubmissionModal(null);
+    else if (action === 'roles-manager' && typeof showRolesManagerModal === 'function') showRolesManagerModal();
   });
 
   // Render all coordination tabs
@@ -11200,6 +11219,348 @@
     submissions: [],
     filters: { status: 'submitted', session: 'all', age: 'all', school_year: '2026-2027' }
   };
+
+  // ══════════════════════════════════════════════
+  // Roles Manager (President workspace widget → modal)
+  // ══════════════════════════════════════════════
+  // Reads /api/cleaning?action=roles&includeArchived=1, renders the full
+  // hierarchy grouped by board chair, with inline Edit, Archive/Restore,
+  // and "+ Add Role" actions. Persists edits via PATCH/POST to the same
+  // endpoint. Server-side permissions enforce that only the President +
+  // super user can change meta fields or create/archive roles.
+  var _rolesMgrState = {
+    loaded: false,
+    roles: [],
+    showArchived: false
+  };
+
+  function loadRolesManagerCount() {
+    var pill = document.getElementById('rolesmgr-count');
+    if (!pill) return;
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) return;
+    fetch('/api/cleaning?action=roles&includeArchived=1', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var roles = Array.isArray(data.roles) ? data.roles : [];
+        _rolesMgrState.roles = roles;
+        _rolesMgrState.loaded = true;
+        var active = roles.filter(function (r) { return r.status === 'active'; }).length;
+        pill.textContent = active + ' active';
+        pill.hidden = false;
+      })
+      .catch(function () { /* silent — pill stays hidden */ });
+  }
+
+  function showRolesManagerModal() {
+    if (!personDetail || !personDetailCard) return;
+    var h = '<button class="detail-close" aria-label="Close">&times;</button>';
+    h += '<div class="elective-detail rd-modal roles-mgr-modal">';
+    h += '<div class="roles-mgr-head">';
+    h += '<h3 class="rd-title" style="margin:0;">Roles &amp; Committees</h3>';
+    h += '<div class="roles-mgr-toolbar">';
+    h += '<label class="roles-mgr-toggle"><input type="checkbox" id="roles-show-archived"' + (_rolesMgrState.showArchived ? ' checked' : '') + ' /> Show archived</label>';
+    h += '<button class="btn btn-primary btn-sm" id="roles-add-btn">+ Add Role</button>';
+    h += '</div>';
+    h += '</div>';
+    h += '<p class="rd-subtitle">Every job description, term, and hierarchy in one place. Edits are stamped with who and when.</p>';
+    h += '<div id="roles-mgr-body"><p class="ws-empty">Loading roles…</p></div>';
+    h += '</div>';
+    personDetailCard.innerHTML = h;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+
+    document.getElementById('roles-show-archived').addEventListener('change', function () {
+      _rolesMgrState.showArchived = this.checked;
+      renderRolesManagerTree();
+    });
+    document.getElementById('roles-add-btn').addEventListener('click', function () {
+      showRoleEditModal(null);
+    });
+    loadRolesManagerTree();
+  }
+
+  function loadRolesManagerTree(force) {
+    var body = document.getElementById('roles-mgr-body');
+    if (!body) return;
+    if (_rolesMgrState.loaded && !force) {
+      renderRolesManagerTree();
+      return;
+    }
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) { body.innerHTML = '<p class="ws-empty">Sign-in required.</p>'; return; }
+    body.innerHTML = '<p class="ws-empty">Loading roles…</p>';
+    fetch('/api/cleaning?action=roles&includeArchived=1', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          body.innerHTML = '<p class="ws-empty">' + escapeHtml((res.data && res.data.error) || 'Could not load roles.') + '</p>';
+          return;
+        }
+        _rolesMgrState.roles = Array.isArray(res.data.roles) ? res.data.roles : [];
+        _rolesMgrState.loaded = true;
+        renderRolesManagerTree();
+      })
+      .catch(function (err) {
+        body.innerHTML = '<p class="ws-empty">Network error: ' + escapeHtml(err.message || 'unknown') + '</p>';
+      });
+  }
+
+  function renderRolesManagerTree() {
+    var body = document.getElementById('roles-mgr-body');
+    if (!body) return;
+    var roles = _rolesMgrState.roles || [];
+    var show = _rolesMgrState.showArchived;
+    var visible = roles.filter(function (r) { return show || r.status !== 'archived'; });
+
+    // Group: board → children (by parent_role_id).
+    var byId = {};
+    visible.forEach(function (r) { byId[r.id] = r; });
+    var boards = visible.filter(function (r) { return r.category === 'board'; })
+      .sort(function (a, b) { return a.display_order - b.display_order || a.title.localeCompare(b.title); });
+    var childrenOf = {};
+    visible.forEach(function (r) {
+      if (r.parent_role_id) {
+        (childrenOf[r.parent_role_id] = childrenOf[r.parent_role_id] || []).push(r);
+      }
+    });
+    Object.keys(childrenOf).forEach(function (k) {
+      childrenOf[k].sort(function (a, b) {
+        // Archived sinks below active; then by display_order; then by title.
+        if ((a.status === 'archived') !== (b.status === 'archived')) return a.status === 'archived' ? 1 : -1;
+        return a.display_order - b.display_order || a.title.localeCompare(b.title);
+      });
+    });
+    var orphans = visible.filter(function (r) {
+      return r.category !== 'board' && !byId[r.parent_role_id];
+    });
+
+    var h = '';
+    function renderRow(r, depth) {
+      var archived = r.status === 'archived';
+      var classes = 'roles-row roles-row-depth-' + depth + (archived ? ' roles-row-archived' : '');
+      var h2 = '<div class="' + classes + '" data-role-id="' + r.id + '">';
+      h2 += '<div class="roles-row-main">';
+      h2 += '<button type="button" class="roles-row-title" data-role-id="' + r.id + '">' + escapeHtml(r.title) + '</button>';
+      h2 += '<div class="roles-row-pills">';
+      if (r.job_length) h2 += '<span class="roles-pill roles-pill-term">' + escapeHtml(r.job_length) + '</span>';
+      h2 += '<span class="roles-pill roles-pill-cat roles-pill-cat-' + r.category + '">' + escapeHtml(r.category.replace(/_/g, ' ')) + '</span>';
+      if (archived) h2 += '<span class="roles-pill roles-pill-archived">archived</span>';
+      h2 += '</div>';
+      h2 += '</div>';
+      h2 += '<div class="roles-row-meta">';
+      if (r.overview) h2 += '<span class="roles-row-overview">' + escapeHtml(String(r.overview).slice(0, 120)) + (String(r.overview).length > 120 ? '…' : '') + '</span>';
+      var stampBits = [];
+      if (r.updated_by) stampBits.push(escapeHtml(r.updated_by));
+      if (r.updated_at) {
+        try { stampBits.push(new Date(r.updated_at).toLocaleDateString()); } catch (e) { /* ignore */ }
+      }
+      if (stampBits.length) h2 += '<span class="roles-row-stamp">Updated ' + stampBits.join(' · ') + '</span>';
+      h2 += '</div>';
+      h2 += '</div>';
+      return h2;
+    }
+    function renderBranch(row, depth) {
+      var out = renderRow(row, depth);
+      var kids = childrenOf[row.id] || [];
+      kids.forEach(function (k) { out += renderBranch(k, depth + 1); });
+      return out;
+    }
+
+    if (boards.length === 0 && orphans.length === 0) {
+      body.innerHTML = '<p class="ws-empty">No roles match. Uncheck "Show archived" or add one with the + button.</p>';
+      return;
+    }
+    boards.forEach(function (b) {
+      h += '<section class="roles-branch">';
+      h += renderBranch(b, 0);
+      h += '</section>';
+    });
+    if (orphans.length) {
+      h += '<section class="roles-branch roles-branch-orphans">';
+      h += '<h5 class="roles-branch-head">Unassigned</h5>';
+      orphans.sort(function (a, b) { return a.title.localeCompare(b.title); }).forEach(function (o) {
+        h += renderRow(o, 0);
+      });
+      h += '</section>';
+    }
+    body.innerHTML = h;
+
+    body.querySelectorAll('.roles-row-title').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = parseInt(this.getAttribute('data-role-id'), 10);
+        var role = _rolesMgrState.roles.find(function (r) { return r.id === id; });
+        if (role) showRoleEditModal(role);
+      });
+    });
+  }
+
+  // Dedicated edit / create modal. Uses a second overlay so closing it
+  // doesn't close the Roles Manager behind it.
+  function showRoleEditModal(role) {
+    var isNew = !role;
+    var existing = role || {
+      id: null, role_key: '', title: '', job_length: '', committee: '',
+      parent_role_id: null, category: 'committee_role', status: 'active',
+      display_order: 0, overview: '', duties: [], playbook: '',
+      last_reviewed_by: '', last_reviewed_date: ''
+    };
+
+    var overlay = document.createElement('div');
+    overlay.className = 'role-edit-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    // Build parent dropdown from current loaded roles (excluding self to
+    // prevent a cycle). Board roles top, then others alphabetized.
+    var parentOptions = '<option value="">— no parent (top level) —</option>';
+    var candidates = (_rolesMgrState.roles || []).filter(function (r) { return r.id !== existing.id; });
+    candidates.sort(function (a, b) {
+      if ((a.category === 'board') !== (b.category === 'board')) return a.category === 'board' ? -1 : 1;
+      return a.title.localeCompare(b.title);
+    });
+    candidates.forEach(function (r) {
+      var sel = String(existing.parent_role_id || '') === String(r.id) ? ' selected' : '';
+      parentOptions += '<option value="' + r.id + '"' + sel + '>' + escapeHtml(r.title) + ' (' + r.category.replace(/_/g, ' ') + ')</option>';
+    });
+
+    function catOption(value, label) {
+      return '<option value="' + value + '"' + (existing.category === value ? ' selected' : '') + '>' + label + '</option>';
+    }
+
+    var h = '<div class="role-edit-card" role="document">';
+    h += '<button class="detail-close role-edit-close" aria-label="Close">&times;</button>';
+    h += '<h3 class="rd-title">' + (isNew ? 'Add a Role' : 'Edit Role') + '</h3>';
+    h += '<form class="role-edit-form" id="roleEditForm">';
+    h += '<div class="role-edit-grid">';
+    h += '<label class="role-edit-field role-edit-field-wide">Title<input type="text" name="title" required maxlength="120" value="' + escapeHtml(existing.title) + '" /></label>';
+    if (isNew) {
+      h += '<label class="role-edit-field">Role key (lowercase, unique)<input type="text" name="role_key" required pattern="[a-z0-9_]+" maxlength="80" value="' + escapeHtml(existing.role_key) + '" /></label>';
+    }
+    h += '<label class="role-edit-field">Term<input type="text" name="job_length" placeholder="e.g., 1 year, 1 session" maxlength="60" value="' + escapeHtml(existing.job_length) + '" /></label>';
+    h += '<label class="role-edit-field">Committee<input type="text" name="committee" maxlength="120" value="' + escapeHtml(existing.committee) + '" /></label>';
+    h += '<label class="role-edit-field">Category<select name="category">';
+    h += catOption('committee_role', 'Committee Role');
+    h += catOption('board', 'Board');
+    h += catOption('cleaning_area', 'Cleaning Area');
+    h += catOption('class', 'Class');
+    h += '</select></label>';
+    h += '<label class="role-edit-field role-edit-field-wide">Parent role<select name="parent_role_id">' + parentOptions + '</select></label>';
+    h += '<label class="role-edit-field">Status<select name="status">';
+    h += '<option value="active"' + (existing.status !== 'archived' ? ' selected' : '') + '>Active</option>';
+    h += '<option value="archived"' + (existing.status === 'archived' ? ' selected' : '') + '>Archived</option>';
+    h += '</select></label>';
+    h += '<label class="role-edit-field">Display order<input type="number" name="display_order" step="1" value="' + (existing.display_order || 0) + '" /></label>';
+    h += '<label class="role-edit-field">Last reviewed by<input type="text" name="last_reviewed_by" maxlength="80" value="' + escapeHtml(existing.last_reviewed_by || '') + '" /></label>';
+    h += '<label class="role-edit-field">Last reviewed date<input type="text" name="last_reviewed_date" placeholder="e.g., 9/23/25" maxlength="20" value="' + escapeHtml(existing.last_reviewed_date || '') + '" /></label>';
+    h += '<label class="role-edit-field role-edit-field-wide">Overview<textarea name="overview" rows="3">' + escapeHtml(existing.overview || '') + '</textarea></label>';
+    h += '<label class="role-edit-field role-edit-field-wide">Duties (one per line)<textarea name="duties" rows="6">' + escapeHtml((existing.duties || []).join('\n')) + '</textarea></label>';
+    h += '<label class="role-edit-field role-edit-field-wide">Playbook / handoff notes<textarea name="playbook" rows="4">' + escapeHtml(existing.playbook || '') + '</textarea></label>';
+    h += '</div>';
+    h += '<div class="role-edit-footer">';
+    h += '<p class="role-edit-err" id="roleEditErr" aria-live="polite" style="display:none;"></p>';
+    h += '<div class="role-edit-actions">';
+    if (!isNew) {
+      var archiveLabel = existing.status === 'archived' ? 'Restore' : 'Archive';
+      h += '<button type="button" class="sc-btn sc-btn-del" id="roleArchiveBtn">' + archiveLabel + '</button>';
+    }
+    h += '<button type="button" class="sc-btn" id="roleCancelBtn">Cancel</button>';
+    h += '<button type="submit" class="btn btn-primary" id="roleSaveBtn">' + (isNew ? 'Create' : 'Save') + '</button>';
+    h += '</div>';
+    h += '</div>';
+    h += '</form>';
+    h += '</div>';
+
+    overlay.innerHTML = h;
+    document.body.appendChild(overlay);
+
+    function close() {
+      overlay.remove();
+    }
+    overlay.querySelector('.role-edit-close').addEventListener('click', close);
+    overlay.querySelector('#roleCancelBtn').addEventListener('click', close);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+
+    var archiveBtn = overlay.querySelector('#roleArchiveBtn');
+    if (archiveBtn) {
+      archiveBtn.addEventListener('click', function () {
+        var nextStatus = existing.status === 'archived' ? 'active' : 'archived';
+        if (nextStatus === 'archived' && !confirm('Archive "' + existing.title + '"? It\'ll stay in the database but be hidden from the default list.')) return;
+        saveRoleEdit(overlay, existing.id, { status: nextStatus }, close);
+      });
+    }
+
+    overlay.querySelector('#roleEditForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var fd = new FormData(this);
+      var dutiesRaw = String(fd.get('duties') || '');
+      var payload = {
+        title: String(fd.get('title') || '').trim(),
+        job_length: String(fd.get('job_length') || '').trim(),
+        committee: String(fd.get('committee') || '').trim(),
+        category: fd.get('category') || 'committee_role',
+        status: fd.get('status') || 'active',
+        parent_role_id: fd.get('parent_role_id') ? parseInt(fd.get('parent_role_id'), 10) : null,
+        display_order: parseInt(fd.get('display_order'), 10) || 0,
+        last_reviewed_by: String(fd.get('last_reviewed_by') || '').trim(),
+        last_reviewed_date: String(fd.get('last_reviewed_date') || '').trim(),
+        overview: String(fd.get('overview') || '').trim(),
+        duties: dutiesRaw.split('\n').map(function (s) { return s.trim(); }).filter(Boolean),
+        playbook: String(fd.get('playbook') || '').trim()
+      };
+      if (isNew) {
+        payload.role_key = String(fd.get('role_key') || '').trim().toLowerCase();
+        if (!payload.role_key || !payload.title) {
+          showRoleEditErr(overlay, 'role_key and title are required');
+          return;
+        }
+      }
+      saveRoleEdit(overlay, existing.id, payload, close);
+    });
+  }
+
+  function showRoleEditErr(overlay, msg) {
+    var e = overlay.querySelector('#roleEditErr');
+    if (!e) return;
+    e.textContent = msg;
+    e.style.display = '';
+  }
+
+  function saveRoleEdit(overlay, id, payload, onDone) {
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) { showRoleEditErr(overlay, 'Sign-in required'); return; }
+    var url = '/api/cleaning?action=roles' + (id ? '&id=' + id : '');
+    var method = id ? 'PATCH' : 'POST';
+    var saveBtn = overlay.querySelector('#roleSaveBtn');
+    if (saveBtn) saveBtn.disabled = true;
+    fetch(url, {
+      method: method,
+      headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          showRoleEditErr(overlay, (res.data && res.data.error) || ('Save failed (' + res.status + ')'));
+          if (saveBtn) saveBtn.disabled = false;
+          return;
+        }
+        onDone();
+        loadRolesManagerTree(true);
+        if (typeof loadRolesManagerCount === 'function') loadRolesManagerCount();
+      })
+      .catch(function (err) {
+        showRoleEditErr(overlay, 'Network error: ' + (err.message || 'unknown'));
+        if (saveBtn) saveBtn.disabled = false;
+      });
+  }
 
   function showPmSubmissionsModal() {
     if (!personDetail || !personDetailCard) return;

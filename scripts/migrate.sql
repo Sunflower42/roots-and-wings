@@ -234,6 +234,47 @@ CREATE TABLE IF NOT EXISTS role_descriptions (
 -- editable from the Workspace by the current role holder.
 ALTER TABLE role_descriptions ADD COLUMN IF NOT EXISTS playbook TEXT DEFAULT '';
 
+-- Hierarchy + state. parent_role_id points up the org chart (e.g., a
+-- Facility Committee role's parent is the President). category groups
+-- rows in the Roles management UI ('board' | 'committee_role' |
+-- 'cleaning_area' | 'class'). status toggles between 'active' and
+-- 'archived' — archived rows stay in the DB for history but hide from
+-- the default lists. display_order lets the President reorder within a
+-- committee without renaming.
+ALTER TABLE role_descriptions
+  ADD COLUMN IF NOT EXISTS parent_role_id INTEGER
+    REFERENCES role_descriptions(id) ON DELETE SET NULL;
+ALTER TABLE role_descriptions
+  ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'committee_role';
+ALTER TABLE role_descriptions
+  ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE role_descriptions
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+
+-- Tightly validate status + category values. Separate DO-blocks so a
+-- partially-applied migration can still advance.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'role_descriptions_status_chk') THEN
+    ALTER TABLE role_descriptions
+      ADD CONSTRAINT role_descriptions_status_chk
+      CHECK (status IN ('active','archived'));
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'role_descriptions_category_chk') THEN
+    ALTER TABLE role_descriptions
+      ADD CONSTRAINT role_descriptions_category_chk
+      CHECK (category IN ('board','committee_role','cleaning_area','class'));
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS role_descriptions_parent_idx
+  ON role_descriptions (parent_role_id);
+CREATE INDEX IF NOT EXISTS role_descriptions_status_idx
+  ON role_descriptions (status);
+CREATE INDEX IF NOT EXISTS role_descriptions_category_idx
+  ON role_descriptions (category);
+
 -- ──────────────────────────────────────────────
 -- Board photo cache (for the public site)
 -- Populated as a side effect of /api/photos calls from logged-in members.
