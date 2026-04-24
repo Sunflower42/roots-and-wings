@@ -5617,6 +5617,66 @@
       }
       body.innerHTML = headerHtml + '<div id="ws-membership-table-target"></div>';
       var tableTarget = body.querySelector('#ws-membership-table-target');
+
+      // Delegated click handler for the Decline flow. Swaps the button for a
+      // note textarea + confirm/cancel, posts on confirm, reloads on success.
+      body.addEventListener('click', function (e) {
+        var declineBtn = e.target.closest('.ws-decline-btn');
+        if (declineBtn) {
+          var id = declineBtn.getAttribute('data-decline-id');
+          var name = declineBtn.getAttribute('data-decline-name');
+          var email = declineBtn.getAttribute('data-decline-email');
+          var wrap = declineBtn.closest('.ws-reg-decline');
+          wrap.innerHTML =
+            '<p class="ws-reg-decline-hint"><strong>Decline ' + escapeHtmlWs(name) + ' (' + escapeHtmlWs(email) + ')?</strong> An email goes to the family, Treasurer, Membership, and Communications. The registration row and any derived member_profiles row are deleted. Treasurer will issue the refund manually.</p>' +
+            '<textarea class="rd-textarea ws-decline-note" rows="3" placeholder="Optional note to include in the decline email&hellip;"></textarea>' +
+            '<div class="rd-btn-row ws-decline-btn-row">' +
+              '<button type="button" class="sc-btn sc-btn-del ws-decline-confirm-btn" data-decline-id="' + escapeHtmlWs(id) + '">Confirm decline</button>' +
+              '<button type="button" class="sc-btn ws-decline-cancel-btn">Cancel</button>' +
+            '</div>' +
+            '<p class="ws-decline-status" aria-live="polite" style="margin-top:8px;"></p>';
+          return;
+        }
+        if (e.target.classList.contains('ws-decline-cancel-btn')) {
+          // Simplest revert: close and reopen the report modal.
+          closeDetail();
+          showMembershipReportModal();
+          return;
+        }
+        if (e.target.classList.contains('ws-decline-confirm-btn')) {
+          var cBtn = e.target;
+          var declineId = cBtn.getAttribute('data-decline-id');
+          var cWrap = cBtn.closest('.ws-reg-decline');
+          var noteEl = cWrap.querySelector('.ws-decline-note');
+          var note = noteEl ? noteEl.value : '';
+          var statusEl = cWrap.querySelector('.ws-decline-status');
+          statusEl.textContent = 'Processing…';
+          cBtn.disabled = true;
+          var cred = localStorage.getItem('rw_google_credential');
+          fetch('/api/tour', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cred },
+            body: JSON.stringify({ kind: 'registration-decline', id: parseInt(declineId, 10), note: note })
+          }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
+            .then(function (rres) {
+              if (!rres.ok) {
+                statusEl.textContent = 'Error: ' + ((rres.data && rres.data.error) || 'unknown');
+                cBtn.disabled = false;
+                return;
+              }
+              statusEl.textContent = 'Declined. Decline email sent.';
+              setTimeout(function () {
+                closeDetail();
+                showMembershipReportModal();
+              }, 700);
+            }).catch(function (err) {
+              statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+              cBtn.disabled = false;
+            });
+          return;
+        }
+      });
+
       renderSortableTable(tableTarget, [
         { key: 'main_learning_coach', label: 'Main Learning Coach', type: 'string',
           render: function (r) { return escapeHtmlWs(r.main_learning_coach); }
@@ -5735,6 +5795,14 @@
     if (r.placement_notes) {
       h += '<div class="ws-reg-detail-section"><h5>Placement notes</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(r.placement_notes) + '</div></div>';
     }
+
+    // Membership-only action. Renders here so it sits at the bottom of the
+    // expanded detail, away from casual clicks. Wired via delegated listener
+    // below (see ws-membership-report-body click handler).
+    h += '<div class="ws-reg-detail-section ws-reg-decline">';
+    h += '<button type="button" class="sc-btn sc-btn-del ws-decline-btn" data-decline-id="' + escapeHtmlWs(String(r.id)) + '" data-decline-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-decline-email="' + escapeHtmlWs(r.email || '') + '">Decline registration…</button>';
+    h += '<p class="ws-reg-decline-hint">Deletes the registration, emails the family + Treasurer + Membership + Communications, and frees up the refund for the Treasurer to process.</p>';
+    h += '</div>';
     return h;
   }
 

@@ -602,6 +602,100 @@ async function handleBackupWaiverSign(body, req, res) {
   }
 }
 
+// ══════════════════════════════════════════════
+// REGISTRATION DECLINE
+// ══════════════════════════════════════════════
+// Membership Director flags a registration as declined. We email the family
+// (cc'ing Communications, Treasurer, and Membership), then hard-delete all
+// user info created by the registration: the registrations row itself,
+// backup_coach_waivers (cascades), and any member_profiles row we derived at
+// registration time. Treasurer issues the refund manually against the PayPal
+// transaction ID included in the email.
+async function handleRegistrationDecline(body, req, res) {
+  const auth = await verifyWorkspaceAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const canDecline = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+    await canEditAsRole(auth.email, 'Membership Director');
+  if (!canDecline) {
+    const expected = await getRoleHolderEmail('Membership Director');
+    return res.status(403).json({
+      error: 'Only the Membership Director can decline registrations.',
+      youAre: auth.email,
+      expected: expected || '(unknown)'
+    });
+  }
+
+  const id = parseInt(body.id, 10);
+  if (!id) return res.status(400).json({ error: 'Registration id required.' });
+  const note = String(body.note || '').trim().slice(0, 2000);
+
+  const sql = getSql();
+  try {
+    const rows = await sql`
+      SELECT id, email, main_learning_coach, existing_family_name, season,
+             paypal_transaction_id, payment_amount, kids
+      FROM registrations WHERE id = ${id} LIMIT 1
+    `;
+    if (rows.length === 0) return res.status(404).json({ error: 'Registration not found.' });
+    const reg = rows[0];
+
+    // Best-effort: delete any member_profiles row created by this registration.
+    // We keyed it by derived family_email (Main LC first name + family initial).
+    try {
+      const famName = deriveFamilyName(reg.main_learning_coach, reg.existing_family_name);
+      const famEmail = deriveFamilyEmail(reg.main_learning_coach, famName);
+      if (famEmail) {
+        await sql`DELETE FROM member_profiles WHERE family_email = ${famEmail}`;
+      }
+    } catch (mpErr) {
+      console.error('member_profiles delete (non-fatal):', mpErr);
+    }
+
+    // backup_coach_waivers FK is ON DELETE CASCADE, so those clear with the
+    // registration row. No separate DELETE needed.
+    await sql`DELETE FROM registrations WHERE id = ${id}`;
+
+    // Send the decline email. Failures here don't unwind the delete — the
+    // Membership Director can always send a manual note if Resend is down.
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const noteHtml = note
+        ? `<p><strong>Note from Membership:</strong><br>${escapeHtml(note).replace(/\n/g, '<br>')}</p>`
+        : '';
+      await resend.emails.send({
+        from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+        to: reg.email,
+        cc: [
+          'communications@rootsandwingsindy.com',
+          'treasurer@rootsandwingsindy.com',
+          'membership@rootsandwingsindy.com'
+        ],
+        replyTo: 'membership@rootsandwingsindy.com',
+        subject: `Roots & Wings ${reg.season}: Registration declined — ${reg.main_learning_coach} family`,
+        html: `
+          <h2>Your Roots &amp; Wings registration has been declined</h2>
+          <p>Hi ${escapeHtml(reg.main_learning_coach)},</p>
+          <p>Your ${escapeHtml(reg.season)} registration with Roots &amp; Wings Homeschool Co-op has been declined by the Membership Director. The Treasurer will issue a refund of your Fall Membership Fee to the original payment method.</p>
+          ${noteHtml}
+          <table style="border-collapse:collapse;font-family:sans-serif;margin-top:12px;">
+            <tr><td style="padding:4px 16px 4px 0;font-weight:bold;">PayPal transaction</td><td>${escapeHtml(reg.paypal_transaction_id || '')} — $${escapeHtml(String(reg.payment_amount || ''))}</td></tr>
+            <tr><td style="padding:4px 16px 4px 0;font-weight:bold;">Season</td><td>${escapeHtml(reg.season)}</td></tr>
+          </table>
+          <p style="margin-top:16px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+        `,
+      });
+    } catch (mailErr) {
+      console.error('Decline email error (non-fatal):', mailErr);
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Registration decline error:', err);
+    return res.status(500).json({ error: 'Could not decline registration.' });
+  }
+}
+
 // ── Comms Workspace: unified waivers report (backup + one-off) ──
 async function handleWaiversReport(req, res) {
   const user = await verifyWorkspaceAuth(req);
@@ -1039,6 +1133,7 @@ module.exports = async function handler(req, res) {
     const kind = String(body.kind || 'tour').toLowerCase();
     if (kind === 'tour') return handleTour(body, res);
     if (kind === 'registration') return handleRegistration(body, req, res);
+    if (kind === 'registration-decline') return handleRegistrationDecline(body, req, res);
     if (kind === 'backup-waiver-sign') return handleBackupWaiverSign(body, req, res);
     if (kind === 'waiver-send') return handleWaiverSend(body, req, res);
     if (kind === 'registration-invite') return handleRegistrationInvite(body, req, res);

@@ -9143,6 +9143,27 @@ button.staff-role:hover {
   flex-direction: column;
   gap: 4px;
 }
+/* Decline-registration affordance at the bottom of the Membership Report
+   expanded row. Warm/danger tint so it reads as destructive. */
+.ws-reg-decline {
+  border-top: 1px dashed rgba(var(--color-error-rgb, 217, 95, 59), 0.35);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.ws-reg-decline-hint {
+  color: var(--color-text-light);
+  font-size: 0.88rem;
+  margin: 6px 0 8px;
+}
+.ws-decline-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ws-decline-status {
+  font-size: 0.88rem;
+  color: var(--color-text-light);
+}
 .ws-reg-detail-notes {
   white-space: pre-wrap;
   background: var(--color-white);
