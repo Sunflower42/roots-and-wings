@@ -5002,9 +5002,13 @@
     },
     'pm-scheduling': {
       // Visible to VP + PM Assistant (Afternoon Class Liaison) + Comms
-      // super user. Server-side canReviewSubmissions makes the same call.
+      // Visible only to the roles that actually run PM scheduling: VP and
+      // the Afternoon Class Liaison (the PM scheduler). communications@ is a
+      // super user server-side (canReviewSubmissions lets her call the API
+      // while impersonating), but we hide the widget from her own profile
+      // so it surfaces only when she View-As's into a VP / PM-scheduler row.
       title: 'PM Class Scheduling',
-      roleGate: ['Vice President', 'Afternoon Class Liaison', 'Communications Director'],
+      roleGate: ['Vice President', 'Afternoon Class Liaison'],
       render: function () {
         var h = '<p class="ws-body-hint">Review inbound PM class submissions and draft the upcoming session.</p>';
         h += '<ul class="ws-link-list">';
@@ -5088,7 +5092,7 @@
   };
 
   var WORKSPACE_DEFAULTS = {
-    'Communications Director': ['reports', 'forms', 'pm-scheduling', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
+    'Communications Director': ['reports', 'forms', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
     'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
     'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     'Afternoon Class Liaison': ['reports', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
