@@ -11384,23 +11384,26 @@
       }
       h2 += '</div>';
       h2 += '</div>';
-      h2 += '<div class="roles-row-meta">';
-      if (r.overview) h2 += '<span class="roles-row-overview">' + escapeHtml(String(r.overview).slice(0, 120)) + (String(r.overview).length > 120 ? '…' : '') + '</span>';
-      // Holders for this role (Phase A: read-only, seeded from the
-      // volunteer sheet). Skip on cleaning_area rows — per-session
-      // assignments live in cleaning_assignments and surface elsewhere.
+      // Holder line sits directly under title/pills (before overview)
+      // so the first thing a reviewer scans is "who is this?". Phase A
+      // is read-only — Phase B adds the Assign button in this slot.
+      // Cleaning areas skip this line (per-session assignments live in
+      // cleaning_assignments and surface elsewhere).
       if (r.category !== 'cleaning_area') {
         var held = (_rolesMgrState.holdersByRoleId && _rolesMgrState.holdersByRoleId[r.id]) || [];
-        var holderText;
+        h2 += '<div class="roles-row-holder-line">';
         if (held.length === 0) {
-          holderText = '<span class="roles-row-holder roles-row-holder-empty">Unassigned</span>';
+          h2 += '<span class="roles-row-holder roles-row-holder-empty">Unassigned</span>';
         } else {
-          holderText = '<span class="roles-row-holder">Held by ' +
+          h2 += '<span class="roles-row-holder-label">Held by</span> ';
+          h2 += '<span class="roles-row-holder">' +
             held.map(function (h) { return escapeHtml(h.person_name || h.email); }).join(', ') +
             '</span>';
         }
-        h2 += holderText;
+        h2 += '</div>';
       }
+      h2 += '<div class="roles-row-meta">';
+      if (r.overview) h2 += '<span class="roles-row-overview">' + escapeHtml(String(r.overview).slice(0, 120)) + (String(r.overview).length > 120 ? '…' : '') + '</span>';
       var stampBits = [];
       if (r.updated_by) stampBits.push(escapeHtml(r.updated_by));
       if (r.updated_at) {

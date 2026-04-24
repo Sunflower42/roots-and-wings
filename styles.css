@@ -10203,9 +10203,16 @@ button.staff-role:hover {
 }
 .roles-row-overview { flex: 1 1 auto; max-width: 640px; }
 .roles-row-stamp { flex: 0 0 auto; font-size: 0.75rem; }
+.roles-row-holder-line {
+  margin-top: 2px;
+  font-size: 0.84rem;
+  line-height: 1.3;
+}
+.roles-row-holder-label {
+  color: var(--color-text-light);
+  font-weight: 500;
+}
 .roles-row-holder {
-  flex: 0 0 auto;
-  font-size: 0.8rem;
   color: var(--color-primary-dark);
   font-weight: 600;
 }
