@@ -11257,16 +11257,16 @@
 
   function showRolesManagerModal() {
     if (!personDetail || !personDetailCard) return;
-    var h = '<button class="detail-close" aria-label="Close">&times;</button>';
+    var h = '<div class="detail-actions no-print">';
+    h += '<button class="sc-btn" type="button" id="roles-add-btn">+ Add Role</button>';
+    h += '</div>';
+    h += '<button class="detail-close" aria-label="Close">&times;</button>';
     h += '<div class="elective-detail rd-modal roles-mgr-modal">';
-    h += '<div class="roles-mgr-head">';
-    h += '<h3 class="rd-title" style="margin:0;">Roles &amp; Committees</h3>';
+    h += '<h3 class="rd-title">Roles &amp; Committees</h3>';
+    h += '<p class="rd-subtitle">Every job description, term, and hierarchy in one place. Edits are stamped with who and when.</p>';
     h += '<div class="roles-mgr-toolbar">';
     h += '<label class="roles-mgr-toggle"><input type="checkbox" id="roles-show-archived"' + (_rolesMgrState.showArchived ? ' checked' : '') + ' /> Show archived</label>';
-    h += '<button class="btn btn-primary btn-sm" id="roles-add-btn">+ Add Role</button>';
     h += '</div>';
-    h += '</div>';
-    h += '<p class="rd-subtitle">Every job description, term, and hierarchy in one place. Edits are stamped with who and when.</p>';
     h += '<div id="roles-mgr-body"><p class="ws-empty">Loading roles…</p></div>';
     h += '</div>';
     personDetailCard.innerHTML = h;

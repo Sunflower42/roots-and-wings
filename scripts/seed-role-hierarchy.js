@@ -11,15 +11,18 @@
 const { neon } = require('@neondatabase/serverless');
 
 // Board roles that chair a committee — each is top-of-tree (no parent).
-// Marked category='board'.
+// Marked category='board'. Ordered per Erin's requested board-card
+// sequence (President → VP → Treasurer → Communications → Membership
+// → Sustaining → Secretary); display_order is the array index so the
+// Roles Manager tree sorts deterministically.
 const BOARD_KEYS = [
   'president',
   'vice_president',
-  'secretary',
   'treasurer',
-  'sustaining_director',
+  'communications_director',
   'membership_director',
-  'communications_director'
+  'sustaining_director',
+  'secretary'
 ];
 
 // Maps each non-board role_key → parent role_key (a board chair).
@@ -80,17 +83,19 @@ async function main() {
 
   const sql = neon(process.env.DATABASE_URL);
 
-  // 1. Mark board roles.
+  // 1. Mark board roles + set deterministic display_order.
   console.log(`Marking ${BOARD_KEYS.length} board roles (category='board', parent=NULL)...`);
-  for (const key of BOARD_KEYS) {
+  for (let i = 0; i < BOARD_KEYS.length; i++) {
+    const key = BOARD_KEYS[i];
+    const order = i;
     const res = await sql`
       UPDATE role_descriptions
-      SET category = 'board', parent_role_id = NULL
+      SET category = 'board', parent_role_id = NULL, display_order = ${order}
       WHERE role_key = ${key}
       RETURNING id, title
     `;
     if (res.length === 0) console.warn(`  ! missing: ${key}`);
-    else console.log(`  ok: ${res[0].title}`);
+    else console.log(`  ok (#${order}): ${res[0].title}`);
   }
 
   // 2. Resolve board ids for use as parents.

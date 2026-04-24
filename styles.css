@@ -10049,17 +10049,17 @@ button.staff-role:hover {
 
 /* ---------- Roles Manager (President workspace widget → modal) ---------- */
 .roles-mgr-modal { width: min(900px, 96vw); }
-.roles-mgr-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
-}
+/* Toolbar row sits under the modal subtitle (the "+ Add Role" button
+   lives in .detail-actions at the top, same slot Participation Tracker
+   uses). Right-aligned single-row toolbar, subtle divider below. */
 .roles-mgr-toolbar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 14px;
+  margin: 4px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
 }
 .roles-mgr-toggle {
   display: inline-flex;
@@ -10086,6 +10086,7 @@ button.staff-role:hover {
   letter-spacing: 0.04em;
 }
 .roles-row {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -10094,14 +10095,47 @@ button.staff-role:hover {
   transition: background var(--transition-fast);
 }
 .roles-row:last-child { border-bottom: 0; }
-.roles-row:hover { background: rgba(var(--color-accent-light-rgb), 0.10); }
+/* Hover stays in the primary-tint family so board rows and child rows
+   share the same semantics — no gold-yellow flash that reads like a
+   different state. */
+.roles-row:hover { background: rgba(var(--color-primary-rgb), 0.04); }
 .roles-row-depth-0 {
   background: rgba(var(--color-primary-rgb), 0.06);
+  font-weight: 600;
 }
 .roles-row-depth-0:hover { background: rgba(var(--color-primary-rgb), 0.10); }
 .roles-row-depth-1 { padding-left: 34px; }
 .roles-row-depth-2 { padding-left: 54px; }
 .roles-row-depth-3 { padding-left: 74px; }
+/* Tree connectors: a faint vertical guide down the indent and a short
+   horizontal elbow into each child row. Makes the parent→child
+   relationship obvious without leaning on background-color games. */
+.roles-row-depth-1::before,
+.roles-row-depth-2::before,
+.roles-row-depth-3::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-border);
+}
+.roles-row-depth-1::before { left: 20px; }
+.roles-row-depth-2::before { left: 40px; }
+.roles-row-depth-3::before { left: 60px; }
+.roles-row-depth-1::after,
+.roles-row-depth-2::after,
+.roles-row-depth-3::after {
+  content: "";
+  position: absolute;
+  top: 20px;
+  width: 10px;
+  height: 1px;
+  background: var(--color-border);
+}
+.roles-row-depth-1::after { left: 20px; }
+.roles-row-depth-2::after { left: 40px; }
+.roles-row-depth-3::after { left: 60px; }
 .roles-row-archived { opacity: 0.6; }
 .roles-row-main {
   display: flex;
@@ -10232,7 +10266,6 @@ button.staff-role:hover {
 
 @media (max-width: 640px) {
   .role-edit-grid { grid-template-columns: 1fr; }
-  .roles-mgr-head { flex-direction: column; align-items: stretch; }
   .roles-mgr-toolbar { justify-content: space-between; }
 }
 
