@@ -732,10 +732,7 @@
     html += '<input class="rd-input" id="rdEditJobLength" value="' + escapeHtml(role.job_length || '') + '">';
     html += '<label class="rd-label">Responsibilities (one per line)</label>';
     html += '<textarea class="rd-textarea" id="rdEditDuties" rows="10">' + (role.duties || []).map(escapeHtml).join('\n') + '</textarea>';
-    html += '<label class="rd-label">Reviewed by</label>';
-    html += '<input class="rd-input" id="rdEditReviewedBy" value="' + escapeHtml(role.last_reviewed_by || '') + '">';
-    html += '<label class="rd-label">Review date</label>';
-    html += '<input class="rd-input" id="rdEditReviewedDate" value="' + escapeHtml(role.last_reviewed_date || '') + '">';
+    html += '<p class="rd-hint" style="font-size:0.85rem;color:#666;margin:8px 0 0;">"Last reviewed by" and date are stamped automatically when you save.</p>';
     html += '<div class="rd-btn-row">';
     html += '<button class="btn rd-save-btn" id="rdSaveBtn">Save</button>';
     html += '<button class="btn rd-cancel-btn" id="rdCancelBtn">Cancel</button>';
@@ -776,8 +773,6 @@
           var newOverview = personDetailCard.querySelector('#rdEditOverview').value;
           var newJobLength = personDetailCard.querySelector('#rdEditJobLength').value;
           var newDuties = personDetailCard.querySelector('#rdEditDuties').value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-          var newReviewedBy = personDetailCard.querySelector('#rdEditReviewedBy').value;
-          var newReviewedDate = personDetailCard.querySelector('#rdEditReviewedDate').value;
           var googleCred = localStorage.getItem('rw_google_credential');
           fetch('/api/cleaning?action=roles&id=' + role.id, {
             method: 'PATCH',
@@ -785,9 +780,7 @@
             body: JSON.stringify({
               overview: newOverview,
               job_length: newJobLength,
-              duties: newDuties,
-              last_reviewed_by: newReviewedBy,
-              last_reviewed_date: newReviewedDate
+              duties: newDuties
             })
           })
           .then(function (res) { return res.json(); })
@@ -796,8 +789,9 @@
               role.overview = newOverview;
               role.job_length = newJobLength;
               role.duties = newDuties;
-              role.last_reviewed_by = newReviewedBy;
-              role.last_reviewed_date = newReviewedDate;
+              // Server stamps and returns the review fields — trust those.
+              if (data.last_reviewed_by) role.last_reviewed_by = data.last_reviewed_by;
+              if (data.last_reviewed_date) role.last_reviewed_date = data.last_reviewed_date;
               role.updated_at = new Date().toISOString();
               role.updated_by = (typeof getActiveEmail === 'function' && getActiveEmail()) || role.updated_by || '';
               try { localStorage.setItem(CACHE_ROLES_KEY, JSON.stringify({ roles: roleDescriptions })); } catch (e) { /* quota */ }
@@ -11546,8 +11540,6 @@
     h += '<option value="archived"' + (existing.status === 'archived' ? ' selected' : '') + '>Archived</option>';
     h += '</select></label>';
     h += '<label class="role-edit-field">Display order<input type="number" name="display_order" step="1" value="' + (existing.display_order || 0) + '" /></label>';
-    h += '<label class="role-edit-field">Last reviewed by<input type="text" name="last_reviewed_by" maxlength="80" value="' + escapeHtml(existing.last_reviewed_by || '') + '" /></label>';
-    h += '<label class="role-edit-field">Last reviewed date<input type="text" name="last_reviewed_date" placeholder="e.g., 9/23/25" maxlength="20" value="' + escapeHtml(existing.last_reviewed_date || '') + '" /></label>';
     h += '<label class="role-edit-field role-edit-field-wide">Overview<textarea name="overview" rows="3">' + escapeHtml(existing.overview || '') + '</textarea></label>';
     h += '<label class="role-edit-field role-edit-field-wide">Duties (one per line)<textarea name="duties" rows="6">' + escapeHtml((existing.duties || []).join('\n')) + '</textarea></label>';
     h += '<label class="role-edit-field role-edit-field-wide">Playbook / handoff notes<textarea name="playbook" rows="4">' + escapeHtml(existing.playbook || '') + '</textarea></label>';
@@ -11597,8 +11589,6 @@
         status: fd.get('status') || 'active',
         parent_role_id: fd.get('parent_role_id') ? parseInt(fd.get('parent_role_id'), 10) : null,
         display_order: parseInt(fd.get('display_order'), 10) || 0,
-        last_reviewed_by: String(fd.get('last_reviewed_by') || '').trim(),
-        last_reviewed_date: String(fd.get('last_reviewed_date') || '').trim(),
         overview: String(fd.get('overview') || '').trim(),
         duties: dutiesRaw.split('\n').map(function (s) { return s.trim(); }).filter(Boolean),
         playbook: String(fd.get('playbook') || '').trim()

@@ -28,9 +28,19 @@ const META_FIELDS = new Set([
   'display_order', 'status'
 ]);
 const CONTENT_FIELDS = new Set([
-  'overview', 'duties', 'job_length', 'last_reviewed_by',
-  'last_reviewed_date', 'playbook'
+  'overview', 'duties', 'job_length', 'playbook'
 ]);
+// last_reviewed_by / last_reviewed_date are stamped server-side from
+// the authenticated user + today's date whenever any of these fields
+// changes — never trust client-supplied values.
+const REVIEW_TRIGGER_FIELDS = new Set([
+  'overview', 'duties', 'job_length', 'playbook'
+]);
+
+function formatTodayMDY() {
+  const d = new Date();
+  return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear();
+}
 const VALID_CATEGORIES = ['board', 'committee_role', 'cleaning_area', 'class'];
 const VALID_STATUSES = ['active', 'archived'];
 
@@ -245,12 +255,6 @@ module.exports = async function handler(req, res) {
         if (body.job_length !== undefined) {
           await sql`UPDATE role_descriptions SET job_length = ${String(body.job_length)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
-        if (body.last_reviewed_by !== undefined) {
-          await sql`UPDATE role_descriptions SET last_reviewed_by = ${String(body.last_reviewed_by)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
-        }
-        if (body.last_reviewed_date !== undefined) {
-          await sql`UPDATE role_descriptions SET last_reviewed_date = ${String(body.last_reviewed_date)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
-        }
         if (body.duties !== undefined) {
           const dutiesArr = Array.isArray(body.duties) ? body.duties.map(d => String(d).trim()).filter(Boolean) : [];
           await sql`UPDATE role_descriptions SET duties = ${dutiesArr}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
@@ -288,6 +292,19 @@ module.exports = async function handler(req, res) {
             if (exists.length === 0) return res.status(400).json({ error: 'parent_role_id does not exist' });
           }
           await sql`UPDATE role_descriptions SET parent_role_id = ${pid}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+        }
+
+        // Auto-stamp the review fields whenever the descriptive content
+        // changed. Skipped for pure meta edits (archive, hierarchy,
+        // display_order) so housekeeping doesn't claim someone "reviewed
+        // the description". Returned to the client so it can update the
+        // local cache without a refetch.
+        const hitsContent = touchedFields.some(k => REVIEW_TRIGGER_FIELDS.has(k));
+        if (hitsContent) {
+          const reviewer = (user.name || user.email).trim();
+          const today = formatTodayMDY();
+          await sql`UPDATE role_descriptions SET last_reviewed_by = ${reviewer}, last_reviewed_date = ${today}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          return res.status(200).json({ ok: true, last_reviewed_by: reviewer, last_reviewed_date: today });
         }
         return res.status(200).json({ ok: true });
       }
