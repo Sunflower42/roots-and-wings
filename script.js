@@ -5036,11 +5036,12 @@
       roleGate: ['Communications Director', 'Membership Director', 'Vice President', 'Afternoon Class Liaison'],
       render: function (prefs, roles, role) {
         var items = (ROLE_REPORTS[role] || []).slice();
-        // VP + Afternoon Class Liaison share the participation tracker.
-        // communications@ (super user) sees it under the Comms Director tab.
+        // Member Participation belongs to the VP + Afternoon Class Liaison
+        // (PM coordinator) — they own the tracker. Super users (communications@)
+        // see it on whatever role tab they're viewing so they can support
+        // those roles without having to View-As first.
         var sharedParticipation = { key: 'participation', title: 'Member Participation' };
-        if (role === 'Vice President' || role === 'Afternoon Class Liaison'
-            || (role === 'Communications Director' && isCommsUser())) {
+        if (role === 'Vice President' || role === 'Afternoon Class Liaison' || isCommsUser()) {
           if (!items.some(function (r) { return r.key === 'participation'; })) {
             items.unshift(sharedParticipation);
           }
