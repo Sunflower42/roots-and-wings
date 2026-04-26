@@ -5037,11 +5037,11 @@
       render: function (prefs, roles, role) {
         var items = (ROLE_REPORTS[role] || []).slice();
         // Member Participation belongs to the VP + Afternoon Class Liaison
-        // (PM coordinator) — they own the tracker. Super users (communications@)
-        // see it on whatever role tab they're viewing so they can support
-        // those roles without having to View-As first.
+        // (PM coordinator). Super users see it only when they View-As into
+        // one of those roles — handled implicitly because `role` resolves
+        // from the active (impersonated) email.
         var sharedParticipation = { key: 'participation', title: 'Member Participation' };
-        if (role === 'Vice President' || role === 'Afternoon Class Liaison' || isCommsUser()) {
+        if (role === 'Vice President' || role === 'Afternoon Class Liaison') {
           if (!items.some(function (r) { return r.key === 'participation'; })) {
             items.unshift(sharedParticipation);
           }
