@@ -17,7 +17,11 @@ function loadKey() {
   return JSON.parse(out);
 }
 
-const SHEET_ID = '1du9BvMoe_ulPwN58cuD0OgyuP5IAIB7OGYAZC5K9-K4';
+const SHEET_ID = process.argv[2];
+if (!SHEET_ID) {
+  console.error('Usage: node scripts/_check-membership-sheet.js <SHEET_ID>');
+  process.exit(1);
+}
 
 (async () => {
   const auth = new google.auth.GoogleAuth({
