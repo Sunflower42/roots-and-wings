@@ -5141,6 +5141,25 @@
         return h;
       }
     },
+    'member-onboarding': {
+      // Comms-only checklist + welcome-email queue for paid+signed
+      // registrations. New families show in the queue until they're
+      // fully onboarded (Workspace account + distribution list +
+      // welcome email all done). Returning families are skipped —
+      // they already have an account.
+      title: 'Member Onboarding',
+      roleGate: ['Communications Director'],
+      render: function () {
+        var h = '<p class="ws-body-hint">Walk new families through Workspace setup and removal at season end.</p>';
+        h += '<ul class="ws-link-list">';
+        h += '<li><button type="button" class="ws-link-btn" data-resource-action="member-onboarding"><span class="ws-link-icon">🌱</span><span id="ws-onboard-label">Open Member Onboarding</span><span class="ws-link-count" id="ws-onboard-count" hidden></span></button></li>';
+        h += '</ul>';
+        return h;
+      },
+      afterRender: function () {
+        if (typeof loadMemberOnboardingCount === 'function') loadMemberOnboardingCount();
+      }
+    },
     'admin-consoles': {
       title: 'Admin Consoles',
       roleGate: ['Communications Director'],
@@ -5298,7 +5317,7 @@
 
   var WORKSPACE_DEFAULTS = {
     'President': ['roles', 'my-links', 'ways-to-help', 'resources'],
-    'Communications Director': ['reports', 'forms', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
+    'Communications Director': ['member-onboarding', 'reports', 'forms', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
     'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
     'Treasurer': ['todos', 'reports', 'my-links', 'ways-to-help', 'resources'],
     'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
@@ -6107,6 +6126,298 @@
   // Full-detail panel for a single registration — shown inside an expanded
   // Membership Report row. Surfaces every field collected on the registration
   // form so the Membership Director doesn't have to dig into the DB.
+  // ══════════════════════════════════════════════
+  // Member Onboarding (Comms Director)
+  // ══════════════════════════════════════════════
+  // Phase 1: manual checklist + welcome-email queue. Comms ticks each
+  // step as she finishes it in Workspace. Welcome email is gated on the
+  // first two steps being done. Returning families (existing_family_name
+  // set) are skipped — they already have an account. Phase 2 (full
+  // automation) is parked in PARKING_LOT.md until August.
+
+  // Same firstname+lastinitial convention used everywhere in the app
+  // (api/sheets.js parseDirectory, scripts/seed-role-holders.js).
+  function deriveWorkspaceEmail(mainLcName, existingFamilyName) {
+    var name = String(mainLcName || '').trim();
+    var parts = name.split(/\s+/);
+    if (parts.length < 2) return '';
+    var first = parts[0].toLowerCase().replace(/[^a-z]/g, '');
+    var familyLast = String(existingFamilyName || parts[parts.length - 1]).trim();
+    var lastInitial = familyLast.charAt(0).toLowerCase();
+    if (!first || !lastInitial) return '';
+    return first + lastInitial + '@rootsandwingsindy.com';
+  }
+
+  function isReadyToOnboard(r) {
+    var paid = String(r.payment_status || '').toLowerCase() === 'paid';
+    var signed = !!r.waiver_member_agreement && !!r.signature_name;
+    var isNewFamily = !r.existing_family_name;
+    var notDone = !r.welcome_email_sent_at;
+    return paid && signed && isNewFamily && notDone;
+  }
+
+  function loadMemberOnboardingCount() {
+    var pill = document.getElementById('ws-onboard-count');
+    var label = document.getElementById('ws-onboard-label');
+    if (!pill) return;
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) return;
+    fetch('/api/tour?list=registrations', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var regs = Array.isArray(data.registrations) ? data.registrations : [];
+        var pending = regs.filter(isReadyToOnboard).length;
+        if (pending > 0) {
+          if (label) label.textContent = pending + ' new member' + (pending === 1 ? '' : 's') + ' to onboard';
+          pill.textContent = 'Open';
+          pill.hidden = false;
+        } else {
+          if (label) label.textContent = 'Open Member Onboarding';
+          pill.hidden = true;
+        }
+      })
+      .catch(function () { /* silent */ });
+  }
+
+  function defaultWelcomeEmailHtml(name, workspaceEmail) {
+    return [
+      '<h2>Welcome to Roots &amp; Wings!</h2>',
+      '<p>Hi ' + escapeHtmlWs(name) + ',</p>',
+      '<p>We\'re so glad to have your family joining the co-op. Here\'s what you need to get set up.</p>',
+      '<h3>Your Roots &amp; Wings Workspace account</h3>',
+      '<p>Your new email address is <strong>' + escapeHtmlWs(workspaceEmail || 'your-name@rootsandwingsindy.com') + '</strong>.</p>',
+      '<p>I\'ll share your <strong>temporary password</strong> with you separately for security. The first time you sign in at <a href="https://accounts.google.com">accounts.google.com</a>, Google will ask you to set your own password.</p>',
+      '<h3>The Members Portal</h3>',
+      '<p>Once your password is set, sign in to the members portal here:</p>',
+      '<p><a href="https://roots-and-wings-topaz.vercel.app/members.html" style="display:inline-block;background:#523A79;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Open the Members Portal</a></p>',
+      '<p>Inside you\'ll find the directory, schedule, calendar, member agreement &amp; waivers, your billing card, and ways to get involved.</p>',
+      '<h3>Questions?</h3>',
+      '<p>Reply to this email any time — it reaches me directly. Welcome aboard!</p>',
+      '<p style="margin-top:24px;">— Erin Bogan, Communications Director<br>Roots &amp; Wings Homeschool, Inc.</p>'
+    ].join('\n');
+  }
+
+  function showMemberOnboardingModal() {
+    if (!personDetail || !personDetailCard) return;
+    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail rd-modal mo-modal">';
+    html += '<h3 class="rd-title">Member Onboarding</h3>';
+    html += '<p class="rd-subtitle">Walk new families through their Workspace setup, then send the welcome email.</p>';
+    html += '<div id="mo-body"><p class="ws-empty">Loading registrations…</p></div>';
+    html += '</div>';
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+
+    var body = personDetailCard.querySelector('#mo-body');
+    var cred = localStorage.getItem('rw_google_credential');
+    fetch('/api/tour?list=registrations', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          var msg = (res.data && res.data.error) || 'error';
+          if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+          body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load: ' + msg + '</p>';
+          return;
+        }
+        renderMemberOnboardingBody(body, res.data.registrations || []);
+      }).catch(function (err) {
+        body.innerHTML = '<p class="ws-empty ws-wv-err">Network error: ' + ((err && err.message) || 'unknown') + '</p>';
+      });
+  }
+
+  function renderMemberOnboardingBody(body, regs) {
+    var ready = regs.filter(isReadyToOnboard);
+
+    var h = '';
+    // ── Section 1: Ready to onboard ──
+    h += '<section class="mo-section">';
+    h += '<h4 class="mo-section-h">New families to onboard <span class="mo-pill">' + ready.length + '</span></h4>';
+    if (ready.length === 0) {
+      h += '<p class="ws-empty">No new families waiting on onboarding right now.</p>';
+    } else {
+      ready.forEach(function (r) {
+        var wsEmail = deriveWorkspaceEmail(r.main_learning_coach, r.existing_family_name);
+        var step1Done = !!r.workspace_account_created_at;
+        var step2Done = !!r.distribution_list_added_at;
+        var canSend = step1Done && step2Done;
+        h += '<div class="mo-row" data-reg-id="' + r.id + '">';
+        h += '<div class="mo-row-head">';
+        h += '<div class="mo-row-name"><strong>' + escapeHtmlWs(r.main_learning_coach || '') + '</strong>'
+          + '<span class="mo-row-sub"> &middot; ' + escapeHtmlWs(r.email || '') + '</span></div>';
+        h += '<div class="mo-row-derived">Suggested Workspace email: <code>' + escapeHtmlWs(wsEmail) + '</code></div>';
+        h += '</div>';
+        h += '<ul class="mo-checklist">';
+        h += '  <li><label><input type="checkbox" class="mo-step-cb" data-step="workspace_account_created_at" data-reg-id="' + r.id + '"' + (step1Done ? ' checked' : '') + '> 1. Workspace account created</label>'
+          + (step1Done ? '<span class="mo-step-stamp"> · ' + escapeHtmlWs(new Date(r.workspace_account_created_at).toLocaleDateString()) + '</span>' : '') + '</li>';
+        h += '  <li><label><input type="checkbox" class="mo-step-cb" data-step="distribution_list_added_at" data-reg-id="' + r.id + '"' + (step2Done ? ' checked' : '') + '> 2. Added to currentmembers distribution list</label>'
+          + (step2Done ? '<span class="mo-step-stamp"> · ' + escapeHtmlWs(new Date(r.distribution_list_added_at).toLocaleDateString()) + '</span>' : '') + '</li>';
+        h += '  <li class="mo-step-email">';
+        h += '    <button type="button" class="sc-btn mo-send-email-btn" data-reg-id="' + r.id + '" data-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-email="' + escapeHtmlWs(r.email || '') + '" data-ws-email="' + escapeHtmlWs(wsEmail) + '"' + (canSend ? '' : ' disabled') + '>3. Send welcome email&hellip;</button>';
+        if (!canSend) {
+          h += '    <span class="mo-row-hint">Finish steps 1 &amp; 2 first.</span>';
+        }
+        h += '  </li>';
+        h += '</ul>';
+        h += '<div class="mo-email-composer" id="mo-composer-' + r.id + '" hidden></div>';
+        h += '</div>';
+      });
+    }
+    h += '</section>';
+
+    // ── Section 2: Pre-season removal queue ──
+    var now = new Date();
+    var fallDue = new Date(ACTIVE_YEAR.fallYear + '-08-27T00:00:00');
+    var removalCutoff = new Date(fallDue);
+    removalCutoff.setDate(removalCutoff.getDate() - 14);
+    var removalActive = now >= removalCutoff;
+    h += '<section class="mo-section">';
+    h += '<h4 class="mo-section-h">Pre-season removal</h4>';
+    if (!removalActive) {
+      h += '<p class="ws-empty">Removal queue activates ' + removalCutoff.toLocaleDateString() +
+        ' (2 weeks before fall classes). Until then, families who don\'t renew stay in the directory.</p>';
+    } else {
+      // Cross-reference FAMILIES against paid current-year regs.
+      var paidEmails = {};
+      regs.forEach(function (r) {
+        if (String(r.payment_status || '').toLowerCase() === 'paid' && r.season === ACTIVE_YEAR.label) {
+          paidEmails[String(r.email || '').toLowerCase()] = true;
+        }
+      });
+      var candidates = (FAMILIES || []).filter(function (f) {
+        if (!f || !f.email) return false;
+        // Skip role mailboxes — they're not tied to a single family.
+        if (/^(membership|treasurer|secretary|president|vp|vicepresident|sustaining|communications|fundraising|webhost|yearbook)@/i.test(f.email)) return false;
+        return !paidEmails[String(f.email).toLowerCase()];
+      });
+      if (candidates.length === 0) {
+        h += '<p class="ws-empty">Every family has renewed for ' + escapeHtmlWs(ACTIVE_YEAR.label) + '. 🎉</p>';
+      } else {
+        h += '<p class="mo-removal-hint">' + candidates.length + ' famil' + (candidates.length === 1 ? 'y' : 'ies') + ' in the directory without a paid ' + escapeHtmlWs(ACTIVE_YEAR.label) + ' registration. Remove from Workspace, distribution list, then directory sheet — they\'ll drop off this list automatically once they\'re out of the directory.</p>';
+        h += '<ul class="mo-removal-list">';
+        candidates.forEach(function (f) {
+          h += '<li><strong>' + escapeHtmlWs(f.name || '') + '</strong> family &middot; ' + escapeHtmlWs(f.email || '') + '</li>';
+        });
+        h += '</ul>';
+      }
+    }
+    h += '</section>';
+
+    body.innerHTML = h;
+    wireMemberOnboardingHandlers(body);
+  }
+
+  function wireMemberOnboardingHandlers(body) {
+    body.querySelectorAll('.mo-step-cb').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var id = parseInt(this.getAttribute('data-reg-id'), 10);
+        var field = this.getAttribute('data-step');
+        var done = this.checked;
+        var that = this;
+        that.disabled = true;
+        var cred = localStorage.getItem('rw_google_credential');
+        fetch('/api/tour', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cred },
+          body: JSON.stringify({ kind: 'onboarding-step', id: id, field: field, done: done })
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (res) {
+            if (!res.ok) {
+              alert((res.data && res.data.error) || 'Could not update step.');
+              that.checked = !done;
+              that.disabled = false;
+              return;
+            }
+            // Re-render the modal so the Send-Email button enables and stamps appear.
+            closeDetail();
+            showMemberOnboardingModal();
+          }).catch(function () {
+            alert('Network error.');
+            that.checked = !done;
+            that.disabled = false;
+          });
+      });
+    });
+
+    body.querySelectorAll('.mo-send-email-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (this.disabled) return;
+        var id = parseInt(this.getAttribute('data-reg-id'), 10);
+        var name = this.getAttribute('data-name');
+        var emailTo = this.getAttribute('data-email');
+        var wsEmail = this.getAttribute('data-ws-email');
+        var composer = document.getElementById('mo-composer-' + id);
+        if (!composer) return;
+        var subject = 'Welcome to Roots & Wings — your member portal access';
+        var bodyHtml = defaultWelcomeEmailHtml(name, wsEmail);
+        var ch = '<div class="mo-composer-inner">';
+        ch += '<p class="mo-composer-info">Sending to <strong>' + escapeHtmlWs(emailTo) + '</strong> · cc Communications</p>';
+        ch += '<label class="mo-composer-label">Subject</label>';
+        ch += '<input type="text" class="cl-input mo-composer-subject" value="' + escapeHtmlWs(subject) + '">';
+        ch += '<label class="mo-composer-label">Email body (HTML — edit if you need to swap in the real Workspace email or notes)</label>';
+        ch += '<textarea class="rd-textarea mo-composer-body" rows="14">' + escapeHtmlWs(bodyHtml) + '</textarea>';
+        ch += '<div class="rd-btn-row mo-composer-actions">';
+        ch += '<button type="button" class="sc-btn mo-composer-send" data-reg-id="' + id + '">Send welcome email</button>';
+        ch += '<button type="button" class="sc-btn mo-composer-cancel">Cancel</button>';
+        ch += '</div>';
+        ch += '<p class="mo-composer-status" aria-live="polite"></p>';
+        ch += '</div>';
+        composer.innerHTML = ch;
+        composer.hidden = false;
+        // Don't textarea-encode the HTML twice — the textarea displays
+        // the escaped form which is what we want, but on send we need the
+        // original. Re-set value via property to bypass HTML parse.
+        composer.querySelector('.mo-composer-body').value = bodyHtml;
+
+        composer.querySelector('.mo-composer-cancel').addEventListener('click', function () {
+          composer.hidden = true;
+          composer.innerHTML = '';
+        });
+        composer.querySelector('.mo-composer-send').addEventListener('click', function () {
+          var sendBtn = this;
+          var statusEl = composer.querySelector('.mo-composer-status');
+          var subj = composer.querySelector('.mo-composer-subject').value;
+          var bod = composer.querySelector('.mo-composer-body').value;
+          if (!subj.trim() || !bod.trim()) {
+            statusEl.textContent = 'Subject and body are required.';
+            return;
+          }
+          sendBtn.disabled = true;
+          statusEl.textContent = 'Sending…';
+          var cred = localStorage.getItem('rw_google_credential');
+          fetch('/api/tour', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cred },
+            body: JSON.stringify({ kind: 'send-welcome-email', id: id, subject: subj, html: bod })
+          }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (res) {
+              if (!res.ok) {
+                var msg = (res.data && res.data.error) || 'unknown';
+                if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+                statusEl.textContent = 'Error: ' + msg;
+                sendBtn.disabled = false;
+                return;
+              }
+              statusEl.textContent = 'Sent — family will get the email shortly.';
+              setTimeout(function () {
+                closeDetail();
+                showMemberOnboardingModal();
+              }, 700);
+            }).catch(function (err) {
+              statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+              sendBtn.disabled = false;
+            });
+        });
+      });
+    });
+  }
+
   function renderMembershipRegDetail(r) {
     function fld(label, val) {
       return '<div class="ws-reg-detail-field"><span class="ws-reg-detail-label">' + escapeHtmlWs(label) + '</span><span class="ws-reg-detail-val">' + (val || '<em>\u2014</em>') + '</span></div>';
@@ -9811,6 +10122,7 @@
     else if (action === 'pm-submissions-report' && typeof showPmSubmissionsModal === 'function') showPmSubmissionsModal();
     else if (action === 'submit-pm-class' && typeof showClassSubmissionModal === 'function') showClassSubmissionModal(null);
     else if (action === 'roles-manager' && typeof showRolesManagerModal === 'function') showRolesManagerModal();
+    else if (action === 'member-onboarding' && typeof showMemberOnboardingModal === 'function') showMemberOnboardingModal();
     else if (action === 'treasurer-pending-payments' && typeof showMembershipReportModal === 'function') {
       // Open the Membership Report and pre-set the payment-status filter
       // to "pending" once the table renders. Filter element id is fixed

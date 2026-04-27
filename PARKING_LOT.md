@@ -2,6 +2,21 @@
 
 Deferred items — work that's known and scoped but waiting on outside input, a decision, or a time slot.
 
+## Member onboarding — full automation (Aug 2026 target)
+
+- **Status:** Phase 1 (manual checklist + welcome-email queue) shipped 2026-04-27. Phase 2 = automate the manual steps.
+- **Goal:** When a family becomes paid + signed, automatically (a) create their @rootsandwingsindy.com Workspace account, (b) add them to the `currentmembers` distribution list, (c) send the welcome email with the auto-generated password reset link. Same automation in reverse for non-renewers at the Aug 13 cutoff.
+- **What's needed:**
+  1. Expand the GCP service account's domain-wide-delegation scopes from read-only to include `https://www.googleapis.com/auth/admin.directory.user` and `https://www.googleapis.com/auth/admin.directory.group.member`. Subject `communications@rootsandwingsindy.com` (already used for `/api/photos`).
+  2. New `api/onboarding.js` endpoint or extend `api/tour.js`: POST `kind:'auto-onboard'` calls `admin.users.insert` (with `changePasswordAtNextLogin: true` and a generated temp password), `admin.members.insert` for `currentmembers@rootsandwingsindy.com`, then sends the welcome email with the temp password embedded.
+  3. UI: "Auto-Onboard" button replaces the per-step checkboxes for new families. Manual checklist stays as a fallback.
+  4. Removal: same shape — `admin.users.delete` (or `suspend`) + `admin.members.delete` + log to a `member_removals` table.
+- **Open questions:**
+  - Workspace email convention: today the directory derivation is `firstname + lastinitial@`. Auto-create should follow that, or let Comms pick? Latter requires a confirm-name dialog before insert.
+  - Suspend vs delete for non-renewers: suspend keeps the email reachable in case they return; delete frees the seat but loses history.
+  - Temp password handling: include in the welcome email (low security but practical) or send separately? Today Comms handles this verbally.
+- **Why parked:** Phase 1 covers the actual day-to-day pain (forgetting a step, no audit trail). Automation is nice-to-have but adds GCP scope risk and surface area; revisit when Comms says manual steps are the bottleneck or once the new-member volume justifies it.
+
 ## Configure Google Maps API key for address autocomplete
 - **Where:** Registration form (`register.html`) has address autocomplete code wired up; it activates only when `GOOGLE_MAPS_API_KEY` is returned from `GET /api/tour?config=1`.
 - **Status:** Currently the production endpoint returns `{ "googleMapsApiKey": null }`, so the field falls through to a plain text input.

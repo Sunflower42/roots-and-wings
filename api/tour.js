@@ -415,15 +415,20 @@ async function handleList(req, res) {
   const auth = await verifyWorkspaceAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
+  // Membership / Comms / Treasurer all see the same Membership Report
+  // (Treasurer to record cash/check payments, Comms to onboard new
+  // members). Server-side gate matches the report's UI gating.
   const isMembership = await canEditAsRole(auth.email, 'Membership Director');
-  const isComms = !isMembership && await canEditAsRole(auth.email, 'Communications Director');
-  if (!isMembership && !isComms) {
+  const isComms      = !isMembership && await canEditAsRole(auth.email, 'Communications Director');
+  const isTreasurer  = !isMembership && !isComms && await canEditAsRole(auth.email, 'Treasurer');
+  if (!isMembership && !isComms && !isTreasurer) {
     const expectedM = await getRoleHolderEmail('Membership Director');
     const expectedC = await getRoleHolderEmail('Communications Director');
+    const expectedT = await getRoleHolderEmail('Treasurer');
     return res.status(403).json({
-      error: 'Only the Membership or Communications Director can view registrations.',
+      error: 'Only the Membership Director, Communications Director, or Treasurer can view registrations.',
       youAre: auth.email,
-      expected: (expectedM || expectedC || '(unknown — sheet lookup failed)')
+      expected: (expectedM || expectedC || expectedT || '(unknown — sheet lookup failed)')
     });
   }
 
@@ -436,6 +441,7 @@ async function handleList(req, res) {
              r.waiver_member_agreement, r.waiver_photo_consent, r.waiver_liability,
              r.signature_name, r.signature_date, r.student_signature,
              r.payment_status, r.paypal_transaction_id, r.payment_amount,
+             r.workspace_account_created_at, r.distribution_list_added_at, r.welcome_email_sent_at,
              r.created_at, r.updated_at,
              (
                SELECT COALESCE(json_agg(json_build_object(
@@ -834,6 +840,112 @@ async function handleRegistrationMarkPaid(body, req, res) {
   } catch (err) {
     console.error('Registration mark-paid error:', err);
     return res.status(500).json({ error: 'Could not mark registration paid.' });
+  }
+}
+
+// ── Comms Workspace: toggle a manual onboarding checklist step ──
+// Comms ticks workspace_account_created / distribution_list_added /
+// welcome_email_sent as she finishes each step in Workspace. Sending
+// the welcome email goes through handleSendWelcomeEmail (separate)
+// so we control the email body server-side.
+const ONBOARDING_FIELDS = new Set([
+  'workspace_account_created_at',
+  'distribution_list_added_at'
+  // welcome_email_sent_at is stamped by send-welcome-email, not toggled here
+]);
+async function handleOnboardingStep(body, req, res) {
+  const auth = await verifyWorkspaceAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const isComms = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+    await canEditAsRole(auth.email, 'Communications Director');
+  if (!isComms) {
+    const expected = await getRoleHolderEmail('Communications Director');
+    return res.status(403).json({
+      error: 'Only the Communications Director can update onboarding status.',
+      youAre: auth.email,
+      expected: expected || '(unknown)'
+    });
+  }
+
+  const id = parseInt(body.id, 10);
+  const field = String(body.field || '').trim();
+  const done = body.done === true || body.done === 'true';
+  if (!id) return res.status(400).json({ error: 'Registration id required.' });
+  if (!ONBOARDING_FIELDS.has(field)) return res.status(400).json({ error: 'Invalid field.' });
+
+  const sql = getSql();
+  try {
+    // Whitelist + interpolate the column name — sql tag won't bind identifiers.
+    const newValue = done ? new Date() : null;
+    if (field === 'workspace_account_created_at') {
+      await sql`UPDATE registrations SET workspace_account_created_at = ${newValue}, updated_at = NOW() WHERE id = ${id}`;
+    } else if (field === 'distribution_list_added_at') {
+      await sql`UPDATE registrations SET distribution_list_added_at  = ${newValue}, updated_at = NOW() WHERE id = ${id}`;
+    }
+    return res.status(200).json({ success: true, field, done });
+  } catch (err) {
+    console.error('Onboarding step update error:', err);
+    return res.status(500).json({ error: 'Could not update onboarding step.' });
+  }
+}
+
+// ── Comms Workspace: send the welcome email to a new member ──
+// Body of the email is editable client-side (Comms reviews + can swap
+// in the actual Workspace email + temp password before send). On send,
+// stamps welcome_email_sent_at so the row drops out of the onboarding
+// queue.
+async function handleSendWelcomeEmail(body, req, res) {
+  const auth = await verifyWorkspaceAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const isComms = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+    await canEditAsRole(auth.email, 'Communications Director');
+  if (!isComms) {
+    const expected = await getRoleHolderEmail('Communications Director');
+    return res.status(403).json({
+      error: 'Only the Communications Director can send the welcome email.',
+      youAre: auth.email,
+      expected: expected || '(unknown)'
+    });
+  }
+
+  const id = parseInt(body.id, 10);
+  const subject = String(body.subject || '').trim().slice(0, 200);
+  const html = String(body.html || '').trim();
+  if (!id) return res.status(400).json({ error: 'Registration id required.' });
+  if (!subject) return res.status(400).json({ error: 'Subject required.' });
+  if (!html) return res.status(400).json({ error: 'Email body required.' });
+
+  const sql = getSql();
+  try {
+    const rows = await sql`
+      SELECT id, email, main_learning_coach
+      FROM registrations WHERE id = ${id} LIMIT 1
+    `;
+    if (rows.length === 0) return res.status(404).json({ error: 'Registration not found.' });
+    const reg = rows[0];
+
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      await resend.emails.send({
+        from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+        to: reg.email,
+        cc: ['communications@rootsandwingsindy.com'],
+        replyTo: 'communications@rootsandwingsindy.com',
+        subject: subject,
+        html: html
+      });
+    } catch (mailErr) {
+      console.error('Welcome email send error:', mailErr);
+      return res.status(502).json({ error: 'Email send failed. Try again or contact Resend.' });
+    }
+
+    await sql`UPDATE registrations SET welcome_email_sent_at = NOW(), updated_at = NOW() WHERE id = ${id}`;
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Welcome email handler error:', err);
+    return res.status(500).json({ error: 'Could not send welcome email.' });
   }
 }
 
@@ -1277,6 +1389,8 @@ module.exports = async function handler(req, res) {
     if (kind === 'registration') return handleRegistration(body, req, res);
     if (kind === 'registration-decline') return handleRegistrationDecline(body, req, res);
     if (kind === 'registration-mark-paid') return handleRegistrationMarkPaid(body, req, res);
+    if (kind === 'onboarding-step') return handleOnboardingStep(body, req, res);
+    if (kind === 'send-welcome-email') return handleSendWelcomeEmail(body, req, res);
     if (kind === 'backup-waiver-sign') return handleBackupWaiverSign(body, req, res);
     if (kind === 'waiver-send') return handleWaiverSend(body, req, res);
     if (kind === 'registration-invite') return handleRegistrationInvite(body, req, res);

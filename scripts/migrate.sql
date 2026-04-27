@@ -349,6 +349,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS registrations_email_season_idx
 CREATE INDEX IF NOT EXISTS registrations_season_idx ON registrations (season);
 CREATE INDEX IF NOT EXISTS registrations_payment_status_idx ON registrations (payment_status);
 
+-- Member onboarding checklist columns (Phase 1, manual). Comms Director
+-- ticks each as she completes the step in Workspace; the welcome email
+-- is gated on the first two being done. NULL = not done; TIMESTAMPTZ =
+-- when it was marked done. Doesn't apply to returning families
+-- (existing_family_name set) — they're already onboarded.
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS workspace_account_created_at TIMESTAMPTZ;
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS distribution_list_added_at  TIMESTAMPTZ;
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS welcome_email_sent_at        TIMESTAMPTZ;
+
 -- ──────────────────────────────────────────────
 -- Backup Learning Coach waivers
 -- One row per backup adult (spouse, grandparent, etc.) the Main LC listed at
