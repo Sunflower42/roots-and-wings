@@ -927,6 +927,14 @@ function parseBillingSheet(tabs) {
   return out;
 }
 
+// Active school year flips on April 1 — matches activeSchoolYear() in
+// script.js so server defaults agree with the client default.
+function activeSchoolYearLabel(now) {
+  now = now || new Date();
+  var fallYear = (now.getMonth() < 3) ? now.getFullYear() - 1 : now.getFullYear();
+  return fallYear + '-' + (fallYear + 1);
+}
+
 async function handleBillingGet(req, res, sheets) {
   var billingSheetId = process.env.BILLING_SHEET_ID;
   if (!billingSheetId) {
@@ -947,12 +955,22 @@ async function handleBillingGet(req, res, sheets) {
 
   var parsed = parseBillingSheet(billingTabs);
 
-  // Overlay DB Pending records — but only where the sheet doesn't already
-  // say Paid (sheet wins).
+  // Overlay DB payment records on top of the sheet. Sheet still wins for
+  // anything it explicitly marks Paid; DB Paid records (mostly from the
+  // registration auto-write) light up cells the sheet hasn't touched yet,
+  // and DB Pending records show "Pending" until the Treasurer confirms.
+  // Scoped to the requested school_year so prior years' Paid markers
+  // don't bleed into the current view.
+  var schoolYear = String(req.query.school_year || activeSchoolYearLabel());
   try {
     var sql = getDb();
-    var pendingRows = await sql`SELECT family_name, semester_key, payment_type FROM payments WHERE status = ${'Pending'}`;
-    pendingRows.forEach(function (p) {
+    var dbRows = await sql`
+      SELECT family_name, semester_key, payment_type, status
+      FROM payments
+      WHERE school_year = ${schoolYear}
+        AND status IN ('Pending', 'Paid')
+    `;
+    dbRows.forEach(function (p) {
       var key = String(p.family_name || '').toLowerCase();
       var fam = parsed.families[key];
       if (!fam) {
@@ -962,7 +980,11 @@ async function handleBillingGet(req, res, sheets) {
       var sem = fam[p.semester_key];
       if (!sem) return;
       var field = p.payment_type === 'deposit' ? 'deposit' : 'classFee';
-      if (sem[field] !== 'Paid') sem[field] = 'Pending';
+      // Sheet Paid wins. DB Paid promotes empty/Due/Pending → Paid. DB
+      // Pending only promotes empty/Due → Pending.
+      if (sem[field] === 'Paid') return;
+      if (p.status === 'Paid') sem[field] = 'Paid';
+      else if (sem[field] !== 'Paid') sem[field] = 'Pending';
     });
   } catch (e) {
     console.error('Billing DB overlay failed:', e.message);
@@ -977,6 +999,7 @@ async function handleBillingPost(req, res) {
   var familyName = String(body.family_name || '').trim();
   var semesterKey = String(body.semester_key || '').trim();
   var paymentType = String(body.payment_type || '').trim();
+  var schoolYear = String(body.school_year || activeSchoolYearLabel()).trim();
   var paypalId = String(body.paypal_transaction_id || '').trim();
   var amountCents = parseInt(body.amount_cents, 10) || 0;
   var payerEmail = String(body.payer_email || '').trim();
@@ -992,8 +1015,14 @@ async function handleBillingPost(req, res) {
   try {
     var sql = getDb();
     var rows = await sql`
-      INSERT INTO payments (family_name, semester_key, payment_type, paypal_transaction_id, amount_cents, payer_email, status)
-      VALUES (${familyName}, ${semesterKey}, ${paymentType}, ${paypalId}, ${amountCents}, ${payerEmail}, 'Pending')
+      INSERT INTO payments (
+        family_name, semester_key, payment_type, school_year,
+        paypal_transaction_id, amount_cents, payer_email, status
+      )
+      VALUES (
+        ${familyName}, ${semesterKey}, ${paymentType}, ${schoolYear},
+        ${paypalId}, ${amountCents}, ${payerEmail}, 'Pending'
+      )
       RETURNING id, created_at
     `;
     return res.status(200).json({ ok: true, id: rows[0].id, created_at: rows[0].created_at });

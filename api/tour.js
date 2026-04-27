@@ -300,6 +300,28 @@ async function handleRegistration(body, req, res) {
       }
     }
 
+    // Mirror the registration's Fall membership payment into `payments` so
+    // the My Family billing card flips to "Paid" without requiring the
+    // Treasurer to update the billing sheet first. Best-effort — billing
+    // remains accurate via the sheet if this fails.
+    try {
+      const famNameForBilling = deriveFamilyName(main_learning_coach, existing_family_name);
+      if (famNameForBilling) {
+        await sql`
+          INSERT INTO payments (
+            family_name, semester_key, payment_type, school_year,
+            paypal_transaction_id, amount_cents, payer_email, status
+          ) VALUES (
+            ${famNameForBilling}, 'fall', 'deposit', ${season},
+            ${paypal_transaction_id || ''}, ${Math.round((parseFloat(payment_amount) || 0) * 100)},
+            ${email}, 'Paid'
+          )
+        `;
+      }
+    } catch (payErr) {
+      console.error('Registration → payments mirror error (non-fatal):', payErr);
+    }
+
     // Best-effort append to the Membership Sheet for the Membership Director's
     // CSV-style view. Failures must not block the family's registration.
     try {

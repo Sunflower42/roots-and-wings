@@ -2856,7 +2856,7 @@
     checkDeliverTo: 'Jessica Shewan (Treasurer)',
     paypalMerchantId: 'MHDL7HTNRVQHE',
     semesters: {
-      fall:   { name: 'Fall '   + ACTIVE_YEAR.fallYear,   sessions: [1, 2],     dueDate: ACTIVE_YEAR.fallYear   + '-08-27', deposit: 50, showClassFees: SHOW_CLASS_FEES },
+      fall:   { name: 'Fall '   + ACTIVE_YEAR.fallYear,   sessions: [1, 2],     dueDate: ACTIVE_YEAR.fallYear   + '-08-27', deposit: 40, showClassFees: SHOW_CLASS_FEES },
       spring: { name: 'Spring ' + ACTIVE_YEAR.springYear, sessions: [3, 4, 5], dueDate: ACTIVE_YEAR.springYear + '-01-07', deposit: 50, showClassFees: SHOW_CLASS_FEES }
     }
   };
@@ -2870,7 +2870,7 @@
   function loadBillingStatus(cb) {
     var googleCred = localStorage.getItem('rw_google_credential');
     if (!googleCred) { if (cb) cb(); return; }
-    fetch('/api/sheets?action=billing', {
+    fetch('/api/sheets?action=billing&school_year=' + encodeURIComponent(ACTIVE_YEAR.label), {
       headers: { 'Authorization': 'Bearer ' + googleCred }
     })
       .then(function (r) { return r.json(); })
@@ -3799,6 +3799,7 @@
           family_name: familyName,
           semester_key: semKey,
           payment_type: paymentType,
+          school_year: ACTIVE_YEAR.label,
           paypal_transaction_id: paypalId || '',
           amount_cents: Math.round((parseFloat(amount) || 0) * 100),
           payer_email: payerEmail || ''

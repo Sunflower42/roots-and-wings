@@ -434,6 +434,11 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE INDEX IF NOT EXISTS payments_family_sem_type_idx
   ON payments (LOWER(family_name), semester_key, payment_type);
+-- Each payment belongs to a specific school year (Aug-May cycle). Pre-2026
+-- rows didn't track this; backfill defaults to '2025-2026'. New inserts
+-- (registration auto-write, recordPendingPayment) populate this explicitly.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS school_year TEXT NOT NULL DEFAULT '2025-2026';
+CREATE INDEX IF NOT EXISTS payments_school_year_idx ON payments (school_year);
 
 -- ──────────────────────────────────────────────
 -- Participation tracking: VP + Afternoon Class Liaison report
