@@ -2846,13 +2846,16 @@
   // amount per family from billingStatus when wiring this up.
   var SHOW_CLASS_FEES = ACTIVE_YEAR.label !== '2026-2027';
 
-  // Spring billing only surfaces when families need to act on it. Showing
-  // it in April-October (when Spring is 3+ months away and the billing
-  // sheet may still carry stale prior-year Paid markers) misleads families
-  // — last year's "Spring deposit Paid" bleeds into the current view.
-  // Visible Nov–Mar; hidden Apr–Oct.
-  var _nowMonth = new Date().getMonth();
-  var SHOW_SPRING = _nowMonth >= 10 || _nowMonth <= 2;
+  // Spring billing surfaces 2 weeks before the deposit due date, so
+  // families have lead time to pay without seeing it months in advance
+  // (which also avoids the prior-year billing-sheet "Paid" markers
+  // bleeding through into a fresh view). Implicit upper bound is the
+  // April 1 ACTIVE_YEAR flip — after that, "Spring" refers to the new
+  // year and its own due date drives visibility.
+  var _springDue = new Date(ACTIVE_YEAR.springYear + '-01-07T00:00:00');
+  var _springLeadStart = new Date(_springDue);
+  _springLeadStart.setDate(_springLeadStart.getDate() - 14);
+  var SHOW_SPRING = new Date() >= _springLeadStart;
 
   var BILLING_CONFIG = {
     memberFeePerSemester: 40, // fallback; overridden by billingStatus.rates
