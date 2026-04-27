@@ -2837,6 +2837,15 @@
   }
   var ACTIVE_YEAR = activeSchoolYear();
 
+  // 2026-2027 deposit-only: the board decided this year's My Family
+  // billing card shows only the membership/deposit fee — no per-session
+  // class fees. TODO (Spring 2027): add a line item to the Spring
+  // deposit row labeled "Fall 2026 PayPal transaction fee adjustment"
+  // to recoup PayPal fees the org absorbed on each Fall transaction
+  // (~2.5% of every $50 deposit + $40 member fee payment). Compute the
+  // amount per family from billingStatus when wiring this up.
+  var SHOW_CLASS_FEES = ACTIVE_YEAR.label !== '2026-2027';
+
   var BILLING_CONFIG = {
     memberFeePerSemester: 40, // fallback; overridden by billingStatus.rates
     amFeePerSession: 10,
@@ -2847,8 +2856,8 @@
     checkDeliverTo: 'Jessica Shewan (Treasurer)',
     paypalMerchantId: 'MHDL7HTNRVQHE',
     semesters: {
-      fall:   { name: 'Fall '   + ACTIVE_YEAR.fallYear,   sessions: [1, 2],     dueDate: ACTIVE_YEAR.fallYear   + '-08-27', deposit: 50 },
-      spring: { name: 'Spring ' + ACTIVE_YEAR.springYear, sessions: [3, 4, 5], dueDate: ACTIVE_YEAR.springYear + '-01-07', deposit: 50 }
+      fall:   { name: 'Fall '   + ACTIVE_YEAR.fallYear,   sessions: [1, 2],     dueDate: ACTIVE_YEAR.fallYear   + '-08-27', deposit: 50, showClassFees: SHOW_CLASS_FEES },
+      spring: { name: 'Spring ' + ACTIVE_YEAR.springYear, sessions: [3, 4, 5], dueDate: ACTIVE_YEAR.springYear + '-01-07', deposit: 50, showClassFees: SHOW_CLASS_FEES }
     }
   };
 
@@ -2959,7 +2968,8 @@
       balanceBeforeFee: balanceBeforeFee,
       paypalFee: paypalFee,
       total: total,
-      sessionCount: sem.sessions.length
+      sessionCount: sem.sessions.length,
+      showClassFees: sem.showClassFees !== false
     };
   }
 
@@ -3504,7 +3514,11 @@
         html += '</div>';
       }
 
-      // Semester fees subsection
+      // Semester fees subsection — hidden for years where the board has
+      // chosen to surface only the membership/deposit fee (e.g. 2026-27
+      // per BILLING_CONFIG.semesters[*].showClassFees). The deposit
+      // subsection above already self-closed its container.
+      if (!sem.showClassFees) return;
       var isPaid = sem.status === 'Paid';
       var isPending = sem.status === 'Pending';
       var statusClass = isPaid ? 'mf-billing-paid'
