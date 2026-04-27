@@ -10221,6 +10221,47 @@ button.staff-role:hover {
   font-weight: 500;
   font-style: italic;
 }
+.roles-row-holder-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.roles-row-holder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 8px;
+  background: var(--color-soft-bg, #f4ede4);
+  border-radius: 999px;
+  font-size: 0.82rem;
+}
+.roles-row-holder-remove {
+  background: transparent;
+  border: 0;
+  color: var(--color-text-light);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 999px;
+}
+.roles-row-holder-remove:hover { color: var(--color-coral); background: rgba(0,0,0,0.04); }
+.roles-row-assign {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+}
+.roles-mgr-yearpick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  margin-right: auto; /* push the Show-archived toggle to the right */
+}
+.roles-mgr-yearpick select {
+  padding: 2px 6px;
+  font-size: 0.85rem;
+}
 
 /* Role edit overlay (opens on top of the Roles Manager modal). Uses its
    own stacking context so closing it doesn't collapse the manager. */

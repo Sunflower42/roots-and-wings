@@ -4125,6 +4125,42 @@
     return raw;
   }
 
+  // Reusable parent picker source. Returns one entry per parent across all
+  // FAMILIES, sorted by family name. Each entry has the derived Workspace
+  // email (firstname + family-last-initial @ domain — same convention used
+  // by api/sheets.js parseDirectory and scripts/seed-role-holders.js), plus
+  // a person_name / family_name pair ready to POST to role_holders or any
+  // other table that stores an individual.
+  //
+  // Skips families with only a family name (no parent first names) and
+  // any "parents" entry that isn't a real word — defensive against the
+  // odd directory row.
+  function buildParentPickerOptions() {
+    var opts = [];
+    (FAMILIES || []).forEach(function (fam) {
+      if (!fam || !fam.name || !fam.parents) return;
+      var familyLast = String(fam.name).trim();
+      if (!familyLast) return;
+      var lastInitial = familyLast.charAt(0).toLowerCase();
+      String(fam.parents).split(/\s*&\s*/).forEach(function (firstRaw) {
+        var first = String(firstRaw || '').trim();
+        if (!first) return;
+        var firstClean = first.replace(/[^A-Za-z]/g, '');
+        if (!firstClean) return;
+        var email = firstClean.toLowerCase() + lastInitial + '@rootsandwingsindy.com';
+        opts.push({
+          email: email,
+          person_name: first + ' ' + familyLast,
+          family_name: familyLast,
+          displayName: first + ' ' + familyLast,
+          sortKey: (familyLast + ' ' + first).toLowerCase()
+        });
+      });
+    });
+    opts.sort(function (a, b) { return a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0; });
+    return opts;
+  }
+
   // Pre-seed the DB with every sheet-derived assignment for a session so that
   // applyCleaningData() no longer wipes the rest of the chips when the next
   // fetch returns a single-row DB view. Idempotent-ish: if the DB already has
@@ -10249,22 +10285,12 @@
     var slotDesc = opts.slotDesc || 'this slot';
     var dateLabel = opts.slotDate ? formatDateLabel(opts.slotDate) : '';
 
-    // Build a flat list of parents across all families (sorted by last name)
-    // so the VP can pick any individual who might cover.
-    var people = [];
-    FAMILIES.forEach(function (fam) {
-      if (!fam.email) return;
-      (fam.parents || '').split(/\s*&\s*/).forEach(function (first) {
-        var firstClean = first.trim();
-        if (!firstClean) return;
-        people.push({
-          email: fam.email,
-          displayName: firstClean + ' ' + fam.name,
-          sortKey: (fam.name + ' ' + firstClean).toLowerCase()
-        });
-      });
-    });
-    people.sort(function (a, b) { return a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0; });
+    // Flat list of parents across all families, sorted by family name.
+    // buildParentPickerOptions derives a per-parent Workspace email; the
+    // coverage flow only stamps a display name + email on the slot, so
+    // the per-parent email is a tighter audit trail than the shared
+    // family email this modal used to send.
+    var people = buildParentPickerOptions();
 
     var html = '<div class="absence-overlay" id="assignCoverageOverlay"><div class="absence-modal">';
     html += '<button class="detail-close absence-close" id="assignCoverageCloseBtn" aria-label="Close">&times;</button>';
@@ -11220,9 +11246,13 @@
   // super user can change meta fields or create/archive roles.
   var _rolesMgrState = {
     roles: [],
-    holdersByRoleId: {}, // { role_id: [ {email, person_name, family_name}, ... ] }
-    showArchived: false
+    holdersByRoleId: {}, // { role_id: [ {id, email, person_name, family_name}, ... ] }
+    showArchived: false,
+    // Default to the in-progress school year (2025-2026 holders are seeded
+    // in the DB; 2026-2027 will be empty until the new board is assigned).
+    schoolYear: '2025-2026'
   };
+  var ROLES_MGR_YEARS = ['2025-2026', '2026-2027'];
 
   function loadRolesManagerCount() {
     var pill = document.getElementById('rolesmgr-count');
@@ -11256,6 +11286,14 @@
     h += '<h3 class="rd-title">Roles &amp; Committees</h3>';
     h += '<p class="rd-subtitle">Every job description, term, and hierarchy in one place. Edits are stamped with who and when.</p>';
     h += '<div class="roles-mgr-toolbar">';
+    h += '<label class="roles-mgr-yearpick">School year ';
+    h += '<select id="roles-school-year">';
+    ROLES_MGR_YEARS.forEach(function (yr) {
+      var sel = yr === _rolesMgrState.schoolYear ? ' selected' : '';
+      h += '<option value="' + yr + '"' + sel + '>' + yr + '</option>';
+    });
+    h += '</select>';
+    h += '</label>';
     h += '<label class="roles-mgr-toggle"><input type="checkbox" id="roles-show-archived"' + (_rolesMgrState.showArchived ? ' checked' : '') + ' /> Show archived</label>';
     h += '</div>';
     h += '<div id="roles-mgr-body"><p class="ws-empty">Loading roles…</p></div>';
@@ -11269,6 +11307,10 @@
     document.getElementById('roles-show-archived').addEventListener('change', function () {
       _rolesMgrState.showArchived = this.checked;
       renderRolesManagerTree();
+    });
+    document.getElementById('roles-school-year').addEventListener('change', function () {
+      _rolesMgrState.schoolYear = this.value;
+      loadRolesManagerTree();
     });
     document.getElementById('roles-add-btn').addEventListener('click', function () {
       showRoleEditModal(null);
@@ -11287,7 +11329,7 @@
     var rolesReq = fetch('/api/cleaning?action=roles&includeArchived=1', {
       headers: { 'Authorization': 'Bearer ' + cred }
     });
-    var holdersReq = fetch('/api/cleaning?action=role-holders', {
+    var holdersReq = fetch('/api/cleaning?action=role-holders&school_year=' + encodeURIComponent(_rolesMgrState.schoolYear), {
       headers: { 'Authorization': 'Bearer ' + cred }
     });
     Promise.all([rolesReq, holdersReq])
@@ -11389,10 +11431,18 @@
           h2 += '<span class="roles-row-holder roles-row-holder-empty">Unassigned</span>';
         } else {
           h2 += '<span class="roles-row-holder-label">Held by</span> ';
-          h2 += '<span class="roles-row-holder">' +
-            held.map(function (h) { return escapeHtml(h.person_name || h.email); }).join(', ') +
-            '</span>';
+          h2 += '<span class="roles-row-holder">';
+          h2 += held.map(function (hh) {
+            return '<span class="roles-row-holder-chip">' +
+              escapeHtml(hh.person_name || hh.email) +
+              '<button type="button" class="roles-row-holder-remove" data-holder-id="' + hh.id +
+              '" data-holder-name="' + escapeHtml(hh.person_name || hh.email) +
+              '" aria-label="Remove ' + escapeHtml(hh.person_name || hh.email) + '">&times;</button>' +
+              '</span>';
+          }).join(' ');
+          h2 += '</span>';
         }
+        h2 += ' <button type="button" class="sc-btn roles-row-assign" data-role-id="' + r.id + '" aria-label="Assign holder for ' + escapeHtml(r.title) + '">Assign</button>';
         h2 += '</div>';
       }
       h2 += '<div class="roles-row-meta">';
@@ -11458,6 +11508,21 @@
         patchRoleStatusInline(id, 'active');
       });
     });
+    body.querySelectorAll('.roles-row-assign').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = parseInt(this.getAttribute('data-role-id'), 10);
+        var role = findRoleById(id);
+        if (role) showAssignHolderModal(role);
+      });
+    });
+    body.querySelectorAll('.roles-row-holder-remove').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var holderId = parseInt(this.getAttribute('data-holder-id'), 10);
+        var name = this.getAttribute('data-holder-name') || 'this person';
+        if (!confirm('Remove ' + name + ' from this role for ' + _rolesMgrState.schoolYear + '?')) return;
+        deleteRoleHolder(holderId);
+      });
+    });
   }
 
   function patchRoleStatusInline(id, nextStatus) {
@@ -11476,6 +11541,96 @@
         }
         loadRolesManagerTree();
         if (typeof loadRolesManagerCount === 'function') loadRolesManagerCount();
+      })
+      .catch(function (err) { alert('Network error: ' + (err.message || 'unknown')); });
+  }
+
+  // Phase B: assign a parent to a role for the active school year. Uses
+  // the reusable buildParentPickerOptions() source so the dropdown stays
+  // consistent with the coverage-assign flow. Hides parents who already
+  // hold this role for this year so the President doesn't double-add by
+  // accident.
+  function showAssignHolderModal(role) {
+    if (document.getElementById('roleHolderOverlay')) return;
+    var year = _rolesMgrState.schoolYear;
+    var held = (_rolesMgrState.holdersByRoleId && _rolesMgrState.holdersByRoleId[role.id]) || [];
+    var alreadyHeldEmails = {};
+    held.forEach(function (h) { alreadyHeldEmails[String(h.email).toLowerCase()] = true; });
+    var allOpts = buildParentPickerOptions().filter(function (o) {
+      return !alreadyHeldEmails[o.email.toLowerCase()];
+    });
+
+    var html = '<div class="absence-overlay" id="roleHolderOverlay"><div class="absence-modal">';
+    html += '<button class="detail-close absence-close" id="roleHolderCloseBtn" aria-label="Close">&times;</button>';
+    html += '<h3>Assign holder</h3>';
+    html += '<p class="assign-coverage-slot"><strong>' + escapeHtml(role.title) + '</strong> · ' + escapeHtml(year) + '</p>';
+    html += '<div class="absence-field"><label for="roleHolderPerson">Who is taking this role?</label>';
+    html += '<select class="cl-input" id="roleHolderPerson">';
+    html += '<option value="">— Pick a parent —</option>';
+    allOpts.forEach(function (p) {
+      html += '<option value="' + escapeHtml(p.email) + '" data-name="' + escapeHtml(p.person_name) +
+        '" data-family="' + escapeHtml(p.family_name) + '">' + escapeHtml(p.displayName) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<button class="btn btn-primary absence-submit" id="roleHolderSubmitBtn">Assign</button>';
+    html += '</div></div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    var overlay = document.getElementById('roleHolderOverlay');
+    function close() { if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+    document.getElementById('roleHolderCloseBtn').addEventListener('click', close);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+
+    document.getElementById('roleHolderSubmitBtn').addEventListener('click', function () {
+      var sel = document.getElementById('roleHolderPerson');
+      if (!sel || !sel.value) { alert('Please pick a parent.'); return; }
+      var opt = sel.options[sel.selectedIndex];
+      var payload = {
+        role_id: role.id,
+        email: sel.value,
+        person_name: opt.getAttribute('data-name') || '',
+        family_name: opt.getAttribute('data-family') || '',
+        school_year: year
+      };
+      var btn = this;
+      btn.disabled = true; btn.textContent = 'Assigning…';
+      var cred = localStorage.getItem('rw_google_credential');
+      fetch('/api/cleaning?action=role-holders', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
+        .then(function (res) {
+          if (!res.ok) {
+            alert((res.data && res.data.error) || 'Could not assign (' + res.status + ')');
+            btn.disabled = false; btn.textContent = 'Assign';
+            return;
+          }
+          close();
+          loadRolesManagerTree();
+        })
+        .catch(function (err) {
+          alert('Network error: ' + (err.message || 'unknown'));
+          btn.disabled = false; btn.textContent = 'Assign';
+        });
+    });
+  }
+
+  function deleteRoleHolder(holderId) {
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) return;
+    fetch('/api/cleaning?action=role-holders&id=' + holderId, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + cred }
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          alert((res.data && res.data.error) || 'Could not remove (' + res.status + ')');
+          return;
+        }
+        loadRolesManagerTree();
       })
       .catch(function (err) { alert('Network error: ' + (err.message || 'unknown')); });
   }

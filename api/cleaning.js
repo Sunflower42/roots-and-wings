@@ -10,6 +10,9 @@
 // PATCH  /api/cleaning?action=config            → update liaison name
 // GET    /api/cleaning?action=roles             → all role descriptions
 // PATCH  /api/cleaning?action=roles&id=N        → update a role description
+// GET    /api/cleaning?action=role-holders       → holders for a school year
+// POST   /api/cleaning?action=role-holders       → assign a holder
+// DELETE /api/cleaning?action=role-holders&id=N → remove a holder
 
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
@@ -317,9 +320,11 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // ── Role Holders (Phase A: read-only, seeded from the volunteer sheet).
+    // ── Role Holders (Phase A: read; Phase B: assign/remove from the UI).
     // Returns an array of holders; the client groups by role_id on render.
-    // Phase B adds POST/DELETE + cuts over the permission lookup here.
+    // Phase B is editable but the permission lookup still consults the
+    // volunteer sheet via canEditAsRole — once the sheet stops being
+    // authoritative we can flip _permissions.js to read from this table.
     if (action === 'role-holders') {
       if (req.method === 'GET') {
         const schoolYear = req.query.school_year || '2025-2026';
@@ -332,7 +337,46 @@ module.exports = async function handler(req, res) {
         `;
         return res.status(200).json({ school_year: schoolYear, holders });
       }
-      return res.status(405).json({ error: 'Method not allowed (Phase A is read-only)' });
+
+      if (req.method === 'POST') {
+        const { role_id, email, person_name, family_name, school_year } = req.body || {};
+        const roleId = parseInt(role_id, 10);
+        if (!roleId || !email || !person_name) {
+          return res.status(400).json({ error: 'role_id, email, person_name required' });
+        }
+        const yr = String(school_year || '2025-2026').trim();
+        // Same gate as content edits — President + super user always pass;
+        // an ancestor-role holder (e.g., VP for Programming Committee
+        // roles) can manage their own committee's assignments.
+        const allowed = await canEditRoleContent(user.email, sql, roleId);
+        if (!allowed) {
+          return res.status(403).json({ error: 'Not authorized to assign holders for this role' });
+        }
+        const inserted = await sql`
+          INSERT INTO role_holders (role_id, email, person_name, family_name, school_year, updated_by)
+          VALUES (${roleId}, ${String(email).trim().toLowerCase()},
+                  ${String(person_name).trim()},
+                  ${String(family_name || '').trim()},
+                  ${yr}, ${user.email})
+          RETURNING id, role_id, email, person_name, family_name, school_year
+        `;
+        return res.status(201).json({ holder: inserted[0] });
+      }
+
+      if (req.method === 'DELETE') {
+        const id = parseInt(req.query.id, 10);
+        if (!id) return res.status(400).json({ error: 'id required' });
+        const row = await sql`SELECT role_id FROM role_holders WHERE id = ${id}`;
+        if (row.length === 0) return res.status(404).json({ error: 'Not found' });
+        const allowed = await canEditRoleContent(user.email, sql, row[0].role_id);
+        if (!allowed) {
+          return res.status(403).json({ error: 'Not authorized to remove holders for this role' });
+        }
+        await sql`DELETE FROM role_holders WHERE id = ${id}`;
+        return res.status(200).json({ ok: true });
+      }
+
+      return res.status(405).json({ error: 'Method not allowed' });
     }
 
     // ── Assignment CRUD ──
