@@ -3,6 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Vanity-URL redirect: register.rootsandwingsindy.com → /register.html.
+       Runs before any other resource loads, so it's effectively a hop with
+       no flash. Vercel host-conditional rewrites in vercel.json don't
+       apply for this project, so we handle it here instead. -->
+  <script>(function(){if(location.host==='register.rootsandwingsindy.com'){location.replace('/register.html'+location.search+location.hash);}})();</script>
   <meta name="description" content="Roots & Wings Indy is a nurturing homeschool co-op in Indianapolis, IN. We grow curious, confident learners through community-centered education.">
   <meta name="theme-color" content="#523A79">
   <title>Roots & Wings Indy — Homeschool Co-op in Indianapolis</title>

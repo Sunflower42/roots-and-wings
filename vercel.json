@@ -2,21 +2,5 @@
   "crons": [{
     "path": "/api/push-send",
     "schedule": "0 12 * * 3"
-  }],
-  "rewrites": [
-    {
-      "source": "/_rwtest_marker",
-      "destination": "/register.html"
-    },
-    {
-      "source": "/",
-      "has": [{ "type": "host", "value": "register.rootsandwingsindy.com" }],
-      "destination": "/register.html"
-    },
-    {
-      "source": "/index.html",
-      "has": [{ "type": "host", "value": "register.rootsandwingsindy.com" }],
-      "destination": "/register.html"
-    }
-  ]
+  }]
 }
