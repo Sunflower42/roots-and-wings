@@ -6731,7 +6731,17 @@
       }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         sendBtn.disabled = false; sendBtn.textContent = orig;
-        if (!res.ok) { statusEl.className = 'ws-wv-status ws-wv-err'; statusEl.textContent = (res.data && res.data.error) || 'Send failed.'; return; }
+        if (!res.ok) {
+          statusEl.className = 'ws-wv-status ws-wv-err';
+          var msg = (res.data && res.data.error) || 'Send failed.';
+          // Surface the auth diagnostic so a board member who's blocked
+          // can see who the server thinks they are vs. who it expected.
+          if (res.data && res.data.youAre) {
+            msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+          }
+          statusEl.textContent = msg;
+          return;
+        }
         statusEl.className = 'ws-wv-status ws-wv-ok';
         statusEl.textContent = res.data.emailed
           ? 'Sent. They\u2019ll get the registration link by email shortly.'
