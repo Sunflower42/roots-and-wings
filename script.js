@@ -2846,6 +2846,14 @@
   // amount per family from billingStatus when wiring this up.
   var SHOW_CLASS_FEES = ACTIVE_YEAR.label !== '2026-2027';
 
+  // Spring billing only surfaces when families need to act on it. Showing
+  // it in April-October (when Spring is 3+ months away and the billing
+  // sheet may still carry stale prior-year Paid markers) misleads families
+  // — last year's "Spring deposit Paid" bleeds into the current view.
+  // Visible Nov–Mar; hidden Apr–Oct.
+  var _nowMonth = new Date().getMonth();
+  var SHOW_SPRING = _nowMonth >= 10 || _nowMonth <= 2;
+
   var BILLING_CONFIG = {
     memberFeePerSemester: 40, // fallback; overridden by billingStatus.rates
     amFeePerSession: 10,
@@ -2856,8 +2864,8 @@
     checkDeliverTo: 'Jessica Shewan (Treasurer)',
     paypalMerchantId: 'MHDL7HTNRVQHE',
     semesters: {
-      fall:   { name: 'Fall '   + ACTIVE_YEAR.fallYear,   sessions: [1, 2],     dueDate: ACTIVE_YEAR.fallYear   + '-08-27', deposit: 40, showClassFees: SHOW_CLASS_FEES },
-      spring: { name: 'Spring ' + ACTIVE_YEAR.springYear, sessions: [3, 4, 5], dueDate: ACTIVE_YEAR.springYear + '-01-07', deposit: 50, showClassFees: SHOW_CLASS_FEES }
+      fall:   { name: 'Fall '   + ACTIVE_YEAR.fallYear,   sessions: [1, 2],     dueDate: ACTIVE_YEAR.fallYear   + '-08-27', deposit: 40, showClassFees: SHOW_CLASS_FEES, visible: true },
+      spring: { name: 'Spring ' + ACTIVE_YEAR.springYear, sessions: [3, 4, 5], dueDate: ACTIVE_YEAR.springYear + '-01-07', deposit: 50, showClassFees: SHOW_CLASS_FEES, visible: SHOW_SPRING }
     }
   };
 
@@ -2962,6 +2970,18 @@
     // Live per-family status (falls back to 'Due' if sheet hasn't loaded).
     var live = getFamilyBillingStatus(fam, semesterKey);
 
+    // Per-family visibility. Base visibility comes from BILLING_CONFIG
+    // (e.g. Spring is hidden Apr-Oct). For 2026-27 specifically, the
+    // Fall membership fee subsection is also hidden from families who
+    // haven't yet registered — no point prompting them with a fee until
+    // they go through the registration form. Once they pay (Paid OR
+    // Pending), the card surfaces so they can see the receipt.
+    var visible = sem.visible !== false;
+    if (visible && ACTIVE_YEAR.label === '2026-2027' && semesterKey === 'fall') {
+      var depStatus = live.deposit || 'Due';
+      visible = (depStatus === 'Paid' || depStatus === 'Pending');
+    }
+
     return {
       name: sem.name,
       status: live.classFee || 'Due',
@@ -2978,7 +2998,8 @@
       paypalFee: paypalFee,
       total: total,
       sessionCount: sem.sessions.length,
-      showClassFees: sem.showClassFees !== false
+      showClassFees: sem.showClassFees !== false,
+      visible: visible
     };
   }
 
@@ -3487,10 +3508,17 @@
 
     var semKeys = ['fall', 'spring'];
 
+    // Track whether anything actually rendered so we can show a placeholder
+    // when both Fall and Spring are gated out (e.g. an unregistered family
+    // in April–Oct of a deposit-only year).
+    var anySemRendered = false;
+
     // ── Each semester: deposit then fees ──
     semKeys.forEach(function (semKey) {
       var sem = calculateSemesterFees(fam, semKey);
       if (!sem) return;
+      if (!sem.visible) return;
+      anySemRendered = true;
 
       // Membership fee subsection (the $50 that was previously labeled "deposit" —
       // this is what the public registration flow collects at sign-up). PayPal
@@ -3631,6 +3659,11 @@
 
       html += '</div>';
     });
+    if (!anySemRendered) {
+      html += '<p class="mf-billing-empty">Nothing to bill right now. ' +
+        'Once you register for ' + ACTIVE_YEAR.label + ', your Fall membership ' +
+        'fee will appear here.</p>';
+    }
     html += '<div class="mf-billing-footer">';
     html += '<p>Also accepted: check payable to <em>' + BILLING_CONFIG.checkPayableTo + '</em>, deliver to ' + BILLING_CONFIG.checkDeliverTo + '</p>';
     html += '<p class="mf-billing-contact">Questions? <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a></p>';
@@ -3849,7 +3882,7 @@
 
     ['fall', 'spring'].forEach(function (semKey) {
       var sem = calculateSemesterFees(fam, semKey);
-      if (!sem) return;
+      if (!sem || !sem.visible) return;
       var capKey = semKey.charAt(0).toUpperCase() + semKey.slice(1);
       var year = new Date().getFullYear();
       // Each of the four payments identifies its type in description, invoice_id,
