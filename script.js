@@ -10943,7 +10943,9 @@
     html += '</div>';
     html += '<label class="cls-cb-label" style="margin-top:8px;">';
     html += '<input type="checkbox" id="clsTeenAssist"' + (cur.open_to_teen_assistant ? ' checked' : '') + '> ';
-    html += 'Open to a teen (Pigeons) assistant';
+    html += 'Open to a Cedars or Pigeons (12+) assistant';
+    html += ' <span class="cls-help-icon" tabindex="0" role="img" aria-label="More info"' +
+      ' title="Older co-op kids in Cedars (12–13) or Pigeons (14+) can apply to assist with younger classes. Check this if you’d welcome a teen helper.">?</span>';
     html += '</label>';
     html += '</div>';
 
