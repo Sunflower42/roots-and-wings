@@ -174,6 +174,10 @@ async function handleRegistration(body, req, res) {
   const kids = Array.isArray(body.kids) ? body.kids : [];
   const paypal_transaction_id = String(body.paypal_transaction_id || '').trim();
   const payment_amount = Number.isFinite(Number(body.payment_amount)) ? Number(body.payment_amount) : REGISTRATION_FEE;
+  // 'paypal' (default) → paid via the form; 'cash_check' → spot held,
+  // Treasurer marks paid in the Membership Report later.
+  const payment_method = String(body.payment_method || 'paypal').trim().toLowerCase();
+  const isCashCheck = payment_method === 'cash_check';
   const backup_coaches_raw = Array.isArray(body.backup_coaches) ? body.backup_coaches : [];
   const backup_coaches = [];
   for (let i = 0; i < backup_coaches_raw.length && backup_coaches.length < 10; i++) {
@@ -211,7 +215,7 @@ async function handleRegistration(body, req, res) {
   if (!waiver_liability) return res.status(400).json({ error: 'Liability waiver acknowledgment required.' });
   if (!signature_name) return res.status(400).json({ error: 'Signature required.' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(signature_date)) return res.status(400).json({ error: 'Signature date required.' });
-  if (!paypal_transaction_id) return res.status(400).json({ error: 'Payment transaction ID required.' });
+  if (!isCashCheck && !paypal_transaction_id) return res.status(400).json({ error: 'Payment transaction ID required.' });
 
   if (email.length > 200 || main_learning_coach.length > 200 || address.length > 500 ||
       phone.length > 50 || signature_name.length > 200 || student_signature.length > 200 ||
@@ -220,6 +224,8 @@ async function handleRegistration(body, req, res) {
   }
 
   const sql = getSql();
+
+  const registrationStatus = isCashCheck ? 'pending' : 'paid';
 
   try {
     const inserted = await sql`
@@ -234,7 +240,7 @@ async function handleRegistration(body, req, res) {
         ${track}, ${track_other}, ${JSON.stringify(kids)}::jsonb, ${placement_notes},
         ${waiver_member_agreement}, ${waiver_photo_consent}, ${waiver_liability},
         ${signature_name}, ${signature_date}, ${student_signature},
-        'paid', ${payment_amount}, ${paypal_transaction_id}
+        ${registrationStatus}, ${payment_amount}, ${paypal_transaction_id}
       )
       RETURNING id, created_at
     `;
@@ -301,12 +307,14 @@ async function handleRegistration(body, req, res) {
     }
 
     // Mirror the registration's Fall membership payment into `payments` so
-    // the My Family billing card flips to "Paid" without requiring the
-    // Treasurer to update the billing sheet first. Best-effort — billing
-    // remains accurate via the sheet if this fails.
+    // the My Family billing card flips to "Paid" (or "Pending" for
+    // cash/check) without requiring the Treasurer to update the billing
+    // sheet first. Best-effort — billing remains accurate via the sheet
+    // if this fails.
     try {
       const famNameForBilling = deriveFamilyName(main_learning_coach, existing_family_name);
       if (famNameForBilling) {
+        const paymentStatus = isCashCheck ? 'Pending' : 'Paid';
         await sql`
           INSERT INTO payments (
             family_name, semester_key, payment_type, school_year,
@@ -314,7 +322,7 @@ async function handleRegistration(body, req, res) {
           ) VALUES (
             ${famNameForBilling}, 'fall', 'deposit', ${season},
             ${paypal_transaction_id || ''}, ${Math.round((parseFloat(payment_amount) || 0) * 100)},
-            ${email}, 'Paid'
+            ${email}, ${paymentStatus}
           )
         `;
       }
@@ -339,10 +347,23 @@ async function handleRegistration(body, req, res) {
     }
 
     // Best-effort confirmation email — failure does not fail the request.
+    // Subject + lead vary by payment method: PayPal = "Confirmed & Paid",
+    // cash/check = "Spot held — bring payment to co-op". Treasurer sends
+    // a separate "payment received" email later via Mark Paid.
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
       const kidsList = kids.map(k => `<li>${escapeHtml(k.name)} &mdash; ${escapeHtml(k.birth_date)}</li>`).join('');
       const backupList = backupCoachRows.map(b => `<li>${escapeHtml(b.name)} &mdash; ${escapeHtml(b.email)} (emailed a waiver link)</li>`).join('');
+      const subject = isCashCheck
+        ? `Roots & Wings ${season} Registration Received — ${main_learning_coach} family (payment pending)`
+        : `Roots & Wings ${season} Registration Confirmed — ${main_learning_coach} family`;
+      const heading = isCashCheck ? 'Registration Received — Payment Pending' : 'Registration Confirmed &amp; Paid';
+      const lead = isCashCheck
+        ? `<p>Thanks for registering with Roots &amp; Wings Homeschool Co-op! Your spot is held. Please bring <strong>$${escapeHtml(String(payment_amount))} cash or a check payable to <em>Roots and Wings Homeschool, Inc.</em></strong> to Jessica Shewan (Treasurer) on your tour day or your first co-op day. You'll receive a separate confirmation email once the Treasurer records your payment.</p>`
+        : `<p>Thanks for registering with Roots &amp; Wings Homeschool Co-op! Your ${escapeHtml(season)} Membership Fee has been received. The Membership Director, Treasurer, and Communications Director have been copied on this email.</p>`;
+      const paymentRow = isCashCheck
+        ? `<tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Payment</td><td>$${escapeHtml(String(payment_amount))} cash or check &mdash; pending</td></tr>`
+        : `<tr><td style="padding:6px 16px 6px 0;font-weight:bold;">PayPal txn</td><td>${escapeHtml(paypal_transaction_id)} &mdash; $${escapeHtml(String(payment_amount))}</td></tr>`;
       await resend.emails.send({
         from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
         to: email,
@@ -352,10 +373,10 @@ async function handleRegistration(body, req, res) {
           'membership@rootsandwingsindy.com'
         ],
         replyTo: 'membership@rootsandwingsindy.com',
-        subject: `Roots & Wings ${season} Registration Confirmed — ${main_learning_coach} family`,
+        subject: subject,
         html: `
-          <h2>Registration Confirmed &amp; Paid</h2>
-          <p>Thanks for registering with Roots &amp; Wings Homeschool Co-op! Your ${escapeHtml(season)} Membership Fee has been received. The Membership Director, Treasurer, and Communications Director have been copied on this email.</p>
+          <h2>${heading}</h2>
+          ${lead}
           <table style="border-collapse:collapse;font-family:sans-serif;">
             <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Season</td><td>${escapeHtml(season)}</td></tr>
             <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Main Learning Coach</td><td>${escapeHtml(main_learning_coach)}</td></tr>
@@ -366,7 +387,7 @@ async function handleRegistration(body, req, res) {
             <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Returning family</td><td>${existing_family_name ? escapeHtml(existing_family_name) : '(new)'}</td></tr>
             <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Signature</td><td>${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</td></tr>
             ${student_signature ? `<tr><td style="padding:6px 16px 6px 0;font-weight:bold;vertical-align:top;">Adult student signatures</td><td>${escapeHtml(student_signature)}</td></tr>` : ''}
-            <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">PayPal txn</td><td>${escapeHtml(paypal_transaction_id)} — $${escapeHtml(String(payment_amount))}</td></tr>
+            ${paymentRow}
           </table>
           <h3>Children</h3>
           <ul>${kidsList}</ul>
@@ -715,6 +736,103 @@ async function handleRegistrationDecline(body, req, res) {
   } catch (err) {
     console.error('Registration decline error:', err);
     return res.status(500).json({ error: 'Could not decline registration.' });
+  }
+}
+
+// ── Treasurer Workspace: mark a pending cash/check registration as Paid ──
+// Updates registrations.payment_status → 'paid', updates the matching
+// payments row → 'Paid' (so the family's My Family billing card flips),
+// and emails the family + Membership/Communications a payment-received
+// confirmation.
+async function handleRegistrationMarkPaid(body, req, res) {
+  const auth = await verifyWorkspaceAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
+  const canMark = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+    await canEditAsRole(auth.email, 'Treasurer');
+  if (!canMark) {
+    const expected = await getRoleHolderEmail('Treasurer');
+    return res.status(403).json({
+      error: 'Only the Treasurer can mark registrations as paid.',
+      youAre: auth.email,
+      expected: expected || '(unknown)'
+    });
+  }
+
+  const id = parseInt(body.id, 10);
+  if (!id) return res.status(400).json({ error: 'Registration id required.' });
+  const note = String(body.note || '').trim().slice(0, 2000);
+
+  const sql = getSql();
+  try {
+    const rows = await sql`
+      SELECT id, email, main_learning_coach, existing_family_name, season,
+             payment_amount, payment_status
+      FROM registrations WHERE id = ${id} LIMIT 1
+    `;
+    if (rows.length === 0) return res.status(404).json({ error: 'Registration not found.' });
+    const reg = rows[0];
+    if (String(reg.payment_status || '').toLowerCase() === 'paid') {
+      return res.status(200).json({ success: true, already: true });
+    }
+
+    await sql`
+      UPDATE registrations
+      SET payment_status = 'paid', updated_at = NOW()
+      WHERE id = ${id}
+    `;
+
+    // Flip the matching payments row to Paid so the My Family billing
+    // card surfaces it. Match by family name + school year + 'fall'
+    // 'deposit' (the auto-write inserted exactly one such row).
+    try {
+      const famName = deriveFamilyName(reg.main_learning_coach, reg.existing_family_name);
+      if (famName) {
+        await sql`
+          UPDATE payments
+          SET status = 'Paid'
+          WHERE LOWER(family_name) = LOWER(${famName})
+            AND school_year = ${reg.season}
+            AND semester_key = 'fall'
+            AND payment_type = 'deposit'
+        `;
+      }
+    } catch (pErr) {
+      console.error('payments mark Paid (non-fatal):', pErr);
+    }
+
+    // Confirmation email — the second of the two emails this family will
+    // see (the first went out at registration submit).
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const noteHtml = note
+        ? `<p><strong>Note from Treasurer:</strong><br>${escapeHtml(note).replace(/\n/g, '<br>')}</p>`
+        : '';
+      await resend.emails.send({
+        from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+        to: reg.email,
+        cc: [
+          'communications@rootsandwingsindy.com',
+          'membership@rootsandwingsindy.com'
+        ],
+        replyTo: 'treasurer@rootsandwingsindy.com',
+        subject: `Roots & Wings ${reg.season} Payment Received — ${reg.main_learning_coach} family`,
+        html: `
+          <h2>Payment Received &mdash; You're All Set</h2>
+          <p>Hi ${escapeHtml(reg.main_learning_coach)},</p>
+          <p>Thanks! The Treasurer has recorded your $${escapeHtml(String(reg.payment_amount || ''))} ${escapeHtml(reg.season)} Fall Membership Fee. Your registration is now fully complete.</p>
+          ${noteHtml}
+          <p style="margin-top:16px;">Questions? Reply to this email and it'll reach the Treasurer.</p>
+        `,
+      });
+    } catch (mailErr) {
+      console.error('Mark-paid email error (non-fatal):', mailErr);
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Registration mark-paid error:', err);
+    return res.status(500).json({ error: 'Could not mark registration paid.' });
   }
 }
 
@@ -1157,6 +1275,7 @@ module.exports = async function handler(req, res) {
     if (kind === 'tour') return handleTour(body, res);
     if (kind === 'registration') return handleRegistration(body, req, res);
     if (kind === 'registration-decline') return handleRegistrationDecline(body, req, res);
+    if (kind === 'registration-mark-paid') return handleRegistrationMarkPaid(body, req, res);
     if (kind === 'backup-waiver-sign') return handleBackupWaiverSign(body, req, res);
     if (kind === 'waiver-send') return handleWaiverSend(body, req, res);
     if (kind === 'registration-invite') return handleRegistrationInvite(body, req, res);

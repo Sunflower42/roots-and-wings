@@ -9171,6 +9171,35 @@ button.staff-role:hover {
   flex-direction: column;
   gap: 4px;
 }
+/* Payment-status filter row sits above the Membership Report table.
+   Shared across roles (all see the filter; Treasurer also gets the
+   Mark Paid affordance below). */
+.ws-mr-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ws-mr-filter-label {
+  font-weight: 600;
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+.ws-mr-filter {
+  width: auto;
+  min-width: 160px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+}
+
+/* Treasurer-only mark-paid affordance at the bottom of the expanded
+   row. Lighter tint than decline since this is a positive action. */
+.ws-reg-mark-paid {
+  border-top: 1px dashed rgba(var(--color-primary-rgb), 0.25);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
 /* Decline-registration affordance at the bottom of the Membership Report
    expanded row. Warm/danger tint so it reads as destructive. */
 .ws-reg-decline {

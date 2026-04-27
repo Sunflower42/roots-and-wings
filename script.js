@@ -333,6 +333,27 @@
     return false;
   }
 
+  // True when the active user (respecting View As) is the Treasurer. Same
+  // pattern as isVP — drives client-side affordances; backend re-checks
+  // via canEditAsRole against the volunteer sheet.
+  function isTreasurer() {
+    var email = getActiveEmail();
+    if (!email) return false;
+    for (var i = 0; i < FAMILIES.length; i++) {
+      if (FAMILIES[i].email === email && FAMILIES[i].boardRole === 'Treasurer') return true;
+    }
+    return false;
+  }
+
+  function isMembershipDirector() {
+    var email = getActiveEmail();
+    if (!email) return false;
+    for (var i = 0; i < FAMILIES.length; i++) {
+      if (FAMILIES[i].email === email && FAMILIES[i].boardRole === 'Membership Director') return true;
+    }
+    return false;
+  }
+
   function applySheetsData(data) {
     if (!data || data.error) return false;
 
@@ -5175,9 +5196,29 @@
         if (typeof loadPmSubmissionsPendingCount === 'function') loadPmSubmissionsPendingCount();
       }
     },
+    'todos': {
+      // Action queue for the Treasurer — surfaces pending cash/check
+      // registrations so she knows when there's something to record. The
+      // count comes from the same /api/tour?list=registrations endpoint
+      // the report uses; clicking the link opens the Membership Report
+      // pre-filtered to Pending. Other roles get an empty card today;
+      // future to-dos slot in here naturally.
+      title: 'To Do',
+      roleGate: ['Treasurer'],
+      render: function () {
+        var h = '<p class="ws-body-hint">Quick links to anything waiting on you.</p>';
+        h += '<ul class="ws-link-list">';
+        h += '<li><button type="button" class="ws-link-btn" data-resource-action="treasurer-pending-payments"><span class="ws-link-icon">💰</span><span id="ws-todo-pending-label">Pending Payment Registrations</span><span class="ws-link-count" id="ws-todo-pending-count" hidden></span></button></li>';
+        h += '</ul>';
+        return h;
+      },
+      afterRender: function () {
+        if (typeof loadTreasurerPendingCount === 'function') loadTreasurerPendingCount();
+      }
+    },
     'reports': {
       title: 'Reports',
-      roleGate: ['Communications Director', 'Membership Director', 'Vice President', 'Afternoon Class Liaison'],
+      roleGate: ['Communications Director', 'Membership Director', 'Vice President', 'Afternoon Class Liaison', 'Treasurer'],
       render: function (prefs, roles, role) {
         var items = (ROLE_REPORTS[role] || []).slice();
         // Member Participation belongs to the VP + Afternoon Class Liaison
@@ -5233,9 +5274,13 @@
   // safely embedded in data-* attributes.
   var ROLE_REPORTS = {
     'Communications Director': [
-      { key: 'waivers', title: 'Waivers Report' }
+      { key: 'waivers', title: 'Waivers Report' },
+      { key: 'membership', title: 'Membership Report' }
     ],
     'Membership Director': [
+      { key: 'membership', title: 'Membership Report' }
+    ],
+    'Treasurer': [
       { key: 'membership', title: 'Membership Report' }
     ],
     'Vice President': []
@@ -5254,6 +5299,7 @@
     'President': ['roles', 'my-links', 'ways-to-help', 'resources'],
     'Communications Director': ['reports', 'forms', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
     'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
+    'Treasurer': ['todos', 'reports', 'my-links', 'ways-to-help', 'resources'],
     'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     'Afternoon Class Liaison': ['reports', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     '*': ['my-links', 'ways-to-help', 'resources']
@@ -5810,6 +5856,46 @@
     });
   }
 
+  // Column spec shared by every render of the Membership Report table —
+  // hoisted out of showMembershipReportModal so the filter-change re-render
+  // can re-use it without duplicating the schema.
+  var MEMBERSHIP_TABLE_COLS = [
+    { key: 'main_learning_coach', label: 'Main Learning Coach', type: 'string',
+      render: function (r) { return escapeHtmlWs(r.main_learning_coach); }
+    },
+    { key: 'email', label: 'Email', type: 'string',
+      render: function (r) { return escapeHtmlWs(r.email); }
+    },
+    { key: 'track', label: 'Track', type: 'string',
+      sortValue: function (r) { return r.track || ''; },
+      render: function (r) {
+        var t = r.track || '';
+        if (r.track === 'Other' && r.track_other) t = 'Other: ' + r.track_other;
+        return escapeHtmlWs(t);
+      }
+    },
+    { key: 'kidsCount', label: 'Kids', type: 'number',
+      sortValue: function (r) { return (r.kids || []).length; },
+      render: function (r) { return String((r.kids || []).length); }
+    },
+    { key: 'payment_status', label: 'Paid', type: 'string',
+      render: function (r) {
+        var ok = String(r.payment_status || '').toLowerCase() === 'paid';
+        return ok ? '<span class="ws-wv-ok">Paid</span>' : '<span class="ws-wv-pending">' + escapeHtmlWs(r.payment_status || 'Pending') + '</span>';
+      }
+    },
+    { key: 'waiverStatus', label: 'Waiver', type: 'string',
+      sortValue: function (r) { return (!!r.waiver_member_agreement && !!r.signature_name) ? 'signed' : 'pending'; },
+      render: function (r) {
+        var ok = !!r.waiver_member_agreement && !!r.signature_name;
+        return ok ? '<span class="ws-wv-ok">Signed ' + escapeHtmlWs(r.signature_date || '') + '</span>' : '<span class="ws-wv-pending">Pending</span>';
+      }
+    },
+    { key: 'created_at', label: 'Registered', type: 'date',
+      render: function (r) { return r.created_at ? new Date(r.created_at).toLocaleDateString() : ''; }
+    }
+  ];
+
   function showMembershipReportModal() {
     if (!personDetail || !personDetailCard) return;
     var sheetUrl = 'https://docs.google.com/spreadsheets/d/1ACLxC6nYfzb2vXbL3JzeaedNlqXzAPL-lEfq6dTIkRg/edit';
@@ -5855,19 +5941,106 @@
         return Object.assign({}, r, { kids: kids || [], backup_coaches: backups || [] });
       });
       var total = regs.length;
-      var paid = regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; }).length;
+      var paidCount = regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; }).length;
+      var pendingCount = total - paidCount;
       var signed = regs.filter(function (r) { return !!r.waiver_member_agreement && !!r.signature_name; }).length;
-      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> registered \u00b7 <strong class="ws-wv-ok">' + paid + ' paid</strong> \u00b7 <strong class="ws-wv-ok">' + signed + ' signed</strong> \u00b7 click a row to expand</p>';
+
+      // Filter pill: All / Paid / Pending. Treasurer typically wants
+      // "Pending" first (action queue); Membership / Comms typically
+      // want "All". Default to All.
+      var filterHtml = '<div class="ws-mr-filter-row">';
+      filterHtml += '<label class="ws-mr-filter-label">Payment status</label>';
+      filterHtml += '<select class="cl-input ws-mr-filter" id="ws-mr-status-filter">';
+      filterHtml += '<option value="all" selected>All (' + total + ')</option>';
+      filterHtml += '<option value="paid">Paid (' + paidCount + ')</option>';
+      filterHtml += '<option value="pending">Pending (' + pendingCount + ')</option>';
+      filterHtml += '</select>';
+      filterHtml += '</div>';
+
+      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> registered \u00b7 <strong class="ws-wv-ok">' + paidCount + ' paid</strong> \u00b7 <strong class="ws-wv-pending">' + pendingCount + ' pending</strong> \u00b7 <strong class="ws-wv-ok">' + signed + ' signed</strong> \u00b7 click a row to expand</p>';
       if (regs.length === 0) {
         body.innerHTML = headerHtml + '<p class="ws-empty">No registrations yet for this season.</p>';
         return;
       }
-      body.innerHTML = headerHtml + '<div id="ws-membership-table-target"></div>';
+      body.innerHTML = filterHtml + headerHtml + '<div id="ws-membership-table-target"></div>';
       var tableTarget = body.querySelector('#ws-membership-table-target');
 
-      // Delegated click handler for the Decline flow. Swaps the button for a
-      // note textarea + confirm/cancel, posts on confirm, reloads on success.
+      // Filter handler \u2014 re-render the table with the filtered subset.
+      var statusFilterEl = body.querySelector('#ws-mr-status-filter');
+      function regsForFilter() {
+        var v = statusFilterEl ? statusFilterEl.value : 'all';
+        if (v === 'paid') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; });
+        if (v === 'pending') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() !== 'paid'; });
+        return regs;
+      }
+      function renderTable() {
+        renderSortableTable(tableTarget, MEMBERSHIP_TABLE_COLS, regsForFilter(), {
+          initialSort: { key: 'created_at', dir: 'desc' },
+          expandable: true,
+          renderDetail: renderMembershipRegDetail
+        });
+      }
+      if (statusFilterEl) {
+        statusFilterEl.addEventListener('change', renderTable);
+      }
+
+      // Delegated click handler for the Decline flow + Treasurer's Mark
+      // Paid flow. Both swap the button for a note textarea + confirm/
+      // cancel, post on confirm, reload on success.
       body.addEventListener('click', function (e) {
+        var markPaidBtn = e.target.closest('.ws-mark-paid-btn');
+        if (markPaidBtn) {
+          var mpId = markPaidBtn.getAttribute('data-mark-paid-id');
+          var mpName = markPaidBtn.getAttribute('data-mark-paid-name');
+          var mpWrap = markPaidBtn.closest('.ws-reg-mark-paid');
+          mpWrap.innerHTML =
+            '<p class="ws-reg-decline-hint"><strong>Mark ' + escapeHtmlWs(mpName) + ' as Paid?</strong> The family\'s My Family billing card will flip to Paid and a payment-received email goes out.</p>' +
+            '<textarea class="rd-textarea ws-mark-paid-note" rows="2" placeholder="Optional note for the email (e.g. check #1234 received)&hellip;"></textarea>' +
+            '<div class="rd-btn-row">' +
+              '<button type="button" class="sc-btn ws-mark-paid-confirm-btn" data-mark-paid-id="' + escapeHtmlWs(mpId) + '">Confirm — mark Paid</button>' +
+              '<button type="button" class="sc-btn ws-mark-paid-cancel-btn">Cancel</button>' +
+            '</div>' +
+            '<p class="ws-mark-paid-status" aria-live="polite" style="margin-top:8px;"></p>';
+          return;
+        }
+        if (e.target.classList.contains('ws-mark-paid-cancel-btn')) {
+          closeDetail();
+          showMembershipReportModal();
+          return;
+        }
+        if (e.target.classList.contains('ws-mark-paid-confirm-btn')) {
+          var mpcBtn = e.target;
+          var markId = mpcBtn.getAttribute('data-mark-paid-id');
+          var mpcWrap = mpcBtn.closest('.ws-reg-mark-paid');
+          var mpcNoteEl = mpcWrap.querySelector('.ws-mark-paid-note');
+          var mpcStatusEl = mpcWrap.querySelector('.ws-mark-paid-status');
+          mpcStatusEl.textContent = 'Recording…';
+          mpcBtn.disabled = true;
+          var cred = localStorage.getItem('rw_google_credential');
+          fetch('/api/tour', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cred },
+            body: JSON.stringify({ kind: 'registration-mark-paid', id: parseInt(markId, 10), note: mpcNoteEl ? mpcNoteEl.value : '' })
+          }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
+            .then(function (rres) {
+              if (!rres.ok) {
+                var msg = (rres.data && rres.data.error) || 'unknown';
+                if (rres.data && rres.data.youAre) msg += ' (logged in as ' + rres.data.youAre + ', expected ' + rres.data.expected + ')';
+                mpcStatusEl.textContent = 'Error: ' + msg;
+                mpcBtn.disabled = false;
+                return;
+              }
+              mpcStatusEl.textContent = 'Marked Paid. Confirmation email sent.';
+              setTimeout(function () {
+                closeDetail();
+                showMembershipReportModal();
+              }, 700);
+            }).catch(function (err) {
+              mpcStatusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+              mpcBtn.disabled = false;
+            });
+          return;
+        }
         var declineBtn = e.target.closest('.ws-decline-btn');
         if (declineBtn) {
           var id = declineBtn.getAttribute('data-decline-id');
@@ -5924,46 +6097,7 @@
         }
       });
 
-      renderSortableTable(tableTarget, [
-        { key: 'main_learning_coach', label: 'Main Learning Coach', type: 'string',
-          render: function (r) { return escapeHtmlWs(r.main_learning_coach); }
-        },
-        { key: 'email', label: 'Email', type: 'string',
-          render: function (r) { return escapeHtmlWs(r.email); }
-        },
-        { key: 'track', label: 'Track', type: 'string',
-          sortValue: function (r) { return r.track || ''; },
-          render: function (r) {
-            var t = r.track || '';
-            if (r.track === 'Other' && r.track_other) t = 'Other: ' + r.track_other;
-            return escapeHtmlWs(t);
-          }
-        },
-        { key: 'kidsCount', label: 'Kids', type: 'number',
-          sortValue: function (r) { return (r.kids || []).length; },
-          render: function (r) { return String((r.kids || []).length); }
-        },
-        { key: 'payment_status', label: 'Paid', type: 'string',
-          render: function (r) {
-            var ok = String(r.payment_status || '').toLowerCase() === 'paid';
-            return ok ? '<span class="ws-wv-ok">Paid</span>' : '<span class="ws-wv-pending">' + escapeHtmlWs(r.payment_status || 'Pending') + '</span>';
-          }
-        },
-        { key: 'waiverStatus', label: 'Waiver', type: 'string',
-          sortValue: function (r) { return (!!r.waiver_member_agreement && !!r.signature_name) ? 'signed' : 'pending'; },
-          render: function (r) {
-            var ok = !!r.waiver_member_agreement && !!r.signature_name;
-            return ok ? '<span class="ws-wv-ok">Signed ' + escapeHtmlWs(r.signature_date || '') + '</span>' : '<span class="ws-wv-pending">Pending</span>';
-          }
-        },
-        { key: 'created_at', label: 'Registered', type: 'date',
-          render: function (r) { return r.created_at ? new Date(r.created_at).toLocaleDateString() : ''; }
-        }
-      ], regs, {
-        initialSort: { key: 'created_at', dir: 'desc' },
-        expandable: true,
-        renderDetail: renderMembershipRegDetail
-      });
+      renderTable();
     }).catch(function (err) {
       body.innerHTML = '<p class="ws-empty ws-wv-err">Network error loading registrations: ' + ((err && err.message) || 'unknown') + '</p>';
     });
@@ -6043,13 +6177,29 @@
       h += '<div class="ws-reg-detail-section"><h5>Placement notes</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(r.placement_notes) + '</div></div>';
     }
 
+    // Treasurer-only action: mark a pending cash/check registration as paid.
+    // Server enforces the role gate (Treasurer or super user). Client gate
+    // checks isTreasurer() — which respects View-As, so communications@
+    // sees the button after View-As'ing into the Treasurer (matches
+    // Erin's "Comms gets read-only Membership Report" intent).
+    var isPending = String(r.payment_status || '').toLowerCase() !== 'paid';
+    if (isPending && isTreasurer()) {
+      h += '<div class="ws-reg-detail-section ws-reg-mark-paid">';
+      h += '<button type="button" class="sc-btn ws-mark-paid-btn" data-mark-paid-id="' + escapeHtmlWs(String(r.id)) + '" data-mark-paid-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-mark-paid-email="' + escapeHtmlWs(r.email || '') + '">Mark payment received&hellip;</button>';
+      h += '<p class="ws-reg-decline-hint">Records the cash/check payment, flips the family\'s My Family billing card to Paid, and emails the family + Membership + Communications a payment-received confirmation.</p>';
+      h += '</div>';
+    }
+
     // Membership-only action. Renders here so it sits at the bottom of the
     // expanded detail, away from casual clicks. Wired via delegated listener
-    // below (see ws-membership-report-body click handler).
-    h += '<div class="ws-reg-detail-section ws-reg-decline">';
-    h += '<button type="button" class="sc-btn sc-btn-del ws-decline-btn" data-decline-id="' + escapeHtmlWs(String(r.id)) + '" data-decline-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-decline-email="' + escapeHtmlWs(r.email || '') + '">Decline registration…</button>';
-    h += '<p class="ws-reg-decline-hint">Deletes the registration, emails the family + Treasurer + Membership + Communications, and frees up the refund for the Treasurer to process.</p>';
-    h += '</div>';
+    // below (see ws-membership-report-body click handler). Hidden from
+    // Treasurer / Comms now that they also see the report.
+    if (isMembershipDirector()) {
+      h += '<div class="ws-reg-detail-section ws-reg-decline">';
+      h += '<button type="button" class="sc-btn sc-btn-del ws-decline-btn" data-decline-id="' + escapeHtmlWs(String(r.id)) + '" data-decline-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-decline-email="' + escapeHtmlWs(r.email || '') + '">Decline registration…</button>';
+      h += '<p class="ws-reg-decline-hint">Deletes the registration, emails the family + Treasurer + Membership + Communications, and frees up the refund for the Treasurer to process.</p>';
+      h += '</div>';
+    }
     return h;
   }
 
@@ -9660,6 +9810,19 @@
     else if (action === 'pm-submissions-report' && typeof showPmSubmissionsModal === 'function') showPmSubmissionsModal();
     else if (action === 'submit-pm-class' && typeof showClassSubmissionModal === 'function') showClassSubmissionModal(null);
     else if (action === 'roles-manager' && typeof showRolesManagerModal === 'function') showRolesManagerModal();
+    else if (action === 'treasurer-pending-payments' && typeof showMembershipReportModal === 'function') {
+      // Open the Membership Report and pre-set the payment-status filter
+      // to "pending" once the table renders. Filter element id is fixed
+      // so this is a simple setTimeout poll.
+      showMembershipReportModal();
+      var tries = 0;
+      var t = setInterval(function () {
+        tries++;
+        var sel = document.getElementById('ws-mr-status-filter');
+        if (sel) { sel.value = 'pending'; sel.dispatchEvent(new Event('change')); clearInterval(t); }
+        else if (tries > 40) clearInterval(t); // give up after ~4s
+      }, 100);
+    }
   });
 
   // Render all coordination tabs
@@ -11965,6 +12128,37 @@
 
   // Lightweight count fetch used on workspace render to paint a "N pending"
   // pill next to the Submissions Report button without loading the full list.
+  // Treasurer To Do widget — paints the pending-payment count pill.
+  // Uses /api/tour?list=registrations (same endpoint as the Membership
+  // Report) so we don't add a second route. Counts rows whose
+  // payment_status is anything other than 'paid'.
+  function loadTreasurerPendingCount() {
+    var pill = document.getElementById('ws-todo-pending-count');
+    var label = document.getElementById('ws-todo-pending-label');
+    if (!pill) return;
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) return;
+    fetch('/api/tour?list=registrations', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var regs = Array.isArray(data.registrations) ? data.registrations : [];
+        var pending = regs.filter(function (r) {
+          return String(r.payment_status || '').toLowerCase() !== 'paid';
+        }).length;
+        if (label) label.textContent = pending + ' Pending Payment Registration' + (pending === 1 ? '' : 's');
+        if (pending > 0) {
+          pill.textContent = 'Open report';
+          pill.hidden = false;
+        } else {
+          pill.hidden = true;
+        }
+      })
+      .catch(function () { /* silent — pill stays hidden, label stays default */ });
+  }
+
   function loadPmSubmissionsPendingCount() {
     var pill = document.getElementById('pmrep-pending-count');
     if (!pill) return;

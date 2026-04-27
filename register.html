@@ -9,9 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="preload" href="logo-combined.svg?v=20260427k" as="image">
-  <link rel="stylesheet" href="styles.css?v=20260427k">
-  <link rel="icon" href="logo-combined-mark.png?v=20260427k" type="image/png">
+  <link rel="preload" href="logo-combined.svg?v=20260427o" as="image">
+  <link rel="stylesheet" href="styles.css?v=20260427o">
+  <link rel="icon" href="logo-combined-mark.png?v=20260427o" type="image/png">
 
   <style>
     /* ── Register page (scoped) ─────────────────────────────── */
@@ -103,6 +103,22 @@
     .reg-paypal-fallback { background: #fff8e1; border-left: 4px solid var(--color-accent); padding: 12px 14px; margin: 14px 0; border-radius: 0 6px 6px 0; color: #5a4a00; font-size: 0.95rem; }
     .reg-paypal-fallback strong { color: #4a3d00; }
 
+    /* Payment-method picker on step 3 */
+    .reg-pay-method { border: 0; padding: 0; margin: 18px 0 18px; display: flex; flex-direction: column; gap: 10px; }
+    .reg-pay-method legend { font-weight: 600; color: var(--color-primary-dark); padding: 0; margin-bottom: 4px; font-size: 1rem; }
+    .reg-pay-option { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1.5px solid rgba(var(--color-primary-rgb), 0.18); border-radius: 10px; cursor: pointer; transition: all .15s ease; background: #fff; }
+    .reg-pay-option:hover { border-color: var(--color-primary); }
+    .reg-pay-option input[type="radio"] { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--color-primary); }
+    .reg-pay-option span { display: flex; flex-direction: column; gap: 2px; }
+    .reg-pay-option strong { color: var(--color-primary-dark); font-size: 1rem; }
+    .reg-pay-option small { color: #666; font-size: 0.85rem; line-height: 1.35; }
+    .reg-pay-option input[type="radio"]:checked + span strong { color: var(--color-primary); }
+    .reg-pay-option:has(input:checked) { border-color: var(--color-primary); background: rgba(var(--color-primary-rgb), 0.04); }
+
+    .reg-cashcheck-summary { background: #fff8e1; border-left: 4px solid var(--color-accent); padding: 14px 16px; margin: 14px 0; border-radius: 0 8px 8px 0; color: #5a4a00; font-size: 0.95rem; }
+    .reg-cashcheck-summary p { margin: 0 0 8px; }
+    .reg-cashcheck-summary p:last-child { margin: 0; }
+
     /* Google Places autocomplete dropdown layering under our fixed navbar */
     .pac-container { z-index: 10000; border-radius: 8px; margin-top: 2px; box-shadow: 0 8px 24px rgba(82, 58, 121, 0.18); font-family: inherit; }
   </style>
@@ -115,7 +131,7 @@
   <nav class="navbar" role="navigation" aria-label="Main navigation">
     <div class="container">
       <a href="index.html" class="nav-brand" aria-label="Roots & Wings Indy home">
-        <img src="logo-combined.svg?v=20260427k" alt="Roots & Wings Indianapolis" onerror="this.style.display='none'">
+        <img src="logo-combined.svg?v=20260427o" alt="Roots & Wings Indianapolis" onerror="this.style.display='none'">
         <div class="nav-brand-text">
           ROOTS & WINGS
           <span>Indianapolis</span>
@@ -310,17 +326,37 @@
         <div class="reg-summary-row total"><span>Total due</span><span>$40.00</span></div>
       </div>
 
-      <div id="reg-paypal-btn-wrap" aria-live="polite"></div>
-      <div class="reg-paypal-fallback" id="reg-paypal-fallback" style="display:none;">
-        <p><strong>PayPal didn't load.</strong> Some browsers block PayPal; try disabling ad blockers or
-          <button type="button" class="reg-back-btn" id="reg-paypal-retry" style="padding: 0 4px;">reload the payment step</button>.
-        </p>
-        <p>Prefer to pay another way? Make checks payable to <em>Roots and Wings Homeschool, Inc.</em> and deliver to the Treasurer.
-          Email <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a> with your name and we'll hold your spot.</p>
+      <fieldset class="reg-pay-method" id="reg-pay-method">
+        <legend>How would you like to pay?</legend>
+        <label class="reg-pay-option">
+          <input type="radio" name="reg-pay-method" value="paypal" checked>
+          <span><strong>Pay now with PayPal</strong><small>Card or PayPal balance &middot; finalizes registration immediately</small></span>
+        </label>
+        <label class="reg-pay-option">
+          <input type="radio" name="reg-pay-method" value="cash_check">
+          <span><strong>Pay by cash or check at co-op</strong><small>We'll hold your spot &middot; bring $40 cash or a check (payable to Roots and Wings Homeschool, Inc.) on your tour or first co-op day</small></span>
+        </label>
+      </fieldset>
+
+      <!-- PayPal sub-step -->
+      <div id="reg-paypal-section">
+        <div id="reg-paypal-btn-wrap" aria-live="polite"></div>
+        <div class="reg-paypal-fallback" id="reg-paypal-fallback" style="display:none;">
+          <p><strong>PayPal didn't load.</strong> Some browsers block PayPal; try disabling ad blockers or
+            <button type="button" class="reg-back-btn" id="reg-paypal-retry" style="padding: 0 4px;">reload the payment step</button>.
+          </p>
+          <p>Or switch the option above to "Pay by cash or check at co-op" and we'll hold your spot.</p>
+        </div>
       </div>
-      <p style="font-size: 0.9rem; color: #666; margin-top: 12px;">
-        Prefer check or cash? Make checks payable to <em>Roots and Wings Homeschool, Inc.</em> and deliver to Jessica Shewan (Treasurer), or email <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a>.
-      </p>
+
+      <!-- Cash/check sub-step -->
+      <div id="reg-cashcheck-section" style="display:none;">
+        <div class="reg-cashcheck-summary">
+          <p>Click <strong>Reserve my spot</strong> to submit your registration. Your spot is held — bring <strong>$40 cash or a check payable to <em>Roots and Wings Homeschool, Inc.</em></strong> to Jessica Shewan (Treasurer) on your tour day or your first co-op day.</p>
+          <p>Questions? <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a></p>
+        </div>
+        <button type="button" class="btn btn-primary" id="reg-cashcheck-submit">Reserve my spot &rarr;</button>
+      </div>
 
       <div class="reg-error" id="reg-pay-error" role="alert"></div>
 
@@ -940,11 +976,42 @@
 
     document.getElementById('reg-paypal-retry').addEventListener('click', function () { wirePaypal(); });
 
-    function submitRegistration(paypalTxnId) {
+    // Toggle PayPal vs cash/check sub-sections based on radio choice.
+    function syncPayMethodUi() {
+      var method = (document.querySelector('input[name="reg-pay-method"]:checked') || {}).value || 'paypal';
+      var paypalSection = document.getElementById('reg-paypal-section');
+      var cashSection = document.getElementById('reg-cashcheck-section');
+      if (paypalSection) paypalSection.style.display = method === 'paypal' ? '' : 'none';
+      if (cashSection) cashSection.style.display = method === 'cash_check' ? '' : 'none';
+      clearError('reg-pay-error');
+    }
+    document.querySelectorAll('input[name="reg-pay-method"]').forEach(function (r) {
+      r.addEventListener('change', syncPayMethodUi);
+    });
+
+    // Cash/check submit — no PayPal capture, registration goes in as pending.
+    document.getElementById('reg-cashcheck-submit').addEventListener('click', function () {
+      var btn = this;
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = 'Submitting…';
+      submitRegistration(null, 'cash_check').then(function (res) {
+        btn.disabled = false; btn.textContent = orig;
+        if (res && res.id) {
+          document.getElementById('reg-done-msg').textContent =
+            "Thanks! Your registration is saved and your spot is held. Bring $40 cash or a check (payable to Roots and Wings Homeschool, Inc.) to Jessica Shewan on your tour day or your first co-op day. You'll get a confirmation email shortly, and another email once payment is recorded.";
+          showStep('done');
+        } else {
+          showError('reg-pay-error', 'Could not save your registration. Please try again or email treasurer@rootsandwingsindy.com.');
+        }
+      });
+    });
+
+    function submitRegistration(paypalTxnId, paymentMethod) {
+      var method = paymentMethod || 'paypal';
       var body = Object.assign({}, state.form, state.waiver, {
         kind: 'registration',
         season: SEASON,
-        paypal_transaction_id: paypalTxnId,
+        payment_method: method,
+        paypal_transaction_id: paypalTxnId || '',
         payment_amount: REGISTRATION_FEE
       });
       return fetch('/api/tour', {
