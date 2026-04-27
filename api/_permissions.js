@@ -16,22 +16,27 @@ const { google } = require('googleapis');
 
 const SUPER_USER_EMAIL = 'communications@rootsandwingsindy.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
-const ROLE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+// Short TTL keeps any transient sheet-fetch hiccup from poisoning the
+// role gate for long. Worst case the user retries and the next request
+// re-fetches the live data.
+const ROLE_CACHE_TTL_MS = 60 * 1000; // 60 seconds
 
 // Board roles each have a dedicated Workspace mailbox (e.g. membership@,
 // vp@). When someone signs in with one of those addresses we treat them as
 // the holder of that role unconditionally — the mailbox IS the role, and
 // not depending on a sheet→directory→email derivation makes the auth path
 // resilient to spelling drift, missing chair rows, and abbreviated names.
+// Each entry is the canonical mailbox + any extra aliases that resolve to
+// the same role. Confirmed against the Workspace directory.
 const BOARD_ROLE_EMAILS = {
-  'president': 'president@rootsandwingsindy.com',
-  'vice president': 'vp@rootsandwingsindy.com',
-  'vice-president': 'vp@rootsandwingsindy.com',
-  'treasurer': 'treasurer@rootsandwingsindy.com',
-  'secretary': 'secretary@rootsandwingsindy.com',
-  'membership director': 'membership@rootsandwingsindy.com',
-  'sustaining director': 'sustaining@rootsandwingsindy.com',
-  'communications director': 'communications@rootsandwingsindy.com'
+  'president':              ['president@rootsandwingsindy.com'],
+  'vice president':         ['vicepresident@rootsandwingsindy.com', 'vp@rootsandwingsindy.com'],
+  'vice-president':         ['vicepresident@rootsandwingsindy.com', 'vp@rootsandwingsindy.com'],
+  'treasurer':              ['treasurer@rootsandwingsindy.com'],
+  'secretary':              ['secretary@rootsandwingsindy.com'],
+  'membership director':    ['membership@rootsandwingsindy.com'],
+  'sustaining director':    ['sustaining@rootsandwingsindy.com', 'sustainingdirector@rootsandwingsindy.com'],
+  'communications director':['communications@rootsandwingsindy.com']
 };
 
 // Abbreviated titles in the volunteer sheet are normalised to their canonical
@@ -216,7 +221,8 @@ async function getRoleHolderEmail(roleTitle) {
   }
   // Fall back to the board mailbox so the 403 response surfaces an
   // actionable email instead of "(unknown — sheet lookup failed)".
-  return BOARD_ROLE_EMAILS[key] || null;
+  const boardEmails = BOARD_ROLE_EMAILS[key];
+  return (boardEmails && boardEmails[0]) || null;
 }
 
 // Batch variant: returns { [roleTitle]: email } for all titles that matched.
@@ -246,15 +252,24 @@ async function canEditAsRole(userEmail, roleTitle) {
   // Dedicated board-role mailbox short-circuits the sheet lookup. Lets
   // Tiffany / Molly / etc. act in their board capacity even when the
   // sheet derivation can't resolve their personal email.
-  const boardEmail = BOARD_ROLE_EMAILS[String(roleTitle || '').toLowerCase()];
-  if (boardEmail && email === boardEmail) return true;
+  const boardEmails = BOARD_ROLE_EMAILS[String(roleTitle || '').toLowerCase()] || [];
+  if (boardEmails.indexOf(email) !== -1) return true;
 
   try {
     const holders = await loadRoleHolders();
     const holder = holders[roleTitle.toLowerCase()];
-    return !!holder && email === holder.toLowerCase();
+    const ok = !!holder && email === holder.toLowerCase();
+    // Log denied attempts so Vercel surfaces the exact mismatch — the
+    // most common failure mode is a sheet→directory derivation that
+    // doesn't match the user's actual Workspace email.
+    if (!ok) {
+      console.warn('[perms] canEditAsRole DENY user=' + email +
+        ' role=' + roleTitle + ' expectedHolder=' + (holder || '<none>'));
+    }
+    return ok;
   } catch (err) {
-    console.error('canEditAsRole lookup failed:', err);
+    console.error('[perms] canEditAsRole lookup failed for user=' + email +
+      ' role=' + roleTitle + ':', err);
     // On sheet failure, fall back to super-user-only so we fail closed.
     return false;
   }
