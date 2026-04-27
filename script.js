@@ -2839,11 +2839,21 @@
 
   // 2026-2027 deposit-only: the board decided this year's My Family
   // billing card shows only the membership/deposit fee — no per-session
-  // class fees. TODO (Spring 2027): add a line item to the Spring
-  // deposit row labeled "Fall 2026 PayPal transaction fee adjustment"
-  // to recoup PayPal fees the org absorbed on each Fall transaction
-  // (~2.5% of every $50 deposit + $40 member fee payment). Compute the
-  // amount per family from billingStatus when wiring this up.
+  // class fees.
+  //
+  // TODO (Spring 2027 membership fee): the Spring deposit subsection
+  // needs TWO PayPal-fee line items, broken out so families see what
+  // they're paying for:
+  //   1. "Fall 2026 PayPal transaction fee" — recoups the ~2.5% PayPal
+  //      fee the org absorbed on each Fall registration payment ($40
+  //      went in, ~$38.70 reached the co-op). Per-family amount comes
+  //      from billingStatus / payments.amount_cents on the Fall
+  //      'deposit' row for that family.
+  //   2. "Spring 2027 PayPal transaction fee" — the standard processing
+  //      fee on the new Spring membership fee itself, computed the same
+  //      way the deposit subsection already computes depositPaypalFee.
+  // Both line items roll into the Spring deposit's Balance due / Pay
+  // button total so the family pays once.
   var DEPOSIT_ONLY_YEAR = ACTIVE_YEAR.label === '2026-2027';
 
   // Each subsection (deposit OR class fees) appears 2 weeks before its
