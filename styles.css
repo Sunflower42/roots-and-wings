@@ -8913,6 +8913,27 @@ button.staff-role:hover {
   align-items: center;
   gap: 8px;
 }
+/* Explicit override so the `hidden` attribute actually hides the row —
+   .ws-link-list li's display:flex above wins against [hidden]'s
+   display:none otherwise (CSS specificity gotcha). */
+.ws-link-list li[hidden] { display: none; }
+/* Count pill that prepends a To Do item label, e.g. [3] Pending Waivers.
+   Coral fill so it reads as "you have N items to action". */
+.ws-link-pre-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  margin-right: 8px;
+  background: var(--color-coral);
+  color: var(--color-white);
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
 .ws-link-list li a {
   display: inline-flex;
   align-items: center;

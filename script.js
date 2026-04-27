@@ -5209,11 +5209,11 @@
         var h = '<p class="ws-body-hint">Quick links to anything waiting on you.</p>';
         h += '<ul class="ws-link-list" id="ws-todo-list">';
         if (role === 'Treasurer') {
-          h += '<li id="ws-todo-pending-item" hidden><button type="button" class="ws-link-btn" data-resource-action="treasurer-pending-payments"><span class="ws-link-icon">💰</span><span id="ws-todo-pending-label">Pending Payment Registrations</span><span class="ws-link-count" id="ws-todo-pending-count" hidden></span></button></li>';
+          h += '<li id="ws-todo-pending-item" hidden><button type="button" class="ws-link-btn" data-resource-action="treasurer-pending-payments"><span class="ws-link-pre-count" id="ws-todo-pending-count">0</span><span class="ws-link-icon">💰</span><span id="ws-todo-pending-label">Pending Payment Registrations</span></button></li>';
         }
         if (role === 'Communications Director') {
-          h += '<li id="ws-todo-onboard-item" hidden><button type="button" class="ws-link-btn" data-resource-action="member-onboarding"><span class="ws-link-icon">🌱</span><span id="ws-onboard-label">Member Onboarding</span><span class="ws-link-count" id="ws-onboard-count" hidden></span></button></li>';
-          h += '<li id="ws-todo-waivers-item" hidden><button type="button" class="ws-link-btn" data-resource-action="waivers-pending"><span class="ws-link-icon">📝</span><span id="ws-waivers-label">Pending Waivers</span><span class="ws-link-count" id="ws-waivers-count" hidden></span></button></li>';
+          h += '<li id="ws-todo-onboard-item" hidden><button type="button" class="ws-link-btn" data-resource-action="member-onboarding"><span class="ws-link-pre-count" id="ws-onboard-count">0</span><span class="ws-link-icon">🌱</span><span id="ws-onboard-label">Member Onboarding</span></button></li>';
+          h += '<li id="ws-todo-waivers-item" hidden><button type="button" class="ws-link-btn" data-resource-action="waivers-pending"><span class="ws-link-pre-count" id="ws-waivers-count">0</span><span class="ws-link-icon">📝</span><span id="ws-waivers-label">Pending Waivers</span></button></li>';
         }
         h += '<li id="ws-todo-empty" class="ws-empty">All caught up — nothing pending.</li>';
         h += '</ul>';
@@ -6245,8 +6245,8 @@
         var pending = backup.filter(function (b) { return !b.signed_at; }).length
           + oneOff.filter(function (o) { return !o.signed_at; }).length;
         if (pending > 0) {
-          if (label) label.textContent = 'Pending Waivers';
-          if (pill) { pill.textContent = String(pending); pill.hidden = false; }
+          if (label) label.textContent = 'Pending Waiver' + (pending === 1 ? '' : 's');
+          if (pill) pill.textContent = String(pending);
           item.hidden = false;
         } else {
           item.hidden = true;
@@ -6268,21 +6268,31 @@
     fetch('/api/tour?list=registrations', {
       headers: { 'Authorization': 'Bearer ' + cred }
     })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) {
-        if (!data) return;
-        var regs = Array.isArray(data.registrations) ? data.registrations : [];
+      .then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; })
+          .catch(function () { return { ok: r.ok, status: r.status, data: null }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          var msg = (res.data && res.data.error) || ('HTTP ' + res.status);
+          if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+          console.warn('[loadMemberOnboardingCount] ' + msg);
+          item.hidden = true;
+          recomputeTodoEmptyState();
+          return;
+        }
+        var regs = Array.isArray(res.data && res.data.registrations) ? res.data.registrations : [];
         var pending = regs.filter(isReadyToOnboard).length;
         if (pending > 0) {
-          if (label) label.textContent = pending + ' new member' + (pending === 1 ? '' : 's') + ' to onboard';
-          if (pill) { pill.textContent = 'Open'; pill.hidden = false; }
+          if (label) label.textContent = 'New member' + (pending === 1 ? '' : 's') + ' to onboard';
+          if (pill) pill.textContent = String(pending);
           item.hidden = false;
         } else {
           item.hidden = true;
         }
         recomputeTodoEmptyState();
       })
-      .catch(function () { /* silent */ });
+      .catch(function (err) { console.warn('[loadMemberOnboardingCount] network error:', err); });
   }
 
   function defaultWelcomeEmailHtml(name, workspaceEmail) {
@@ -12559,23 +12569,33 @@
     fetch('/api/tour?list=registrations', {
       headers: { 'Authorization': 'Bearer ' + cred }
     })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) {
-        if (!data) return;
-        var regs = Array.isArray(data.registrations) ? data.registrations : [];
+      .then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; })
+          .catch(function () { return { ok: r.ok, status: r.status, data: null }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          var msg = (res.data && res.data.error) || ('HTTP ' + res.status);
+          if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+          console.warn('[loadTreasurerPendingCount] ' + msg);
+          item.hidden = true;
+          recomputeTodoEmptyState();
+          return;
+        }
+        var regs = Array.isArray(res.data && res.data.registrations) ? res.data.registrations : [];
         var pending = regs.filter(function (r) {
           return String(r.payment_status || '').toLowerCase() !== 'paid';
         }).length;
         if (pending > 0) {
-          if (label) label.textContent = pending + ' Pending Payment Registration' + (pending === 1 ? '' : 's');
-          if (pill) { pill.textContent = 'Open report'; pill.hidden = false; }
+          if (label) label.textContent = 'Pending Payment Registration' + (pending === 1 ? '' : 's');
+          if (pill) pill.textContent = String(pending);
           item.hidden = false;
         } else {
           item.hidden = true;
         }
         recomputeTodoEmptyState();
       })
-      .catch(function () { /* silent — item stays hidden */ });
+      .catch(function (err) { console.warn('[loadTreasurerPendingCount] network error:', err); });
   }
 
   function loadPmSubmissionsPendingCount() {
