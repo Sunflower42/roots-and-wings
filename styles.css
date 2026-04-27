@@ -2559,9 +2559,10 @@ p + p { margin-top: 1rem; }
     justify-content: center;
   }
 
-  /* Hamburger no longer needed — Log Out moved inline with the icons row
-     and the logo now covers the "Public Site" navigation. */
-  .nav-toggle { display: none; }
+  /* Members portal only — the icons row + inline Log Out replace the
+     hamburger there. The PUBLIC site (index.html) still needs the
+     hamburger, so don't kill it globally. */
+  body.members-portal .nav-toggle { display: none; }
 
   .nav-quick-icons {
     display: none;
