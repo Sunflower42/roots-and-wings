@@ -976,7 +976,56 @@ async function handleWaiversReport(req, res) {
       FROM one_off_waivers
       ORDER BY sent_at DESC
     `;
-    return res.status(200).json({ backup, oneOff });
+    // Registration signers — Main LC for every registration, plus any
+    // 18+ adult students whose signatures were captured on the form.
+    // Both are always "signed" by definition (the form requires the
+    // signature inline before submit), so they sort below pending
+    // backup/one-off rows on the client.
+    const regs = await sql`
+      SELECT id, season, main_learning_coach, email, signature_name,
+             signature_date, student_signature, created_at
+      FROM registrations
+      ORDER BY created_at DESC
+    `;
+    const registration = [];
+    regs.forEach(r => {
+      registration.push({
+        source: 'registration',
+        id: r.id,
+        name: r.signature_name || r.main_learning_coach,
+        email: r.email,
+        signed_at: r.signature_date || r.created_at,
+        sent_at: r.created_at,
+        sent_by: r.main_learning_coach,
+        season: r.season,
+        context: 'Main Learning Coach'
+      });
+      // student_signature is a single string formatted as
+      // "KidName: SignedName; KidName2: SignedName2" — parse if present.
+      const ss = String(r.student_signature || '').trim();
+      if (ss) {
+        ss.split(/\s*;\s*/).forEach(part => {
+          if (!part) return;
+          const colonIdx = part.indexOf(':');
+          if (colonIdx === -1) return;
+          const kidName = part.slice(0, colonIdx).trim();
+          const signedName = part.slice(colonIdx + 1).trim();
+          if (!signedName) return;
+          registration.push({
+            source: 'registration',
+            id: r.id + '-' + kidName,
+            name: signedName,
+            email: r.email,
+            signed_at: r.signature_date || r.created_at,
+            sent_at: r.created_at,
+            sent_by: r.main_learning_coach,
+            season: r.season,
+            context: 'Adult student (' + kidName + ')'
+          });
+        });
+      }
+    });
+    return res.status(200).json({ backup, oneOff, registration });
   } catch (err) {
     console.error('waivers report error:', err);
     return res.status(500).json({ error: 'Server error' });

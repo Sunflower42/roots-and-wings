@@ -9055,6 +9055,7 @@ button.staff-role:hover {
 .ws-wv-err { color: var(--color-error); font-weight: 600; }
 .ws-wv-ok { color: var(--color-success); font-weight: 600; }
 .ws-wv-pending { color: var(--color-accent-dark); font-weight: 600; }
+.ws-wv-context { color: var(--color-text-light); font-size: 0.78rem; font-style: italic; }
 .ws-waivers-table-wrap {
   overflow-x: auto;
   max-height: 420px;

@@ -5213,6 +5213,7 @@
         }
         if (role === 'Communications Director') {
           h += '<li id="ws-todo-onboard-item" hidden><button type="button" class="ws-link-btn" data-resource-action="member-onboarding"><span class="ws-link-icon">🌱</span><span id="ws-onboard-label">Member Onboarding</span><span class="ws-link-count" id="ws-onboard-count" hidden></span></button></li>';
+          h += '<li id="ws-todo-waivers-item" hidden><button type="button" class="ws-link-btn" data-resource-action="waivers-pending"><span class="ws-link-icon">📝</span><span id="ws-waivers-label">Pending Waivers</span><span class="ws-link-count" id="ws-waivers-count" hidden></span></button></li>';
         }
         h += '<li id="ws-todo-empty" class="ws-empty">All caught up — nothing pending.</li>';
         h += '</ul>';
@@ -5220,7 +5221,10 @@
       },
       afterRender: function (prefs, roles, role) {
         if (role === 'Treasurer' && typeof loadTreasurerPendingCount === 'function') loadTreasurerPendingCount();
-        if (role === 'Communications Director' && typeof loadMemberOnboardingCount === 'function') loadMemberOnboardingCount();
+        if (role === 'Communications Director') {
+          if (typeof loadMemberOnboardingCount === 'function') loadMemberOnboardingCount();
+          if (typeof loadPendingWaiversCount === 'function') loadPendingWaiversCount();
+        }
       }
     },
     'reports': {
@@ -5612,19 +5616,32 @@
       }
       var backup = res.data.backup || [];
       var oneOff = res.data.oneOff || [];
-      // Merge + sort newest first
+      var registration = res.data.registration || [];
+      // Merge \u2014 source label fixed (was incorrectly tagged "Registration"
+      // for backup coaches; now correctly "Backup Coach"). Adds a new
+      // "Registration" source for Main LC + adult-student signers from
+      // the registrations table.
       var merged = [];
       backup.forEach(function (b) {
-        merged.push({ source: 'Registration', name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '' });
+        merged.push({ source: 'Backup Coach', name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '' });
       });
       oneOff.forEach(function (o) {
         merged.push({ source: 'One-off', name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, context: o.sent_by ? 'by ' + o.sent_by : '' });
       });
-      merged.sort(function (a, b) { return (b.sent_at || '').localeCompare(a.sent_at || ''); });
+      registration.forEach(function (r) {
+        merged.push({ source: 'Registration', name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '' });
+      });
+      // Default sort: pending first, then by sent date desc within each
+      // group. The user can re-sort via column headers; this is just the
+      // initial view that surfaces action items at the top.
+      merged.sort(function (a, b) {
+        if (a.signed !== b.signed) return a.signed ? 1 : -1;
+        return (b.sent_at || '').localeCompare(a.sent_at || '');
+      });
 
       var total = merged.length;
       var unsigned = merged.filter(function (w) { return !w.signed; }).length;
-      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> total waivers \u00b7 <strong class="' + (unsigned > 0 ? 'ws-wv-pending' : 'ws-wv-ok') + '">' + unsigned + ' pending</strong></p>';
+      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> total waivers \u00b7 <strong class="' + (unsigned > 0 ? 'ws-wv-pending' : 'ws-wv-ok') + '">' + unsigned + ' pending</strong> \u00b7 pending stay on top</p>';
       if (merged.length === 0) {
         body.innerHTML = headerHtml + '<p class="ws-empty">No waivers sent yet.</p>';
         return;
@@ -5634,9 +5651,16 @@
       renderSortableTable(tableTarget, [
         { key: 'name', label: 'Name', type: 'string', render: function (w) { return escapeHtmlWs(w.name); } },
         { key: 'email', label: 'Email', type: 'string', render: function (w) { return escapeHtmlWs(w.email); } },
-        { key: 'source', label: 'Source', type: 'string' },
+        { key: 'source', label: 'Source', type: 'string',
+          render: function (w) {
+            var s = escapeHtmlWs(w.source);
+            return w.context ? s + '<br><span class="ws-wv-context">' + escapeHtmlWs(w.context) + '</span>' : s;
+          }
+        },
         { key: 'status', label: 'Status', type: 'string',
-          sortValue: function (w) { return w.signed ? 'signed' : 'pending'; },
+          // Pending sorts BEFORE signed by default. Letting the user
+          // toggle ascending puts signed first.
+          sortValue: function (w) { return w.signed ? 'z' : 'a'; },
           render: function (w) {
             return w.signed
               ? '<span class="ws-wv-ok">Signed ' + (w.signed_at ? new Date(w.signed_at).toLocaleDateString() : '') + '</span>'
@@ -5646,7 +5670,7 @@
         { key: 'sent_at', label: 'Sent', type: 'date',
           render: function (w) { return w.sent_at ? new Date(w.sent_at).toLocaleDateString() : ''; }
         }
-      ], merged, { initialSort: { key: 'sent_at', dir: 'desc' } });
+      ], merged, { initialSort: { key: 'status', dir: 'asc' } });
     }).catch(function (err) {
       body.innerHTML = '<p class="ws-empty ws-wv-err">Network error loading waivers: ' + ((err && err.message) || 'unknown') + '</p>';
     });
@@ -6143,9 +6167,54 @@
     return paid && signed && isNewFamily && notDone;
   }
 
+  // Empty state on the To Do card is shared across role-specific items
+  // (Treasurer pending payments, Comms onboarding, Comms waivers). Show
+  // "All caught up" only when every visible-by-default item ended up
+  // hidden. Each loader calls this after toggling its own item.
+  function recomputeTodoEmptyState() {
+    var emptyEl = document.getElementById('ws-todo-empty');
+    var list = document.getElementById('ws-todo-list');
+    if (!emptyEl || !list) return;
+    var items = list.querySelectorAll('li[id$="-item"]');
+    var anyVisible = false;
+    items.forEach(function (li) { if (!li.hidden) anyVisible = true; });
+    emptyEl.hidden = anyVisible;
+  }
+
+  // Counts unsigned backup-coach + one-off waivers (registration signers
+  // are always signed at submit so they never contribute). Same hide-
+  // when-zero pattern as the other To Do loaders.
+  function loadPendingWaiversCount() {
+    var item = document.getElementById('ws-todo-waivers-item');
+    var pill = document.getElementById('ws-waivers-count');
+    var label = document.getElementById('ws-waivers-label');
+    if (!item) return;
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) return;
+    fetch('/api/tour?waivers_report=1', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var backup = Array.isArray(data.backup) ? data.backup : [];
+        var oneOff = Array.isArray(data.oneOff) ? data.oneOff : [];
+        var pending = backup.filter(function (b) { return !b.signed_at; }).length
+          + oneOff.filter(function (o) { return !o.signed_at; }).length;
+        if (pending > 0) {
+          if (label) label.textContent = pending + ' Pending Waiver' + (pending === 1 ? '' : 's');
+          if (pill) { pill.textContent = 'Open report'; pill.hidden = false; }
+          item.hidden = false;
+        } else {
+          item.hidden = true;
+        }
+        recomputeTodoEmptyState();
+      })
+      .catch(function () { /* silent */ });
+  }
+
   function loadMemberOnboardingCount() {
     var item = document.getElementById('ws-todo-onboard-item');
-    var emptyEl = document.getElementById('ws-todo-empty');
     var pill = document.getElementById('ws-onboard-count');
     var label = document.getElementById('ws-onboard-label');
     if (!item) return;
@@ -6163,11 +6232,10 @@
           if (label) label.textContent = pending + ' new member' + (pending === 1 ? '' : 's') + ' to onboard';
           if (pill) { pill.textContent = 'Open'; pill.hidden = false; }
           item.hidden = false;
-          if (emptyEl) emptyEl.hidden = true;
         } else {
           item.hidden = true;
-          if (emptyEl) emptyEl.hidden = false;
         }
+        recomputeTodoEmptyState();
       })
       .catch(function () { /* silent */ });
   }
@@ -10113,6 +10181,7 @@
     else if (action === 'submit-pm-class' && typeof showClassSubmissionModal === 'function') showClassSubmissionModal(null);
     else if (action === 'roles-manager' && typeof showRolesManagerModal === 'function') showRolesManagerModal();
     else if (action === 'member-onboarding' && typeof showMemberOnboardingModal === 'function') showMemberOnboardingModal();
+    else if (action === 'waivers-pending' && typeof showWaiversReportModal === 'function') showWaiversReportModal();
     else if (action === 'treasurer-pending-payments' && typeof showMembershipReportModal === 'function') {
       // Open the Membership Report and pre-set the payment-status filter
       // to "pending" once the table renders. Filter element id is fixed
@@ -12437,7 +12506,6 @@
   // payment_status is anything other than 'paid'.
   function loadTreasurerPendingCount() {
     var item = document.getElementById('ws-todo-pending-item');
-    var emptyEl = document.getElementById('ws-todo-empty');
     var pill = document.getElementById('ws-todo-pending-count');
     var label = document.getElementById('ws-todo-pending-label');
     if (!item) return;
@@ -12457,13 +12525,12 @@
           if (label) label.textContent = pending + ' Pending Payment Registration' + (pending === 1 ? '' : 's');
           if (pill) { pill.textContent = 'Open report'; pill.hidden = false; }
           item.hidden = false;
-          if (emptyEl) emptyEl.hidden = true;
         } else {
           item.hidden = true;
-          if (emptyEl) emptyEl.hidden = false;
         }
+        recomputeTodoEmptyState();
       })
-      .catch(function () { /* silent — item stays hidden, empty state shows */ });
+      .catch(function () { /* silent — item stays hidden */ });
   }
 
   function loadPmSubmissionsPendingCount() {
