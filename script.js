@@ -6244,6 +6244,7 @@
         var oneOff = Array.isArray(data.oneOff) ? data.oneOff : [];
         var pending = backup.filter(function (b) { return !b.signed_at; }).length
           + oneOff.filter(function (o) { return !o.signed_at; }).length;
+        console.log('[loadPendingWaiversCount] backup=' + backup.length + ' oneOff=' + oneOff.length + ' pending=' + pending);
         if (pending > 0) {
           if (label) label.textContent = 'Pending Waiver' + (pending === 1 ? '' : 's');
           if (pill) pill.textContent = String(pending);
