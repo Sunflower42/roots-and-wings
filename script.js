@@ -5219,12 +5219,15 @@
         h += '</ul>';
         return h;
       },
-      afterRender: function (prefs, roles, role) {
-        if (role === 'Treasurer' && typeof loadTreasurerPendingCount === 'function') loadTreasurerPendingCount();
-        if (role === 'Communications Director') {
-          if (typeof loadMemberOnboardingCount === 'function') loadMemberOnboardingCount();
-          if (typeof loadPendingWaiversCount === 'function') loadPendingWaiversCount();
-        }
+      afterRender: function () {
+        // afterRender gets no role context (renderSection calls it once
+        // per type, not per role-section). Each loader is self-gating —
+        // it checks for its own DOM element and no-ops if missing — so
+        // we can safely fire all three. Whichever role's tab is on the
+        // page picks up its own item.
+        if (typeof loadTreasurerPendingCount === 'function') loadTreasurerPendingCount();
+        if (typeof loadMemberOnboardingCount === 'function') loadMemberOnboardingCount();
+        if (typeof loadPendingWaiversCount === 'function') loadPendingWaiversCount();
       }
     },
     'reports': {
