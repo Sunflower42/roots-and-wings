@@ -2559,9 +2559,12 @@ p + p { margin-top: 1rem; }
     justify-content: center;
   }
 
-  /* Members portal only — the icons row + inline Log Out replace the
-     hamburger there. The PUBLIC site (index.html) still needs the
-     hamburger, so don't kill it globally. */
+  /* Show the hamburger on mobile. The base .nav-toggle rule sets
+     display:none (correct — hidden on desktop where the inline nav
+     links show). This brings it back at <=768px. The members-portal
+     override below keeps it hidden there since the icon row + inline
+     Log Out replace the hamburger on that page. */
+  .nav-toggle { display: flex; }
   body.members-portal .nav-toggle { display: none; }
 
   .nav-quick-icons {
