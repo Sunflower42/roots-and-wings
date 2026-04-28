@@ -2316,7 +2316,7 @@
       if (person.schedule && person.schedule !== 'all-day') {
         html += '<p class="detail-schedule">' + (person.schedule === 'morning' ? 'Morning only' : 'Afternoon only') + '</p>';
       }
-      if (person.allergies) html += '<p class="detail-allergy-info">Allergies: ' + person.allergies + '</p>';
+      if (person.allergies) html += '<p class="detail-allergy-info">Allergies / Medical: ' + person.allergies + '</p>';
       if (person.photoConsent === false) html += '<p class="detail-no-photo">⛔ No Photos — this child is opted out of photos in co-op materials.</p>';
       html += '<p class="detail-parents">Parents: ' + fam.parents + '</p>';
     } else {
@@ -14048,7 +14048,7 @@
            '<input class="rd-input emi-readonly" value="' + escapeHtml(schedLabel) + '" readonly tabindex="-1" title="Contact the Membership Director to change schedule — affects dues.">' +
            '<input type="hidden" data-field="schedule" value="' + escapeHtml(k.schedule) + '">' +
            '</label>';
-      h += '<label class="emi-inline-label emi-full">Allergies &amp; notes<input class="rd-input" placeholder="None" data-field="allergies" value="' + escapeHtml(k.allergies) + '"></label>';
+      h += '<label class="emi-inline-label emi-full">Allergies, medical &amp; notes<input class="rd-input" placeholder="e.g. peanut allergy, ADHD, type-1 diabetes, sensory accommodations…" data-field="allergies" value="' + escapeHtml(k.allergies) + '"></label>';
       var optOut = k.photo_consent === false;
       h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
            '<input type="checkbox" data-field="photo_consent_optout"' + (optOut ? ' checked' : '') + '>' +
