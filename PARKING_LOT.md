@@ -58,3 +58,34 @@ Deferred items — work that's known and scoped but waiting on outside input, a 
   - Public-facing too (rootsandwingsindy.com), or members-portal only? Some spaces are board-only and shouldn't be advertised broadly.
 - **Future extension (not in scope here):** outbound webhooks from portal → relevant Chat space when structured events happen (new field trip added, camp registration opens, payment due). Decide on spaces directory first; this is a separate parking-lot item if it becomes interesting.
 - **Priority:** Low. Onboarding pain is real but not bleeding; revisit when the next batch of new families joins.
+
+## Directory migration: DB as source of truth + co-parent self-service login
+
+End-state goal: a co-parent (e.g. Jay Shewan, with login `jays@rootsandwingsindy.com`) can sign in with their own Workspace credentials and manage their own profile + their kids' info, without sharing the family's primary login. This is a recurring need ("we will have more of these as well").
+
+Phased so the auth path doesn't all change at once.
+
+### Phase 1 — Add Jay as DB-only co-parent (DONE)
+- Append Jay to Jessica's `member_profiles.parents` JSONB. The existing `applyMemberProfileOverlay` already grafts DB-only parents onto the family list, so he shows up in the roster, with pronouns/photo, immediately.
+- He continues to log in via `jessicas@…` for now (shared family login).
+- Reusable `scripts/add-coparent.js` script handles future co-parent additions.
+
+### Phase 2 — Flip the live read path to DB-source-of-truth
+- **What:** Replace `parseDirectory(dirTab)` → `FAMILIES` in `api/sheets.js` with a DB read from `member_profiles`. Keep the Classlist tab read (kid → group mapping) and Allergies tab read.
+- **Risk:** Hot-path change — every page hits this. Guard with a "DB has rows? use DB; else fall back to sheet" feature-detect for the first deploy, so we can roll back trivially.
+- **Pre-req:** Run `seed-profiles-from-sheet.js` so every current Directory family has a `member_profiles` row. The seed is already idempotent.
+- **Out of scope here:** auth/login changes (Phase 3).
+
+### Phase 3 — Secondary-email login resolution (the destination)
+- **What:** Let an authenticated `jays@…` resolve to the Shewan family for both data lookup and authorization checks. Means co-parents can self-serve.
+- **Schema option A:** add `additional_emails TEXT[] NOT NULL DEFAULT '{}'` to `member_profiles`. Lookup becomes `WHERE family_email = $1 OR $1 = ANY(additional_emails)`.
+- **Schema option B:** new `member_logins (login_email PK, family_email REFERENCES member_profiles)` table — cleaner, more normalized, easier to audit who-can-act-as-which-family.
+- **Touch points** (all currently `family_email = userEmail`):
+  - `api/tour.js` — profile read/write, photo upload, registration owner check, `/api/tour?action=family-profile-*`
+  - `api/absences.js:185` — cancellation ownership
+  - `api/coverage.js` — claim notifications target
+  - `api/photos.js` — derivation lookup
+  - `api/_permissions.js buildDirectoryEmailMap` — also used by role-holder lookup; needs to learn about additional emails for the multi-login family
+- **Plan:** centralize the "is this email a member of this family?" check into a helper (`isFamilyMember(userEmail, familyEmail, sql)`) and replace direct comparisons one file at a time. Add a regression test (`scripts/test-coparent-auth.js`) that exercises the alias path before flipping any single check.
+- **Migration:** for each existing family with a real co-parent (Jay Shewan + future ones), populate `additional_emails` (or `member_logins` rows). Existing single-login families keep `additional_emails` empty.
+- **Auth-path scope = real risk:** miss one comparison and a co-parent silently can't claim coverage / can't edit their kids / etc. The test script is mandatory before this phase ships.
