@@ -311,12 +311,16 @@
       var emails = Array.isArray(f.loginEmails) && f.loginEmails.length > 0
         ? f.loginEmails
         : [f.email];
+      // Use the DB-corrected family name when present (e.g. "O'Connor
+      // Gading" instead of the sheet-parsed last word "Gading"). f.parents
+      // is already overlay-corrected, so typo fixes flow through too.
+      var familyDisplay = f.displayName || f.name;
       emails.forEach(function (em) {
         var emLc = String(em).toLowerCase();
         var who = deriveFirstNameFromLogin(emLc, f.name);
         // Single-login families keep the legacy "(parents-string)" label
         // (e.g. "Shewan (Jessica & Jay)") so nothing changes for them.
-        var label = (emails.length > 1 && who) ? (f.name + ' (' + who + ')') : (f.name + ' (' + f.parents + ')');
+        var label = (emails.length > 1 && who) ? (familyDisplay + ' (' + who + ')') : (familyDisplay + ' (' + f.parents + ')');
         var selected = viewAsEmail === emLc ? ' selected' : '';
         html += '<option value="' + emLc + '"' + selected + '>' + label + '</option>';
       });
