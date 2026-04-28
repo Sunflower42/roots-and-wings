@@ -1200,6 +1200,9 @@ async function applyMemberProfileOverlay(families) {
       if (ov.birth_date) kid.birthDate = ov.birth_date;
       if (ov.schedule) kid.schedule = ov.schedule;
       if (ov.photo_url) kid.photoUrl = ov.photo_url;
+      // Per-kid last name. Empty/missing falls back to family last name in
+      // display (kid.lastName || fam.name pattern in allPeople).
+      if (ov.last_name) kid.lastName = ov.last_name;
       // photo_consent: explicit false opts the child out. Default when the
       // field is missing is consent=true so legacy rows keep their photos.
       kid.photo_consent = ov.photo_consent !== false;
@@ -1215,6 +1218,7 @@ async function applyMemberProfileOverlay(families) {
         fam.kids = fam.kids || [];
         fam.kids.push({
           name: first,
+          lastName: k.last_name || '',
           group: '',
           schedule: k.schedule || 'all-day',
           pronouns: k.pronouns || '',

@@ -13946,6 +13946,9 @@
       kids: (fam.kids || []).map(function (k) {
         return {
           name: k.name || '',
+          // Per-kid last name. Empty in form = use family last name in display.
+          // Useful for kids who use a different surname than the family unit.
+          last_name: k.lastName && k.lastName !== fam.name ? k.lastName : '',
           birth_date: k.birthDate || '',
           pronouns: k.pronouns || '',
           allergies: k.allergies || '',
@@ -13985,7 +13988,9 @@
            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
            '</button></div>';
       h += '<div class="emi-fields">';
-      h += '<div class="emi-role-badge" style="font-size:0.85em;color:var(--color-text-light);font-weight:600;">' + escapeHtml(roleLabel) + '</div>';
+      // Full-width header so the inputs below line up cleanly in the
+       // 2-col grid, instead of the role label sharing a row with first-name.
+      h += '<div class="emi-role-badge emi-full" style="font-size:0.85em;color:var(--color-text-light);font-weight:600;margin-bottom:-4px;">' + escapeHtml(roleLabel) + '</div>';
       // Hidden input keeps role in sync via data-field so the save payload
       // carries it back to the server.
       h += '<input type="hidden" data-field="role" value="' + escapeHtml(p.role || 'parent') + '">';
@@ -14027,6 +14032,7 @@
            '</button></div>';
       h += '<div class="emi-fields emi-kid-fields">';
       h += '<input class="rd-input" placeholder="First name" data-field="name" value="' + escapeHtml(k.name) + '">';
+      h += '<input class="rd-input" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(k.last_name || '') + '">';
       h += '<input class="rd-input" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(k.pronouns) + '">';
       h += '<label class="emi-inline-label">Birthday<input type="date" class="rd-input" data-field="birth_date" value="' + escapeHtml(k.birth_date) + '"></label>';
       // Schedule is read-only here because changing it has billing implications
@@ -14230,7 +14236,7 @@
       var addKidBtn = document.getElementById('emiAddKid');
       if (addKidBtn) addKidBtn.addEventListener('click', function () {
         syncStateFromDom();
-        state.kids.push({ name: '', birth_date: '', pronouns: '', allergies: '', schedule: 'all-day', photo_url: '', photo_consent: true, _queuedPhoto: null });
+        state.kids.push({ name: '', last_name: '', birth_date: '', pronouns: '', allergies: '', schedule: 'all-day', photo_url: '', photo_consent: true, _queuedPhoto: null });
         render();
       });
       var saveBtn = document.getElementById('emiSaveBtn');
@@ -14338,7 +14344,7 @@
             var composed = [first, last].filter(Boolean).join(' ').trim();
             return { name: composed || String(p.name || '').trim(), first_name: first, last_name: last, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '' };
           }),
-          kids: state.kids.map(function (k) { return { name: k.name, birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
+          kids: state.kids.map(function (k) { return { name: k.name, last_name: k.last_name || '', birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
         };
         return fetch('/api/tour', {
           method: 'POST',

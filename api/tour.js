@@ -1276,6 +1276,7 @@ function sanitizeKid(k) {
   if (!k || typeof k !== 'object') return null;
   const name = String(k.name || '').trim().slice(0, 200);
   if (!name) return null;
+  const last_name = String(k.last_name || '').trim().slice(0, 100);
   const birth_date = String(k.birth_date || '').trim();
   let bd = '';
   if (birth_date && /^\d{4}-\d{2}-\d{2}$/.test(birth_date)) bd = birth_date;
@@ -1284,6 +1285,7 @@ function sanitizeKid(k) {
   if (['all-day', 'morning', 'afternoon'].indexOf(schedule) !== -1) sch = schedule;
   return {
     name,
+    last_name,
     birth_date: bd,
     pronouns: String(k.pronouns || '').trim().slice(0, 60),
     allergies: String(k.allergies || '').trim().slice(0, 500),
