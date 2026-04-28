@@ -14008,9 +14008,14 @@
       // (or has any surname different from the family last name) displays
       // correctly. Last name is optional — left blank, the display falls
       // back to the family last name.
-      h += '<input class="rd-input" placeholder="First name" data-field="first_name" value="' + escapeHtml(p.first_name || '') + '">';
-      h += '<input class="rd-input" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(p.last_name || '') + '">';
-      h += '<input class="rd-input" placeholder="Pronouns (e.g. she/her)" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
+      // Name + pronouns on a single row. Pronouns is narrow (longest
+      // realistic entry "they/them" is short) so it shares the line with
+      // first + last instead of taking its own grid row.
+      h += '<div class="emi-full" style="display:flex;gap:8px;min-width:0;">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name" data-field="first_name" value="' + escapeHtml(p.first_name || '') + '">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(p.last_name || '') + '">';
+      h += '<input class="rd-input" style="flex:1.5;min-width:0;" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
+      h += '</div>';
       // Email: MLC's email is the family_email (PK) — read-only here so the
       // member can't accidentally orphan their family. BLC + Parent are
       // editable so members can fill in their own Workspace login.
@@ -14040,13 +14045,15 @@
            '<button type="button" class="emi-photo-btn" data-role="upload-kid" data-idx="' + idx + '" aria-label="Upload photo">' +
            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
            '</button></div>';
-      // Match the adult layout: 2-col emi-fields grid, first/last on row 1,
-      // pronouns on its own row above birthday/schedule. Drops the
-      // emi-kid-fields class so field heights match adults exactly.
+      // 2-col emi-fields grid matching the adult layout. Row 1 packs
+      // first + last + pronouns into a flex group (pronouns is short
+      // enough to share the line). Row 2 pairs Birthday + Schedule.
       h += '<div class="emi-fields">';
-      h += '<input class="rd-input" placeholder="First name" data-field="name" value="' + escapeHtml(k.name) + '">';
-      h += '<input class="rd-input" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(k.last_name || '') + '">';
-      h += '<input class="rd-input" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(k.pronouns) + '">';
+      h += '<div class="emi-full" style="display:flex;gap:8px;min-width:0;">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name" data-field="name" value="' + escapeHtml(k.name) + '">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(k.last_name || '') + '">';
+      h += '<input class="rd-input" style="flex:1.5;min-width:0;" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(k.pronouns) + '">';
+      h += '</div>';
       h += '<label class="emi-inline-label">Birthday<input type="date" class="rd-input" data-field="birth_date" value="' + escapeHtml(k.birth_date) + '"></label>';
       // Schedule is read-only here because changing it has billing implications
       // (half-day vs. full-day dues). Members contact the Membership Director to
@@ -14054,7 +14061,7 @@
       var schedLabel = k.schedule === 'morning' ? 'Morning only'
                     : k.schedule === 'afternoon' ? 'Afternoon only'
                     : 'All day';
-      h += '<label class="emi-inline-label emi-full">Schedule' +
+      h += '<label class="emi-inline-label">Schedule' +
            '<input class="rd-input emi-readonly" value="' + escapeHtml(schedLabel) + '" readonly tabindex="-1" title="Contact the Membership Director to change schedule — affects dues.">' +
            '<input type="hidden" data-field="schedule" value="' + escapeHtml(k.schedule) + '">' +
            '</label>';
