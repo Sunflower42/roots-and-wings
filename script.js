@@ -2272,10 +2272,14 @@
       html += '<div class="detail-photo" style="background:' + faceColor(person.name) + '"><span>' + person.name.charAt(0) + '</span></div>';
     }
     html += '<div class="detail-info">';
-    // Prefer fam.displayName (DB family_name, e.g. "O'Connor Gading") over
-    // the parsed sheet last-word (fam.name = "Gading"). Falls back to
-    // fam.name for families that haven't customized their stored surname.
-    var detailLast = person.lastName || fam.displayName || fam.name;
+    // Use the parsed sheet last-word (fam.name) here. For compound surnames
+    // like "Aimee O'Connor Gading", parents[0].name already carries the
+    // "Aimee O'Connor" portion via parseDirectory's last-word strip, so
+    // person.name + ' ' + fam.name reads "Aimee O'Connor Gading" without
+    // duplication. fam.displayName is reserved for surfaces that show the
+    // family name standalone (e.g. "X Family" labels) where the parsed
+    // value isn't already part of the rendered string.
+    var detailLast = person.lastName || fam.name;
     html += '<h3>' + person.name + ' ' + detailLast + '</h3>';
     if (boardInfo) {
       html += '<p class="detail-board-role">' + boardInfo.role + '</p>';
