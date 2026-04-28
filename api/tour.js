@@ -1164,16 +1164,38 @@ function normalizeEmail(v) {
   return String(v || '').trim().toLowerCase();
 }
 
+const VALID_PARENT_ROLES = ['mlc', 'blc', 'parent'];
+
 function sanitizeParent(p) {
   if (!p || typeof p !== 'object') return null;
-  const name = String(p.name || '').trim().slice(0, 200);
+  // Each adult carries first_name + last_name as separate fields so a parent
+  // who kept their maiden name (e.g. "Sarah Smith" married into the Jones
+  // family) displays as "Sarah Smith" rather than "Sarah Smith Jones". The
+  // legacy `name` field is preserved for back-compat and used as a fallback
+  // when first_name is missing — saved as "first last" so existing readers
+  // (lookupPerson, allPeople matchers) keep working.
+  const first_name = String(p.first_name || '').trim().slice(0, 100);
+  const last_name = String(p.last_name || '').trim().slice(0, 100);
+  const fallbackName = String(p.name || '').trim().slice(0, 200);
+  const composed = [first_name, last_name].filter(Boolean).join(' ').trim();
+  const name = composed || fallbackName;
   if (!name) return null;
+  const role = VALID_PARENT_ROLES.includes(p.role) ? p.role : '';
+  const email = String(p.email || '').trim().toLowerCase().slice(0, 200);
+  const personal_email = String(p.personal_email || '').trim().toLowerCase().slice(0, 200);
+  const phone = String(p.phone || '').trim().slice(0, 50);
   return {
     name,
+    first_name,
+    last_name,
     pronouns: String(p.pronouns || '').trim().slice(0, 60),
     photo_url: String(p.photo_url || '').trim().slice(0, 500),
     // Per-adult photo opt-out. Default consent = true; explicit false opts out.
-    photo_consent: p.photo_consent !== false
+    photo_consent: p.photo_consent !== false,
+    role,
+    email,
+    personal_email,
+    phone
   };
 }
 
@@ -1254,6 +1276,7 @@ function sanitizeKid(k) {
   if (!k || typeof k !== 'object') return null;
   const name = String(k.name || '').trim().slice(0, 200);
   if (!name) return null;
+  const last_name = String(k.last_name || '').trim().slice(0, 100);
   const birth_date = String(k.birth_date || '').trim();
   let bd = '';
   if (birth_date && /^\d{4}-\d{2}-\d{2}$/.test(birth_date)) bd = birth_date;
@@ -1262,6 +1285,7 @@ function sanitizeKid(k) {
   if (['all-day', 'morning', 'afternoon'].indexOf(schedule) !== -1) sch = schedule;
   return {
     name,
+    last_name,
     birth_date: bd,
     pronouns: String(k.pronouns || '').trim().slice(0, 60),
     allergies: String(k.allergies || '').trim().slice(0, 500),
@@ -1340,6 +1364,18 @@ async function handleProfileUpdate(body, req, res) {
   const parents = parentsRaw.map(sanitizeParent).filter(Boolean);
   const kids = kidsRaw.map(sanitizeKid).filter(Boolean);
 
+  // P5 sync: additional_emails is now a derived view of non-MLC parents'
+  // emails. Keeping it in lockstep with parents.email means the auth lookup
+  // (api/_family.js resolveFamily, which queries this column with a GIN
+  // index) stays correct without doing JSONB scans on the hot path. A BLC
+  // edits their email in the form → it propagates to the auth column on
+  // save. The MLC's own email is family_email and is intentionally excluded.
+  const additionalEmails = Array.from(new Set(
+    parents
+      .filter(p => p.role !== 'mlc' && p.email && p.email.toLowerCase() !== familyEmail)
+      .map(p => p.email.toLowerCase())
+  ));
+
   try {
     // placement_notes is intentionally not touched here — it's collected
     // at registration only and the Edit My Info form no longer exposes
@@ -1347,11 +1383,12 @@ async function handleProfileUpdate(body, req, res) {
     // values are preserved across updates.
     const rows = await sql`
       INSERT INTO member_profiles (
-        family_email, family_name, phone, address, parents, kids, updated_by
+        family_email, family_name, phone, address, parents, kids,
+        additional_emails, updated_by
       ) VALUES (
         ${familyEmail}, ${familyName}, ${phone}, ${address},
         ${JSON.stringify(parents)}::jsonb, ${JSON.stringify(kids)}::jsonb,
-        ${user.email}
+        ${additionalEmails}::text[], ${user.email}
       )
       ON CONFLICT (family_email) DO UPDATE SET
         family_name = EXCLUDED.family_name,
@@ -1359,6 +1396,7 @@ async function handleProfileUpdate(body, req, res) {
         address = EXCLUDED.address,
         parents = EXCLUDED.parents,
         kids = EXCLUDED.kids,
+        additional_emails = EXCLUDED.additional_emails,
         updated_at = NOW(),
         updated_by = EXCLUDED.updated_by
       RETURNING family_email, family_name, phone, address, parents, kids,

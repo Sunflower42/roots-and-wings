@@ -1073,6 +1073,14 @@ async function applyMemberProfileOverlay(families) {
     if (p.phone) fam.phone = p.phone;
     if (p.address) fam.address = p.address;
     if (p.placement_notes) fam.placementNotes = p.placement_notes;
+    // Display name: surface the DB-stored family_name when it differs from
+    // the sheet-parsed last word (e.g. compound surnames like "O'Connor
+    // Gading"). Kept separate from fam.name so existing classlist + last-
+    // initial lookups (which expect the parsed single-word value) keep
+    // working until those callers migrate.
+    if (p.family_name && p.family_name !== fam.name) {
+      fam.displayName = p.family_name;
+    }
 
     // Phase 3: surface co-parent secondary login emails. The client uses this
     // to match the authenticated user's JWT email against ANY of the family's
@@ -1102,44 +1110,78 @@ async function applyMemberProfileOverlay(families) {
         pMap[first] = pp;
       }
     });
-    fam.parentInfo = parentFirstNames.map(function (n) {
-      var key = n.toLowerCase();
-      var hit = pMap[key] || {};
+    // Phase 4: surface role + per-person email/phone on parentInfo. When the
+    // DB row hasn't been backfilled yet, default by position so the client
+    // gets sensible values: parents[0] = mlc, [1] = blc, [2+] = parent.
+    fam.parentInfo = parentFirstNames.map(function (n, idx) {
+      // Match DB entry by FIRST WORD of the parsed sheet name. For a
+      // compound name like "Aimee O'Connor", the sheet's parsed value is
+      // "Aimee O'Connor" while the DB key is "aimee" — full-string lookup
+      // would miss every time and create phantom duplicates.
+      var firstWord = String(n).trim().split(/\s+/)[0].toLowerCase();
+      var hit = pMap[firstWord] || {};
       var pronouns = hit.pronouns || (fam.parentPronouns && fam.parentPronouns[n]) || '';
       if (pronouns) {
         fam.parentPronouns = fam.parentPronouns || {};
         fam.parentPronouns[n] = pronouns;
       }
+      // Prefer the DB-stored name when present so corrections (typo fixes,
+      // updated spellings) flow through to display without waiting on a
+      // sheet edit.
+      var displayedName = hit.name || n;
       return {
-        name: n,
+        name: displayedName,
+        // First/last name carried separately so a parent with their own
+        // surname (maiden name kept) displays correctly without the family
+        // last name being appended.
+        firstName: hit.first_name || '',
+        lastName: hit.last_name || '',
         pronouns: pronouns,
         photoUrl: hit.photo_url || '',
         // Explicit false opts the adult out; anything else (missing field, true)
         // stays consented so legacy rows and Directory-only families keep photos.
-        photoConsent: hit.photo_consent !== false
+        photoConsent: hit.photo_consent !== false,
+        role: hit.role || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent')),
+        email: hit.email || '',
+        personalEmail: hit.personal_email || '',
+        phone: hit.phone || ''
       };
     });
     // Any DB-only parents (name not yet in the sheet) appended so edits are
-    // visible before the sheet catches up.
+    // visible before the sheet catches up. Existence check uses FIRST WORD
+    // so a DB entry "Aimee" doesn't get appended again when parentInfo
+    // already has "Aimee O'Connor".
     (p.parents || []).forEach(function (pp) {
       if (!pp || !pp.name) return;
       var first = String(pp.name).trim().split(/\s+/)[0];
-      var exists = fam.parentInfo.some(function (x) { return x.name.toLowerCase() === first.toLowerCase(); });
+      var exists = fam.parentInfo.some(function (x) {
+        return String(x.name || '').trim().split(/\s+/)[0].toLowerCase() === first.toLowerCase();
+      });
       if (!exists) {
+        var nextIdx = fam.parentInfo.length;
         fam.parentInfo.push({
-          name: first,
+          name: pp.name,
+          firstName: pp.first_name || '',
+          lastName: pp.last_name || '',
           pronouns: pp.pronouns || '',
           photoUrl: pp.photo_url || '',
-          photoConsent: pp.photo_consent !== false
+          photoConsent: pp.photo_consent !== false,
+          role: pp.role || (nextIdx === 0 ? 'mlc' : (nextIdx === 1 ? 'blc' : 'parent')),
+          email: pp.email || '',
+          personalEmail: pp.personal_email || '',
+          phone: pp.phone || ''
         });
-        // Keep the `parents` string in sync so family-name rendering picks it up.
-        fam.parents = fam.parents ? fam.parents + ' & ' + first : first;
         if (pp.pronouns) {
           fam.parentPronouns = fam.parentPronouns || {};
-          fam.parentPronouns[first] = pp.pronouns;
+          fam.parentPronouns[pp.name] = pp.pronouns;
         }
       }
     });
+    // Re-sync the family's parents-string from the (possibly DB-corrected)
+    // parentInfo names so downstream consumers (allPeople, Directory grid,
+    // detail card heading) use the corrected name even when the sheet still
+    // has the legacy spelling.
+    fam.parents = fam.parentInfo.map(function (pi) { return pi.name; }).join(' & ');
 
     // Kids: match by first name (case-insensitive).
     var kMap = {};
@@ -1158,6 +1200,9 @@ async function applyMemberProfileOverlay(families) {
       if (ov.birth_date) kid.birthDate = ov.birth_date;
       if (ov.schedule) kid.schedule = ov.schedule;
       if (ov.photo_url) kid.photoUrl = ov.photo_url;
+      // Per-kid last name. Empty/missing falls back to family last name in
+      // display (kid.lastName || fam.name pattern in allPeople).
+      if (ov.last_name) kid.lastName = ov.last_name;
       // photo_consent: explicit false opts the child out. Default when the
       // field is missing is consent=true so legacy rows keep their photos.
       kid.photo_consent = ov.photo_consent !== false;
@@ -1173,6 +1218,7 @@ async function applyMemberProfileOverlay(families) {
         fam.kids = fam.kids || [];
         fam.kids.push({
           name: first,
+          lastName: k.last_name || '',
           group: '',
           schedule: k.schedule || 'all-day',
           pronouns: k.pronouns || '',

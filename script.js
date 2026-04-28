@@ -300,27 +300,41 @@
     }
     var viewAsEmail = sessionStorage.getItem(VIEW_AS_KEY) || '';
     var html = '<option value="">\u2014 My Dashboard \u2014</option>';
-    var sortedFams = FAMILIES.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
-    sortedFams.forEach(function (f) {
-      if (!f.email) return;
-      // Phase 3: emit one option per login email so the comms super user can
-      // impersonate a specific co-parent (e.g. Jay vs Jessica Shewan), not
-      // just "the family". Each option's parent name is derived from the
-      // login email (firstname+lastinitial convention) so a multi-login
-      // family disambiguates cleanly.
-      var emails = Array.isArray(f.loginEmails) && f.loginEmails.length > 0
-        ? f.loginEmails
-        : [f.email];
-      emails.forEach(function (em) {
-        var emLc = String(em).toLowerCase();
-        var who = deriveFirstNameFromLogin(emLc, f.name);
-        // Single-login families keep the legacy "(parents-string)" label
-        // (e.g. "Shewan (Jessica & Jay)") so nothing changes for them.
-        var label = (emails.length > 1 && who) ? (f.name + ' (' + who + ')') : (f.name + ' (' + f.parents + ')');
-        var selected = viewAsEmail === emLc ? ' selected' : '';
-        html += '<option value="' + emLc + '"' + selected + '>' + label + '</option>';
+    try {
+      var sortedFams = FAMILIES.slice().sort(function (a, b) {
+        return String(a && a.name || '').localeCompare(String(b && b.name || ''));
       });
-    });
+      sortedFams.forEach(function (f) {
+        if (!f || !f.email) return;
+        // Phase 3: emit one option per login email so the comms super user can
+        // impersonate a specific co-parent (e.g. Jay vs Jessica Shewan), not
+        // just "the family". Each option's parent name is derived from the
+        // login email (firstname+lastinitial convention) so a multi-login
+        // family disambiguates cleanly.
+        var emails = Array.isArray(f.loginEmails) && f.loginEmails.length > 0
+          ? f.loginEmails
+          : [f.email];
+        // Use the DB-corrected family name when present (e.g. "O'Connor
+        // Gading" instead of the sheet-parsed last word "Gading"). f.parents
+        // is already overlay-corrected, so typo fixes flow through too.
+        var familyDisplay = f.displayName || f.name || '';
+        var parentsStr = f.parents || '';
+        emails.forEach(function (em) {
+          if (!em) return;
+          var emLc = String(em).toLowerCase();
+          var who = deriveFirstNameFromLogin(emLc, f.name);
+          // Single-login families keep the legacy "(parents-string)" label
+          // (e.g. "Shewan (Jessica & Jay)") so nothing changes for them.
+          var label = (emails.length > 1 && who) ? (familyDisplay + ' (' + who + ')') : (familyDisplay + ' (' + parentsStr + ')');
+          var selected = viewAsEmail === emLc ? ' selected' : '';
+          html += '<option value="' + emLc + '"' + selected + '>' + label + '</option>';
+        });
+      });
+    } catch (err) {
+      // If a single bad family blows up the loop, log it and still render the
+      // empty-state dropdown rather than hiding the picker entirely.
+      console.error('[viewAs] picker build failed:', err);
+    }
     select.innerHTML = html;
     wrap.hidden = false;
     if (!select._rwWired) {
@@ -441,20 +455,39 @@
               // than collapsing both parents to fam.email (the primary).
               var pFirstLc = pName.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
               var pLastInit = String(fam.name || '').charAt(0).toLowerCase();
-              var pEmail = (pFirstLc && pLastInit)
+              // P4: prefer the explicit per-parent email/phone from parentInfo
+              // (set via Edit My Info), then fall back to the firstname+
+              // lastinitial derivation, then to fam.email as a last resort.
+              // Phone falls back to the family-level phone for legacy rows.
+              var pDerivedEmail = (pFirstLc && pLastInit)
                 ? (pFirstLc + pLastInit + '@rootsandwingsindy.com')
                 : (fam.email || '');
+              var pEmail = piHit.email || pDerivedEmail;
+              var pPhone = piHit.phone || fam.phone || '';
+              // Per-parent first + last name. Each adult has their own first
+              // and last. last_name falls back to fam.name in display via
+              // person.lastName logic. When the DB hasn't been backfilled
+              // yet, derive heuristically from pName (last word → last_name,
+              // rest → first_name) so legacy data still renders sensibly.
+              var pNameParts = pName.trim().split(/\s+/);
+              var derivedFirst = pNameParts.length > 1 ? pNameParts.slice(0, -1).join(' ') : pNameParts[0];
+              var derivedLast = pNameParts.length > 1 ? pNameParts[pNameParts.length - 1] : '';
+              var personFirst = piHit.firstName || derivedFirst;
+              var personLast = piHit.lastName || derivedLast;
               // Board role belongs to the specific parent who holds it — the
               // primary family_email holder — not every adult in the family.
               // A co-parent (Jay) shouldn't inherit their spouse's Treasurer
               // badge in the directory.
               var isPrimaryParent = pEmail.toLowerCase() === String(fam.email || '').toLowerCase();
               allPeople.push({
-                name: pName.trim(),
+                name: personFirst,
+                lastName: personLast,
                 type: 'parent',
                 family: fam.name,
+                familyDisplay: fam.displayName || fam.name,
                 email: pEmail,
-                phone: fam.phone || '',
+                personalEmail: piHit.personalEmail || '',
+                phone: pPhone,
                 group: null,
                 age: null,
                 pronouns: pp[pName.trim()] || '',
@@ -465,7 +498,8 @@
                 diffNameKids: diffNameKids,
                 kidNames: (fam.kids || []).map(function(k) { return k.name + ' ' + (k.lastName || fam.name); }),
                 boardRole: (isPrimaryParent && fam.boardRole) ? fam.boardRole : null,
-                boardEmail: (isPrimaryParent && fam.boardRole) ? (fam.boardEmail || null) : null
+                boardEmail: (isPrimaryParent && fam.boardRole) ? (fam.boardEmail || null) : null,
+                role: piHit.role || null
               });
             });
             (fam.kids || []).forEach(function (kid) {
@@ -474,6 +508,7 @@
                 lastName: kid.lastName || fam.name,
                 type: 'kid',
                 family: fam.name,
+                familyDisplay: fam.displayName || fam.name,
                 email: fam.email || '',
                 phone: fam.phone || '',
                 group: kid.group || '',
@@ -1964,7 +1999,7 @@
           '<div class="yb-photo" style="background:' + bgStyle + '"><span>' + person.name.charAt(0) + '</span></div>' +
           '<div class="yb-name">' + displayName + '</div>' +
           '<div class="yb-subtitle">' + (person.age ? 'Age ' + person.age : '') + '</div>' +
-          '<div class="yb-family">' + person.family + ' Family</div>' +
+          '<div class="yb-family">' + (person.familyDisplay || person.family) + ' Family</div>' +
           extras +
           '</button>';
         shown++;
@@ -2031,7 +2066,7 @@
           '<div class="yb-subtitle">' + subtitle + '</div>' +
           boardTag +
           pronounTag +
-          '<div class="yb-family">' + person.family + ' Family</div>' +
+          '<div class="yb-family">' + (person.familyDisplay || person.family) + ' Family</div>' +
           parentOfTag +
           absenceTag +
           noPhotoTag +
@@ -2262,8 +2297,26 @@
       html += '<div class="detail-photo" style="background:' + faceColor(person.name) + '"><span>' + person.name.charAt(0) + '</span></div>';
     }
     html += '<div class="detail-info">';
+    // Use the parsed sheet last-word (fam.name) here. For compound surnames
+    // like "Aimee O'Connor Gading", parents[0].name already carries the
+    // "Aimee O'Connor" portion via parseDirectory's last-word strip, so
+    // person.name + ' ' + fam.name reads "Aimee O'Connor Gading" without
+    // duplication. fam.displayName is reserved for surfaces that show the
+    // family name standalone (e.g. "X Family" labels) where the parsed
+    // value isn't already part of the rendered string.
     var detailLast = person.lastName || fam.name;
-    html += '<h3>' + person.name + ' ' + detailLast + '</h3>';
+    // Defensive dedupe: if person.name already ends with the family last
+    // name (e.g. legacy data where someone entered "Aimee O'Connor Gading"
+    // into the first-name field), don't double-append. Compares against
+    // both fam.name (sheet-parsed) and fam.displayName (DB-corrected).
+    var personFullName = String(person.name || '');
+    var personLc = personFullName.toLowerCase();
+    var lastLc = String(detailLast || '').toLowerCase();
+    var displayLc = String(fam.displayName || '').toLowerCase();
+    var headingFull = (lastLc && personLc.endsWith(' ' + lastLc)) ? personFullName
+      : (displayLc && personLc.endsWith(' ' + displayLc)) ? personFullName
+      : (personFullName + ' ' + detailLast);
+    html += '<h3>' + headingFull + '</h3>';
     if (boardInfo) {
       html += '<p class="detail-board-role">' + boardInfo.role + '</p>';
     }
@@ -2273,26 +2326,44 @@
       if (person.schedule && person.schedule !== 'all-day') {
         html += '<p class="detail-schedule">' + (person.schedule === 'morning' ? 'Morning only' : 'Afternoon only') + '</p>';
       }
-      if (person.allergies) html += '<p class="detail-allergy-info">Allergies: ' + person.allergies + '</p>';
+      if (person.allergies) html += '<p class="detail-allergy-info">Allergies / Medical: ' + person.allergies + '</p>';
       if (person.photoConsent === false) html += '<p class="detail-no-photo">⛔ No Photos — this child is opted out of photos in co-op materials.</p>';
       html += '<p class="detail-parents">Parents: ' + fam.parents + '</p>';
     } else {
-      if (!boardInfo) html += '<p class="detail-group">Parent</p>';
+      // Role badge for adults: Main Learning Coach / Back Up LC / Parent
+      // (P4 of directory→DB migration). Falls back to "Parent" when the
+      // person doesn't yet have a role tagged in the DB.
+      var roleLabels = { mlc: 'Main Learning Coach', blc: 'Back Up Learning Coach', parent: 'Parent' };
+      var personRoleLabel = roleLabels[person.role] || 'Parent';
+      if (!boardInfo) html += '<p class="detail-group">' + personRoleLabel + '</p>';
       if (person.pronouns) html += '<p class="detail-pronouns">' + person.pronouns + '</p>';
       if (person.photoConsent === false) html += '<p class="detail-no-photo">⛔ No Photos — opted out of photo and film use.</p>';
       // Kids shown in family grid below
     }
     html += '</div></div>';
 
+    // Per-person contact (P4): use the parent's own workspace email,
+    // personal email (if filled in), and phone. Falls back to fam-level
+    // values when a person-level field is empty (legacy rows without the
+    // backfill, or families that haven't filled in personal info yet).
+    var contactEmailWs = (person.type !== 'kid' && person.email) ? person.email : fam.email;
+    var contactEmailPersonal = (person.type !== 'kid' && person.personalEmail) ? person.personalEmail : '';
+    var contactPhone = (person.type !== 'kid' && person.phone) ? person.phone : (fam.phone || '');
     html += '<div class="detail-contact">';
     if (boardInfo) {
       html += '<a href="mailto:' + boardInfo.email + '" class="detail-btn detail-btn-board">';
       html += emailSvg + ' ' + boardInfo.email + ' <small>(' + boardInfo.role + ')</small></a>';
     }
-    html += '<a href="mailto:' + fam.email + '" class="detail-btn detail-btn-email">';
-    html += emailSvg + ' ' + fam.email + (boardInfo ? ' <small>(personal)</small>' : '') + '</a>';
-    html += '<a href="tel:' + fam.phone.replace(/[^+\d]/g, '') + '" class="detail-btn detail-btn-phone">';
-    html += phoneSvg + ' ' + fam.phone + '</a>';
+    html += '<a href="mailto:' + contactEmailWs + '" class="detail-btn detail-btn-email">';
+    html += emailSvg + ' ' + contactEmailWs + (boardInfo ? ' <small>(personal)</small>' : '') + '</a>';
+    if (contactEmailPersonal) {
+      html += '<a href="mailto:' + contactEmailPersonal + '" class="detail-btn detail-btn-email">';
+      html += emailSvg + ' ' + contactEmailPersonal + ' <small>(personal)</small></a>';
+    }
+    if (contactPhone) {
+      html += '<a href="tel:' + String(contactPhone).replace(/[^+\d]/g, '') + '" class="detail-btn detail-btn-phone">';
+      html += phoneSvg + ' ' + contactPhone + '</a>';
+    }
     html += '</div>';
 
     // Board responsibilities
@@ -2308,7 +2379,7 @@
 
     // Show other family members
     html += '<div class="detail-family">';
-    html += '<h4>' + fam.name + ' Family</h4>';
+    html += '<h4>' + (fam.displayName || fam.name) + ' Family</h4>';
     html += '<div class="detail-family-grid">';
     // Parents
     fam.parents.split(' & ').forEach(function(pName) {
@@ -13821,39 +13892,73 @@
       return;
     }
 
+    // Split a parent's stored name into first + last when the explicit
+    // fields aren't yet populated. Heuristic: last whitespace-separated
+    // word becomes last_name; everything before it becomes first_name. A
+    // single-word name (e.g. "Jessica") falls back to "first only", with
+    // last_name empty (display path will use family_name as the fallback).
+    function splitName(fullName) {
+      var parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+      if (parts.length === 0) return { first: '', last: '' };
+      if (parts.length === 1) return { first: parts[0], last: '' };
+      return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] };
+    }
+
     var parentSeed;
     if (Array.isArray(fam.parentInfo) && fam.parentInfo.length) {
-      parentSeed = fam.parentInfo.map(function (p) {
+      parentSeed = fam.parentInfo.map(function (p, idx) {
+        var split = (p.firstName || p.lastName)
+          ? { first: p.firstName || '', last: p.lastName || '' }
+          : splitName(p.name);
         return {
           name: p.name || '',
+          first_name: split.first,
+          last_name: split.last,
           pronouns: p.pronouns || '',
           photo_url: p.photoUrl || '',
           photo_consent: p.photoConsent !== false,
+          role: p.role || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent')),
+          email: p.email || '',
+          personal_email: p.personalEmail || '',
+          phone: p.phone || '',
           _queuedPhoto: null
         };
       });
     } else {
-      parentSeed = String(fam.parents || '').split(/\s*&\s*/).map(function (s) { return s.trim(); }).filter(Boolean).map(function (n) {
+      parentSeed = String(fam.parents || '').split(/\s*&\s*/).map(function (s) { return s.trim(); }).filter(Boolean).map(function (n, idx) {
+        var split = splitName(n);
         return {
           name: n,
+          first_name: split.first,
+          last_name: split.last,
           pronouns: (fam.parentPronouns && fam.parentPronouns[n]) || '',
           photo_url: '',
           photo_consent: true,
+          role: idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent'),
+          email: '',
+          personal_email: '',
+          phone: '',
           _queuedPhoto: null
         };
       });
     }
-    if (parentSeed.length === 0) parentSeed.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, _queuedPhoto: null });
+    if (parentSeed.length === 0) parentSeed.push({ name: '', first_name: '', last_name: '', pronouns: '', photo_url: '', photo_consent: true, role: 'mlc', email: '', personal_email: '', phone: '', _queuedPhoto: null });
 
     var state = {
       family_email: fam.email,
-      family_name: fam.name,
+      // Seed from the DB-corrected display name when present so a compound
+      // surname (Aimee O'Connor Gading) appears correctly in the form, not
+      // the sheet-parsed last word (Gading).
+      family_name: fam.displayName || fam.name,
       phone: fam.phone || '',
       address: fam.address || '',
       parents: parentSeed,
       kids: (fam.kids || []).map(function (k) {
         return {
           name: k.name || '',
+          // Per-kid last name. Empty in form = use family last name in display.
+          // Useful for kids who use a different surname than the family unit.
+          last_name: k.lastName && k.lastName !== fam.name ? k.lastName : '',
           birth_date: k.birthDate || '',
           pronouns: k.pronouns || '',
           allergies: k.allergies || '',
@@ -13880,14 +13985,49 @@
     }
 
     function parentRowHtml(p, idx) {
+      // Role label maps mlc/blc/parent → display string. Read-only for now —
+      // the position in the array defines the role; flipping MLC/BLC between
+      // two adults is unusual and would land as a separate "promote to MLC"
+      // affordance later.
+      var roleLabels = { mlc: 'Main Learning Coach', blc: 'Back Up Learning Coach', parent: 'Parent' };
+      var roleLabel = roleLabels[p.role] || 'Parent';
+      var emailIsPrimary = (p.role === 'mlc');
       var h = '<div class="emi-row" data-parent-idx="' + idx + '">';
       h += '<div class="emi-photo-thumb">' + thumbHtml(p, p.name, { wsFallback: true }) +
            '<button type="button" class="emi-photo-btn" data-role="upload-parent" data-idx="' + idx + '" aria-label="Upload photo">' +
            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
            '</button></div>';
       h += '<div class="emi-fields">';
-      h += '<input class="rd-input" placeholder="First name" data-field="name" value="' + escapeHtml(p.name) + '">';
-      h += '<input class="rd-input" placeholder="Pronouns (e.g. she/her)" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
+      // Full-width header so the inputs below line up cleanly in the
+       // 2-col grid, instead of the role label sharing a row with first-name.
+      h += '<div class="emi-role-badge emi-full" style="font-size:0.85em;color:var(--color-text-light);font-weight:600;margin-bottom:-4px;">' + escapeHtml(roleLabel) + '</div>';
+      // Hidden input keeps role in sync via data-field so the save payload
+      // carries it back to the server.
+      h += '<input type="hidden" data-field="role" value="' + escapeHtml(p.role || 'parent') + '">';
+      // Two separate name inputs so a parent who kept their maiden name
+      // (or has any surname different from the family last name) displays
+      // correctly. Last name is optional — left blank, the display falls
+      // back to the family last name.
+      // Name + pronouns on a single row. Pronouns is narrow (longest
+      // realistic entry "they/them" is short) so it shares the line with
+      // first + last instead of taking its own grid row.
+      h += '<div class="emi-full" style="display:flex;gap:8px;min-width:0;">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name" data-field="first_name" value="' + escapeHtml(p.first_name || '') + '">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(p.last_name || '') + '">';
+      h += '<input class="rd-input" style="flex:1.5;min-width:0;" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
+      h += '</div>';
+      // Email: MLC's email is the family_email (PK) — read-only here so the
+      // member can't accidentally orphan their family. BLC + Parent are
+      // editable so members can fill in their own Workspace login.
+      var emailAttrs = emailIsPrimary
+        ? 'readonly tabindex="-1" title="This is your family\'s primary login. Contact communications@ to change it."'
+        : 'placeholder="Their workspace email (optional)"';
+      h += '<input class="rd-input' + (emailIsPrimary ? ' emi-readonly' : '') + '" type="email" data-field="email" value="' + escapeHtml(p.email) + '" ' + emailAttrs + '>';
+      // Personal email — where reminders, billing notices, etc. actually
+      // get read. Editable for everyone (the MLC's personal email differs
+      // from their R&W Workspace login).
+      h += '<input class="rd-input" type="email" placeholder="Personal email (gmail, etc.)" data-field="personal_email" value="' + escapeHtml(p.personal_email || '') + '">';
+      h += '<input class="rd-input" type="tel" placeholder="Their phone number" data-field="phone" value="' + escapeHtml(p.phone) + '">';
       var pOptOut = p.photo_consent === false;
       h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
            '<input type="checkbox" data-field="photo_consent_optout"' + (pOptOut ? ' checked' : '') + '>' +
@@ -13905,9 +14045,15 @@
            '<button type="button" class="emi-photo-btn" data-role="upload-kid" data-idx="' + idx + '" aria-label="Upload photo">' +
            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
            '</button></div>';
-      h += '<div class="emi-fields emi-kid-fields">';
-      h += '<input class="rd-input" placeholder="First name" data-field="name" value="' + escapeHtml(k.name) + '">';
-      h += '<input class="rd-input" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(k.pronouns) + '">';
+      // 2-col emi-fields grid matching the adult layout. Row 1 packs
+      // first + last + pronouns into a flex group (pronouns is short
+      // enough to share the line). Row 2 pairs Birthday + Schedule.
+      h += '<div class="emi-fields">';
+      h += '<div class="emi-full" style="display:flex;gap:8px;min-width:0;">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name" data-field="name" value="' + escapeHtml(k.name) + '">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(k.last_name || '') + '">';
+      h += '<input class="rd-input" style="flex:1.5;min-width:0;" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(k.pronouns) + '">';
+      h += '</div>';
       h += '<label class="emi-inline-label">Birthday<input type="date" class="rd-input" data-field="birth_date" value="' + escapeHtml(k.birth_date) + '"></label>';
       // Schedule is read-only here because changing it has billing implications
       // (half-day vs. full-day dues). Members contact the Membership Director to
@@ -13919,7 +14065,11 @@
            '<input class="rd-input emi-readonly" value="' + escapeHtml(schedLabel) + '" readonly tabindex="-1" title="Contact the Membership Director to change schedule — affects dues.">' +
            '<input type="hidden" data-field="schedule" value="' + escapeHtml(k.schedule) + '">' +
            '</label>';
-      h += '<label class="emi-inline-label emi-full">Allergies &amp; notes<input class="rd-input" placeholder="None" data-field="allergies" value="' + escapeHtml(k.allergies) + '"></label>';
+      h += '<label class="emi-inline-label emi-full">' +
+             'Allergies, medical &amp; notes ' +
+             '<span style="font-weight:400;font-size:0.8em;color:var(--color-text-light);">— visible to all co-op members; share what teachers + leaders should know to keep your child safe.</span>' +
+             '<input class="rd-input" placeholder="e.g. peanut allergy, ADHD, type-1 diabetes, sensory accommodations…" data-field="allergies" value="' + escapeHtml(k.allergies) + '">' +
+           '</label>';
       var optOut = k.photo_consent === false;
       h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
            '<input type="checkbox" data-field="photo_consent_optout"' + (optOut ? ' checked' : '') + '>' +
@@ -13935,8 +14085,11 @@
       var html = '<button class="detail-close" aria-label="Close">&times;</button>';
       html += '<div class="elective-detail emi-modal">';
       html += '<h3 style="margin:0 0 4px;">Edit My Info</h3>';
-      html += '<p class="emi-subtitle">' + escapeHtml(fam.name) + ' family — these updates show up across the member portal.</p>';
+      html += '<p class="emi-subtitle">' + escapeHtml(fam.displayName || fam.name) + ' family — everything you enter here is visible to all signed-in co-op members in the directory and class rosters. (Not shown to the public.)</p>';
       html += '<div id="emiError" class="emi-error" style="display:none;"></div>';
+
+      html += '<label class="rd-label">Family last name</label>';
+      html += '<input class="rd-input" id="emiFamilyName" placeholder="e.g. Smith or O’Connor Gading" value="' + escapeHtml(state.family_name) + '">';
 
       html += '<label class="rd-label">Family phone</label>';
       html += '<input class="rd-input" id="emiPhone" placeholder="555-123-4567" value="' + escapeHtml(state.phone) + '">';
@@ -13993,8 +14146,10 @@
     }
 
     function syncStateFromDom() {
+      var familyNameEl = document.getElementById('emiFamilyName');
       var phoneEl = document.getElementById('emiPhone');
       var addressEl = document.getElementById('emiAddress');
+      if (familyNameEl) state.family_name = familyNameEl.value.trim();
       if (phoneEl) state.phone = phoneEl.value;
       if (addressEl) state.address = addressEl.value;
       var pRows = personDetailCard.querySelectorAll('#emiParentList [data-parent-idx]');
@@ -14094,13 +14249,18 @@
       var addParentBtn = document.getElementById('emiAddParent');
       if (addParentBtn) addParentBtn.addEventListener('click', function () {
         syncStateFromDom();
-        state.parents.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, _queuedPhoto: null });
+        // New adults default to BLC if there isn't one yet, otherwise plain
+        // 'parent'. MLC is fixed (the family_email holder).
+        var hasMlc = state.parents.some(function (p) { return p && p.role === 'mlc'; });
+        var hasBlc = state.parents.some(function (p) { return p && p.role === 'blc'; });
+        var newRole = !hasMlc ? 'mlc' : (!hasBlc ? 'blc' : 'parent');
+        state.parents.push({ name: '', first_name: '', last_name: '', pronouns: '', photo_url: '', photo_consent: true, role: newRole, email: '', personal_email: '', phone: '', _queuedPhoto: null });
         render();
       });
       var addKidBtn = document.getElementById('emiAddKid');
       if (addKidBtn) addKidBtn.addEventListener('click', function () {
         syncStateFromDom();
-        state.kids.push({ name: '', birth_date: '', pronouns: '', allergies: '', schedule: 'all-day', photo_url: '', photo_consent: true, _queuedPhoto: null });
+        state.kids.push({ name: '', last_name: '', birth_date: '', pronouns: '', allergies: '', schedule: 'all-day', photo_url: '', photo_consent: true, _queuedPhoto: null });
         render();
       });
       var saveBtn = document.getElementById('emiSaveBtn');
@@ -14199,8 +14359,16 @@
           family_name: state.family_name,
           phone: state.phone,
           address: state.address,
-          parents: state.parents.map(function (p) { return { name: p.name, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false }; }),
-          kids: state.kids.map(function (k) { return { name: k.name, birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
+          // Each adult sends first_name + last_name as separate fields. The
+          // server composes `name` from them for legacy readers (lookupPerson,
+          // allPeople matchers, etc.) so older code paths keep working.
+          parents: state.parents.map(function (p) {
+            var first = String(p.first_name || '').trim();
+            var last = String(p.last_name || '').trim();
+            var composed = [first, last].filter(Boolean).join(' ').trim();
+            return { name: composed || String(p.name || '').trim(), first_name: first, last_name: last, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '' };
+          }),
+          kids: state.kids.map(function (k) { return { name: k.name, last_name: k.last_name || '', birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
         };
         return fetch('/api/tour', {
           method: 'POST',
