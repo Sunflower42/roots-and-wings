@@ -1102,7 +1102,10 @@ async function applyMemberProfileOverlay(families) {
         pMap[first] = pp;
       }
     });
-    fam.parentInfo = parentFirstNames.map(function (n) {
+    // Phase 4: surface role + per-person email/phone on parentInfo. When the
+    // DB row hasn't been backfilled yet, default by position so the client
+    // gets sensible values: parents[0] = mlc, [1] = blc, [2+] = parent.
+    fam.parentInfo = parentFirstNames.map(function (n, idx) {
       var key = n.toLowerCase();
       var hit = pMap[key] || {};
       var pronouns = hit.pronouns || (fam.parentPronouns && fam.parentPronouns[n]) || '';
@@ -1116,7 +1119,11 @@ async function applyMemberProfileOverlay(families) {
         photoUrl: hit.photo_url || '',
         // Explicit false opts the adult out; anything else (missing field, true)
         // stays consented so legacy rows and Directory-only families keep photos.
-        photoConsent: hit.photo_consent !== false
+        photoConsent: hit.photo_consent !== false,
+        role: hit.role || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent')),
+        email: hit.email || '',
+        personalEmail: hit.personal_email || '',
+        phone: hit.phone || ''
       };
     });
     // Any DB-only parents (name not yet in the sheet) appended so edits are
@@ -1126,11 +1133,16 @@ async function applyMemberProfileOverlay(families) {
       var first = String(pp.name).trim().split(/\s+/)[0];
       var exists = fam.parentInfo.some(function (x) { return x.name.toLowerCase() === first.toLowerCase(); });
       if (!exists) {
+        var nextIdx = fam.parentInfo.length;
         fam.parentInfo.push({
           name: first,
           pronouns: pp.pronouns || '',
           photoUrl: pp.photo_url || '',
-          photoConsent: pp.photo_consent !== false
+          photoConsent: pp.photo_consent !== false,
+          role: pp.role || (nextIdx === 0 ? 'mlc' : (nextIdx === 1 ? 'blc' : 'parent')),
+          email: pp.email || '',
+          personalEmail: pp.personal_email || '',
+          phone: pp.phone || ''
         });
         // Keep the `parents` string in sync so family-name rendering picks it up.
         fam.parents = fam.parents ? fam.parents + ' & ' + first : first;

@@ -1164,16 +1164,33 @@ function normalizeEmail(v) {
   return String(v || '').trim().toLowerCase();
 }
 
+const VALID_PARENT_ROLES = ['mlc', 'blc', 'parent'];
+
 function sanitizeParent(p) {
   if (!p || typeof p !== 'object') return null;
   const name = String(p.name || '').trim().slice(0, 200);
   if (!name) return null;
+  // Phase 4 of directory→DB migration: each parent carries an MLC/BLC role,
+  // their R&W Workspace email (`email` — used for auth via additional_emails
+  // sync), their personal email (`personal_email` — where they actually read
+  // mail), and their phone. All optional on input — empty strings tolerated
+  // so legacy clients (old Edit My Info UI, the seed script) keep working.
+  // Server defaults role to '' rather than guessing, since position-in-array
+  // is a UI concern.
+  const role = VALID_PARENT_ROLES.includes(p.role) ? p.role : '';
+  const email = String(p.email || '').trim().toLowerCase().slice(0, 200);
+  const personal_email = String(p.personal_email || '').trim().toLowerCase().slice(0, 200);
+  const phone = String(p.phone || '').trim().slice(0, 50);
   return {
     name,
     pronouns: String(p.pronouns || '').trim().slice(0, 60),
     photo_url: String(p.photo_url || '').trim().slice(0, 500),
     // Per-adult photo opt-out. Default consent = true; explicit false opts out.
-    photo_consent: p.photo_consent !== false
+    photo_consent: p.photo_consent !== false,
+    role,
+    email,
+    personal_email,
+    phone
   };
 }
 
@@ -1340,6 +1357,18 @@ async function handleProfileUpdate(body, req, res) {
   const parents = parentsRaw.map(sanitizeParent).filter(Boolean);
   const kids = kidsRaw.map(sanitizeKid).filter(Boolean);
 
+  // P5 sync: additional_emails is now a derived view of non-MLC parents'
+  // emails. Keeping it in lockstep with parents.email means the auth lookup
+  // (api/_family.js resolveFamily, which queries this column with a GIN
+  // index) stays correct without doing JSONB scans on the hot path. A BLC
+  // edits their email in the form → it propagates to the auth column on
+  // save. The MLC's own email is family_email and is intentionally excluded.
+  const additionalEmails = Array.from(new Set(
+    parents
+      .filter(p => p.role !== 'mlc' && p.email && p.email.toLowerCase() !== familyEmail)
+      .map(p => p.email.toLowerCase())
+  ));
+
   try {
     // placement_notes is intentionally not touched here — it's collected
     // at registration only and the Edit My Info form no longer exposes
@@ -1347,11 +1376,12 @@ async function handleProfileUpdate(body, req, res) {
     // values are preserved across updates.
     const rows = await sql`
       INSERT INTO member_profiles (
-        family_email, family_name, phone, address, parents, kids, updated_by
+        family_email, family_name, phone, address, parents, kids,
+        additional_emails, updated_by
       ) VALUES (
         ${familyEmail}, ${familyName}, ${phone}, ${address},
         ${JSON.stringify(parents)}::jsonb, ${JSON.stringify(kids)}::jsonb,
-        ${user.email}
+        ${additionalEmails}::text[], ${user.email}
       )
       ON CONFLICT (family_email) DO UPDATE SET
         family_name = EXCLUDED.family_name,
@@ -1359,6 +1389,7 @@ async function handleProfileUpdate(body, req, res) {
         address = EXCLUDED.address,
         parents = EXCLUDED.parents,
         kids = EXCLUDED.kids,
+        additional_emails = EXCLUDED.additional_emails,
         updated_at = NOW(),
         updated_by = EXCLUDED.updated_by
       RETURNING family_email, family_name, phone, address, parents, kids,

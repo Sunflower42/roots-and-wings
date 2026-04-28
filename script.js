@@ -441,9 +441,15 @@
               // than collapsing both parents to fam.email (the primary).
               var pFirstLc = pName.trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
               var pLastInit = String(fam.name || '').charAt(0).toLowerCase();
-              var pEmail = (pFirstLc && pLastInit)
+              // P4: prefer the explicit per-parent email/phone from parentInfo
+              // (set via Edit My Info), then fall back to the firstname+
+              // lastinitial derivation, then to fam.email as a last resort.
+              // Phone falls back to the family-level phone for legacy rows.
+              var pDerivedEmail = (pFirstLc && pLastInit)
                 ? (pFirstLc + pLastInit + '@rootsandwingsindy.com')
                 : (fam.email || '');
+              var pEmail = piHit.email || pDerivedEmail;
+              var pPhone = piHit.phone || fam.phone || '';
               // Board role belongs to the specific parent who holds it — the
               // primary family_email holder — not every adult in the family.
               // A co-parent (Jay) shouldn't inherit their spouse's Treasurer
@@ -454,7 +460,8 @@
                 type: 'parent',
                 family: fam.name,
                 email: pEmail,
-                phone: fam.phone || '',
+                personalEmail: piHit.personalEmail || '',
+                phone: pPhone,
                 group: null,
                 age: null,
                 pronouns: pp[pName.trim()] || '',
@@ -465,7 +472,8 @@
                 diffNameKids: diffNameKids,
                 kidNames: (fam.kids || []).map(function(k) { return k.name + ' ' + (k.lastName || fam.name); }),
                 boardRole: (isPrimaryParent && fam.boardRole) ? fam.boardRole : null,
-                boardEmail: (isPrimaryParent && fam.boardRole) ? (fam.boardEmail || null) : null
+                boardEmail: (isPrimaryParent && fam.boardRole) ? (fam.boardEmail || null) : null,
+                role: piHit.role || null
               });
             });
             (fam.kids || []).forEach(function (kid) {
@@ -2277,22 +2285,40 @@
       if (person.photoConsent === false) html += '<p class="detail-no-photo">⛔ No Photos — this child is opted out of photos in co-op materials.</p>';
       html += '<p class="detail-parents">Parents: ' + fam.parents + '</p>';
     } else {
-      if (!boardInfo) html += '<p class="detail-group">Parent</p>';
+      // Role badge for adults: Main Learning Coach / Back Up LC / Parent
+      // (P4 of directory→DB migration). Falls back to "Parent" when the
+      // person doesn't yet have a role tagged in the DB.
+      var roleLabels = { mlc: 'Main Learning Coach', blc: 'Back Up Learning Coach', parent: 'Parent' };
+      var personRoleLabel = roleLabels[person.role] || 'Parent';
+      if (!boardInfo) html += '<p class="detail-group">' + personRoleLabel + '</p>';
       if (person.pronouns) html += '<p class="detail-pronouns">' + person.pronouns + '</p>';
       if (person.photoConsent === false) html += '<p class="detail-no-photo">⛔ No Photos — opted out of photo and film use.</p>';
       // Kids shown in family grid below
     }
     html += '</div></div>';
 
+    // Per-person contact (P4): use the parent's own workspace email,
+    // personal email (if filled in), and phone. Falls back to fam-level
+    // values when a person-level field is empty (legacy rows without the
+    // backfill, or families that haven't filled in personal info yet).
+    var contactEmailWs = (person.type !== 'kid' && person.email) ? person.email : fam.email;
+    var contactEmailPersonal = (person.type !== 'kid' && person.personalEmail) ? person.personalEmail : '';
+    var contactPhone = (person.type !== 'kid' && person.phone) ? person.phone : (fam.phone || '');
     html += '<div class="detail-contact">';
     if (boardInfo) {
       html += '<a href="mailto:' + boardInfo.email + '" class="detail-btn detail-btn-board">';
       html += emailSvg + ' ' + boardInfo.email + ' <small>(' + boardInfo.role + ')</small></a>';
     }
-    html += '<a href="mailto:' + fam.email + '" class="detail-btn detail-btn-email">';
-    html += emailSvg + ' ' + fam.email + (boardInfo ? ' <small>(personal)</small>' : '') + '</a>';
-    html += '<a href="tel:' + fam.phone.replace(/[^+\d]/g, '') + '" class="detail-btn detail-btn-phone">';
-    html += phoneSvg + ' ' + fam.phone + '</a>';
+    html += '<a href="mailto:' + contactEmailWs + '" class="detail-btn detail-btn-email">';
+    html += emailSvg + ' ' + contactEmailWs + (boardInfo ? ' <small>(personal)</small>' : '') + '</a>';
+    if (contactEmailPersonal) {
+      html += '<a href="mailto:' + contactEmailPersonal + '" class="detail-btn detail-btn-email">';
+      html += emailSvg + ' ' + contactEmailPersonal + ' <small>(personal)</small></a>';
+    }
+    if (contactPhone) {
+      html += '<a href="tel:' + String(contactPhone).replace(/[^+\d]/g, '') + '" class="detail-btn detail-btn-phone">';
+      html += phoneSvg + ' ' + contactPhone + '</a>';
+    }
     html += '</div>';
 
     // Board responsibilities
@@ -13823,27 +13849,39 @@
 
     var parentSeed;
     if (Array.isArray(fam.parentInfo) && fam.parentInfo.length) {
-      parentSeed = fam.parentInfo.map(function (p) {
+      parentSeed = fam.parentInfo.map(function (p, idx) {
         return {
           name: p.name || '',
           pronouns: p.pronouns || '',
           photo_url: p.photoUrl || '',
           photo_consent: p.photoConsent !== false,
+          // P4: each parent has a role, their R&W Workspace email (auth-relevant),
+          // their personal email (where they actually read mail), and their
+          // phone. Default by position when the overlay didn't include
+          // explicit values yet.
+          role: p.role || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent')),
+          email: p.email || '',
+          personal_email: p.personalEmail || '',
+          phone: p.phone || '',
           _queuedPhoto: null
         };
       });
     } else {
-      parentSeed = String(fam.parents || '').split(/\s*&\s*/).map(function (s) { return s.trim(); }).filter(Boolean).map(function (n) {
+      parentSeed = String(fam.parents || '').split(/\s*&\s*/).map(function (s) { return s.trim(); }).filter(Boolean).map(function (n, idx) {
         return {
           name: n,
           pronouns: (fam.parentPronouns && fam.parentPronouns[n]) || '',
           photo_url: '',
           photo_consent: true,
+          role: idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent'),
+          email: '',
+          personal_email: '',
+          phone: '',
           _queuedPhoto: null
         };
       });
     }
-    if (parentSeed.length === 0) parentSeed.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, _queuedPhoto: null });
+    if (parentSeed.length === 0) parentSeed.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, role: 'mlc', email: '', personal_email: '', phone: '', _queuedPhoto: null });
 
     var state = {
       family_email: fam.email,
@@ -13880,14 +13918,37 @@
     }
 
     function parentRowHtml(p, idx) {
+      // Role label maps mlc/blc/parent → display string. Read-only for now —
+      // the position in the array defines the role; flipping MLC/BLC between
+      // two adults is unusual and would land as a separate "promote to MLC"
+      // affordance later.
+      var roleLabels = { mlc: 'Main Learning Coach', blc: 'Back Up Learning Coach', parent: 'Parent' };
+      var roleLabel = roleLabels[p.role] || 'Parent';
+      var emailIsPrimary = (p.role === 'mlc');
       var h = '<div class="emi-row" data-parent-idx="' + idx + '">';
       h += '<div class="emi-photo-thumb">' + thumbHtml(p, p.name, { wsFallback: true }) +
            '<button type="button" class="emi-photo-btn" data-role="upload-parent" data-idx="' + idx + '" aria-label="Upload photo">' +
            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>' +
            '</button></div>';
       h += '<div class="emi-fields">';
+      h += '<div class="emi-role-badge" style="font-size:0.85em;color:var(--color-text-light);font-weight:600;">' + escapeHtml(roleLabel) + '</div>';
+      // Hidden input keeps role in sync via data-field so the save payload
+      // carries it back to the server.
+      h += '<input type="hidden" data-field="role" value="' + escapeHtml(p.role || 'parent') + '">';
       h += '<input class="rd-input" placeholder="First name" data-field="name" value="' + escapeHtml(p.name) + '">';
       h += '<input class="rd-input" placeholder="Pronouns (e.g. she/her)" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
+      // Email: MLC's email is the family_email (PK) — read-only here so the
+      // member can't accidentally orphan their family. BLC + Parent are
+      // editable so members can fill in their own Workspace login.
+      var emailAttrs = emailIsPrimary
+        ? 'readonly tabindex="-1" title="This is your family\'s primary login. Contact communications@ to change it."'
+        : 'placeholder="Their workspace email (optional)"';
+      h += '<input class="rd-input' + (emailIsPrimary ? ' emi-readonly' : '') + '" type="email" data-field="email" value="' + escapeHtml(p.email) + '" ' + emailAttrs + '>';
+      // Personal email — where reminders, billing notices, etc. actually
+      // get read. Editable for everyone (the MLC's personal email differs
+      // from their R&W Workspace login).
+      h += '<input class="rd-input" type="email" placeholder="Personal email (gmail, etc.)" data-field="personal_email" value="' + escapeHtml(p.personal_email || '') + '">';
+      h += '<input class="rd-input" type="tel" placeholder="Their phone number" data-field="phone" value="' + escapeHtml(p.phone) + '">';
       var pOptOut = p.photo_consent === false;
       h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
            '<input type="checkbox" data-field="photo_consent_optout"' + (pOptOut ? ' checked' : '') + '>' +
@@ -14094,7 +14155,12 @@
       var addParentBtn = document.getElementById('emiAddParent');
       if (addParentBtn) addParentBtn.addEventListener('click', function () {
         syncStateFromDom();
-        state.parents.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, _queuedPhoto: null });
+        // New adults default to BLC if there isn't one yet, otherwise plain
+        // 'parent'. MLC is fixed (the family_email holder).
+        var hasMlc = state.parents.some(function (p) { return p && p.role === 'mlc'; });
+        var hasBlc = state.parents.some(function (p) { return p && p.role === 'blc'; });
+        var newRole = !hasMlc ? 'mlc' : (!hasBlc ? 'blc' : 'parent');
+        state.parents.push({ name: '', pronouns: '', photo_url: '', photo_consent: true, role: newRole, email: '', personal_email: '', phone: '', _queuedPhoto: null });
         render();
       });
       var addKidBtn = document.getElementById('emiAddKid');
@@ -14199,7 +14265,7 @@
           family_name: state.family_name,
           phone: state.phone,
           address: state.address,
-          parents: state.parents.map(function (p) { return { name: p.name, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false }; }),
+          parents: state.parents.map(function (p) { return { name: p.name, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '' }; }),
           kids: state.kids.map(function (k) { return { name: k.name, birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
         };
         return fetch('/api/tour', {
