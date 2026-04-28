@@ -3207,7 +3207,16 @@
       html += '<div class="view-as-bar">';
       html += '<div class="view-as-banner">';
       html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-      html += ' Viewing as <strong>' + fam.parents + ' ' + fam.name + '</strong>';
+      // If the View As email resolves to a specific co-parent (e.g.
+      // jays@ for the Shewan family), label the banner with just that
+      // person — "Jay Shewan" — not the family's joined parents string
+      // ("Jessica & Jay Shewan"). Falls back to the family-level label
+      // for single-login families or when derivation can't infer.
+      var viewAsFirst = deriveFirstNameFromLogin(viewAsEmail, fam.name);
+      var viewAsLabel = (Array.isArray(fam.loginEmails) && fam.loginEmails.length > 1 && viewAsFirst)
+        ? (viewAsFirst + ' ' + fam.name)
+        : (fam.parents + ' ' + fam.name);
+      html += ' Viewing as <strong>' + viewAsLabel + '</strong>';
       html += '<button class="view-as-reset" id="viewAsReset">Back to my view</button>';
       html += '</div>';
       html += '</div>';
