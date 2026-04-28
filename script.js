@@ -459,6 +459,7 @@
                 name: pName.trim(),
                 type: 'parent',
                 family: fam.name,
+                familyDisplay: fam.displayName || fam.name,
                 email: pEmail,
                 personalEmail: piHit.personalEmail || '',
                 phone: pPhone,
@@ -482,6 +483,7 @@
                 lastName: kid.lastName || fam.name,
                 type: 'kid',
                 family: fam.name,
+                familyDisplay: fam.displayName || fam.name,
                 email: fam.email || '',
                 phone: fam.phone || '',
                 group: kid.group || '',
@@ -1972,7 +1974,7 @@
           '<div class="yb-photo" style="background:' + bgStyle + '"><span>' + person.name.charAt(0) + '</span></div>' +
           '<div class="yb-name">' + displayName + '</div>' +
           '<div class="yb-subtitle">' + (person.age ? 'Age ' + person.age : '') + '</div>' +
-          '<div class="yb-family">' + person.family + ' Family</div>' +
+          '<div class="yb-family">' + (person.familyDisplay || person.family) + ' Family</div>' +
           extras +
           '</button>';
         shown++;
@@ -2039,7 +2041,7 @@
           '<div class="yb-subtitle">' + subtitle + '</div>' +
           boardTag +
           pronounTag +
-          '<div class="yb-family">' + person.family + ' Family</div>' +
+          '<div class="yb-family">' + (person.familyDisplay || person.family) + ' Family</div>' +
           parentOfTag +
           absenceTag +
           noPhotoTag +
@@ -2270,7 +2272,10 @@
       html += '<div class="detail-photo" style="background:' + faceColor(person.name) + '"><span>' + person.name.charAt(0) + '</span></div>';
     }
     html += '<div class="detail-info">';
-    var detailLast = person.lastName || fam.name;
+    // Prefer fam.displayName (DB family_name, e.g. "O'Connor Gading") over
+    // the parsed sheet last-word (fam.name = "Gading"). Falls back to
+    // fam.name for families that haven't customized their stored surname.
+    var detailLast = person.lastName || fam.displayName || fam.name;
     html += '<h3>' + person.name + ' ' + detailLast + '</h3>';
     if (boardInfo) {
       html += '<p class="detail-board-role">' + boardInfo.role + '</p>';
@@ -2334,7 +2339,7 @@
 
     // Show other family members
     html += '<div class="detail-family">';
-    html += '<h4>' + fam.name + ' Family</h4>';
+    html += '<h4>' + (fam.displayName || fam.name) + ' Family</h4>';
     html += '<div class="detail-family-grid">';
     // Parents
     fam.parents.split(' & ').forEach(function(pName) {
@@ -13999,6 +14004,9 @@
       html += '<p class="emi-subtitle">' + escapeHtml(fam.name) + ' family — these updates show up across the member portal.</p>';
       html += '<div id="emiError" class="emi-error" style="display:none;"></div>';
 
+      html += '<label class="rd-label">Family last name</label>';
+      html += '<input class="rd-input" id="emiFamilyName" placeholder="e.g. Smith or O’Connor Gading" value="' + escapeHtml(state.family_name) + '">';
+
       html += '<label class="rd-label">Family phone</label>';
       html += '<input class="rd-input" id="emiPhone" placeholder="555-123-4567" value="' + escapeHtml(state.phone) + '">';
 
@@ -14054,8 +14062,10 @@
     }
 
     function syncStateFromDom() {
+      var familyNameEl = document.getElementById('emiFamilyName');
       var phoneEl = document.getElementById('emiPhone');
       var addressEl = document.getElementById('emiAddress');
+      if (familyNameEl) state.family_name = familyNameEl.value.trim();
       if (phoneEl) state.phone = phoneEl.value;
       if (addressEl) state.address = addressEl.value;
       var pRows = personDetailCard.querySelectorAll('#emiParentList [data-parent-idx]');

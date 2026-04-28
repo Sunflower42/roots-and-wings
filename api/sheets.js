@@ -1073,6 +1073,14 @@ async function applyMemberProfileOverlay(families) {
     if (p.phone) fam.phone = p.phone;
     if (p.address) fam.address = p.address;
     if (p.placement_notes) fam.placementNotes = p.placement_notes;
+    // Display name: surface the DB-stored family_name when it differs from
+    // the sheet-parsed last word (e.g. compound surnames like "O'Connor
+    // Gading"). Kept separate from fam.name so existing classlist + last-
+    // initial lookups (which expect the parsed single-word value) keep
+    // working until those callers migrate.
+    if (p.family_name && p.family_name !== fam.name) {
+      fam.displayName = p.family_name;
+    }
 
     // Phase 3: surface co-parent secondary login emails. The client uses this
     // to match the authenticated user's JWT email against ANY of the family's
