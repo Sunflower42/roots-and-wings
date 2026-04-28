@@ -2284,7 +2284,18 @@
     // family name standalone (e.g. "X Family" labels) where the parsed
     // value isn't already part of the rendered string.
     var detailLast = person.lastName || fam.name;
-    html += '<h3>' + person.name + ' ' + detailLast + '</h3>';
+    // Defensive dedupe: if person.name already ends with the family last
+    // name (e.g. legacy data where someone entered "Aimee O'Connor Gading"
+    // into the first-name field), don't double-append. Compares against
+    // both fam.name (sheet-parsed) and fam.displayName (DB-corrected).
+    var personFullName = String(person.name || '');
+    var personLc = personFullName.toLowerCase();
+    var lastLc = String(detailLast || '').toLowerCase();
+    var displayLc = String(fam.displayName || '').toLowerCase();
+    var headingFull = (lastLc && personLc.endsWith(' ' + lastLc)) ? personFullName
+      : (displayLc && personLc.endsWith(' ' + displayLc)) ? personFullName
+      : (personFullName + ' ' + detailLast);
+    html += '<h3>' + headingFull + '</h3>';
     if (boardInfo) {
       html += '<p class="detail-board-role">' + boardInfo.role + '</p>';
     }
@@ -14286,7 +14297,20 @@
           family_name: state.family_name,
           phone: state.phone,
           address: state.address,
-          parents: state.parents.map(function (p) { return { name: p.name, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '' }; }),
+          // Strip a trailing family last name from the parent name field
+          // before saving — the detail-card heading concatenates
+          // person.name + ' ' + family_name, so leaving "Aimee O'Connor
+          // Gading" in the name field with family_name "Gading" would
+          // render as "Aimee O'Connor Gading Gading". Mirrors the parser's
+          // surname-strip on the sheet side.
+          parents: state.parents.map(function (p) {
+            var cleanName = String(p.name || '').trim();
+            var famLc = String(state.family_name || '').trim().toLowerCase();
+            if (famLc && cleanName.toLowerCase().endsWith(' ' + famLc)) {
+              cleanName = cleanName.slice(0, cleanName.length - famLc.length - 1).trim();
+            }
+            return { name: cleanName, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '' };
+          }),
           kids: state.kids.map(function (k) { return { name: k.name, birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
         };
         return fetch('/api/tour', {
