@@ -1318,6 +1318,67 @@ function participationNormName(s) {
     .toLowerCase();
 }
 
+// Common-nickname groups for participation name resolution. Each group
+// is bidirectional — any name in the group counts as any other when
+// matching the master sheet's volunteer entries against member_profiles.
+// Per-person nicknames stored in member_profiles.parents[].nicknames are
+// merged on top, so anything not in this hardcoded list can be handled
+// via Edit My Info.
+var NICKNAME_GROUPS = [
+  ['rebecca', 'becca', 'becky'],
+  ['jessica', 'jess', 'jessie'],
+  ['matthew', 'matt', 'matty'],
+  ['michael', 'mike', 'mikey'],
+  ['william', 'will', 'bill', 'billy'],
+  ['robert', 'rob', 'bob', 'bobby'],
+  ['thomas', 'tom', 'tommy'],
+  ['joseph', 'joe', 'joey'],
+  ['joshua', 'josh'],
+  ['benjamin', 'ben', 'benny'],
+  ['catherine', 'cathy', 'kate', 'katie'],
+  ['katherine', 'kate', 'katie', 'kathy'],
+  ['elizabeth', 'liz', 'beth', 'betsy', 'eliza'],
+  ['samantha', 'sam', 'sammy'],
+  ['samuel', 'sam', 'sammy'],
+  ['nicholas', 'nick', 'nicky'],
+  ['daniel', 'dan', 'danny'],
+  ['christopher', 'chris', 'topher'],
+  ['anthony', 'tony'],
+  ['gregory', 'greg'],
+  ['jonathan', 'jon', 'jonny'],
+  ['andrew', 'andy', 'drew'],
+  ['edward', 'ed', 'eddie', 'ted'],
+  ['richard', 'rick', 'ricky', 'rich'],
+  ['stephanie', 'steph'],
+  ['stephen', 'steve'],
+  ['steven', 'steve'],
+  ['tiffany', 'tiff'],
+  ['patricia', 'pat', 'patty', 'tricia'],
+  ['frederick', 'fred', 'freddy'],
+  ['theodore', 'theo', 'ted'],
+  ['alexander', 'alex'],
+  ['alexandra', 'alex', 'allie'],
+  ['nathaniel', 'nate', 'nathan'],
+  ['jennifer', 'jen', 'jenny']
+];
+var NICKNAME_LOOKUP = (function () {
+  var out = {};
+  NICKNAME_GROUPS.forEach(function (group) {
+    group.forEach(function (name) {
+      // A name like "sam" lives in two groups (samantha, samuel). Merge
+      // groups so both sets of aliases resolve from the same key.
+      if (!out[name]) out[name] = [];
+      group.forEach(function (other) {
+        if (out[name].indexOf(other) === -1) out[name].push(other);
+      });
+    });
+  });
+  return out;
+})();
+function aliasesFor(firstLc) {
+  return NICKNAME_LOOKUP[firstLc] || [firstLc];
+}
+
 function participationCurrentSeason() {
   // School year runs Aug–May. Anything before August rolls back a year.
   var now = new Date();
@@ -1338,6 +1399,26 @@ function participationYearBounds() {
 
 function participationBuildNameIndex(families) {
   var idx = {};
+  // Build a per-parent nickname lookup keyed by canonical first name +
+  // family. Pulled from fam.parentInfo[].nicknames (member_profiles edit)
+  // when present, falling back to the hardcoded NICKNAME_LOOKUP. Lets the
+  // master sheet's "Becca Smith" or just "Becca" resolve to the
+  // member_profiles entry "Rebecca Smith".
+  var perFamilyNicks = {};
+  (families || []).forEach(function (fam) {
+    var famName = String(fam.name || '').trim().toLowerCase();
+    if (!famName) return;
+    perFamilyNicks[famName] = perFamilyNicks[famName] || {};
+    (fam.parentInfo || []).forEach(function (pi) {
+      var first = String(pi.firstName || (pi.name || '').split(/\s+/)[0] || '').toLowerCase();
+      if (!first) return;
+      var custom = (pi.nicknames || [])
+        .map(function (n) { return String(n || '').trim().toLowerCase(); })
+        .filter(Boolean);
+      if (custom.length) perFamilyNicks[famName][first] = custom;
+    });
+  });
+
   (families || []).forEach(function (fam) {
     var famName = String(fam.name || '').trim();
     if (!famName) return;
@@ -1347,12 +1428,31 @@ function participationBuildNameIndex(families) {
       .map(function (s) { return s.trim(); })
       .filter(Boolean);
     parentNames.forEach(function (first) {
+      var firstLc = participationNormName(first);
       var canonical = participationNormName(first + ' ' + famName);
       idx[canonical] = canonical;
       idx[participationNormName(first + ' ' + famInitial)] = canonical;
-      var fKey = '~first~' + participationNormName(first);
+      var fKey = '~first~' + firstLc;
       if (!idx[fKey]) idx[fKey] = [];
       if (idx[fKey].indexOf(canonical) === -1) idx[fKey].push(canonical);
+
+      // Register every alias of this first name (hardcoded + per-person)
+      // pointing to the same canonical entry, so "Becca Smith" matches
+      // when the parent's stored name is "Rebecca".
+      var aliases = aliasesFor(firstLc);
+      var custom = (perFamilyNicks[famName.toLowerCase()] || {})[firstLc] || [];
+      var allAliases = aliases.slice();
+      custom.forEach(function (a) {
+        if (allAliases.indexOf(a) === -1) allAliases.push(a);
+      });
+      allAliases.forEach(function (alias) {
+        if (alias === firstLc) return;
+        idx[participationNormName(alias + ' ' + famName)] = canonical;
+        idx[participationNormName(alias + ' ' + famInitial)] = canonical;
+        var aKey = '~first~' + alias;
+        if (!idx[aKey]) idx[aKey] = [];
+        if (idx[aKey].indexOf(canonical) === -1) idx[aKey].push(canonical);
+      });
     });
   });
   return idx;
@@ -1813,17 +1913,35 @@ async function handleParticipationAction(req, res, action, userEmail, authGivenN
     if (familyMembers.length === 0) {
       return res.status(200).json({ season: report.season, member: null });
     }
-    // Prefer the parent matching the signed-in given_name. For super-
-    // user view-as we can't disambiguate — fall back to the first
-    // parent. (Earlier this checked `!isSuperUser` instead of
-    // `!canViewAny` which was always-false because isSuperUser is the
-    // imported function — meant given_name disambiguation never ran.)
+    // Disambiguate which parent in the family is "you". Tries:
+    //   1. JWT given_name === stored first_name (works when the
+    //      Workspace account uses the same first name as member_profiles)
+    //   2. Email local part === firstname + family-initial (the way
+    //      Workspace addresses are derived). Catches the case where
+    //      given_name is missing or is a nickname ("Jess" vs "Jessica")
+    //      — without this, families sorted alphabetically by first name
+    //      meant Jessica's signed-in session was returning Jay's row.
+    //   3. Last resort — first parent in the family (alphabetic).
+    // Skipped for super-user View-As since we can't infer who they
+    // mean to act as from their own JWT.
     var mine = null;
     var gn = String(authGivenName || '').toLowerCase();
     if (gn && !canViewAny) {
       for (var i = 0; i < familyMembers.length; i++) {
         if (String(familyMembers[i].first || '').toLowerCase() === gn) {
           mine = familyMembers[i];
+          break;
+        }
+      }
+    }
+    if (!mine && !canViewAny) {
+      var localPart = String(targetEmail.split('@')[0] || '').toLowerCase();
+      for (var j = 0; j < familyMembers.length; j++) {
+        var first = String(familyMembers[j].first || '').toLowerCase().replace(/[^a-z]/g, '');
+        var fam = String(familyMembers[j].family || '').toLowerCase();
+        var li = fam.charAt(0);
+        if (first && li && (first + li) === localPart) {
+          mine = familyMembers[j];
           break;
         }
       }
