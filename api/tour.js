@@ -1521,14 +1521,22 @@ async function upsertProfileFromRegistration(sql, params) {
   });
   exParents.forEach(p => { if (!seenFirsts.has(firstKey(p))) mergedParents.push(p); });
 
-  // Merge kids by lowercased name.
+  // Merge kids by lowercased FIRST name. Phase 3 stored kids as
+  // first-name-only ("Aiden") while registration submits whatever the
+  // parent typed (often "Aiden Bogan"). Matching on full name leaves
+  // duplicates; matching on first name correctly consolidates them.
+  // The overlay in api/sheets.js (applyMemberProfileOverlay) uses the
+  // same first-name key.
+  function kidFirst(k) {
+    return String((k && k.name) || '').trim().split(/\s+/)[0].toLowerCase();
+  }
   const mergedKids = [];
   const seenKids = new Set();
   newKids.forEach(nk => {
-    const key = String(nk.name || '').toLowerCase();
+    const key = kidFirst(nk);
     if (!key) return;
     seenKids.add(key);
-    const ex = exKids.find(k => String(k.name || '').toLowerCase() === key) || {};
+    const ex = exKids.find(k => kidFirst(k) === key) || {};
     mergedKids.push({
       name: nk.name,
       last_name: nk.last_name || ex.last_name || '',
@@ -1540,7 +1548,7 @@ async function upsertProfileFromRegistration(sql, params) {
       photo_consent: typeof nk.photo_consent === 'boolean' ? nk.photo_consent : (ex.photo_consent !== false)
     });
   });
-  exKids.forEach(k => { if (!seenKids.has(String(k.name || '').toLowerCase())) mergedKids.push(k); });
+  exKids.forEach(k => { if (!seenKids.has(kidFirst(k))) mergedKids.push(k); });
 
   const phone = String(params.phone || '').trim();
   const address = String(params.address || '').trim();
