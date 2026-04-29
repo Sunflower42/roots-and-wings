@@ -13,7 +13,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { google } = require('googleapis');
 const { put } = require('@vercel/blob');
 const { ALLOWED_ORIGINS } = require('./_config');
-const { canEditAsRole, getRoleHolderEmail, SUPER_USER_EMAIL } = require('./_permissions');
+const { canEditAsRole, getRoleHolderEmail, isSuperUser } = require('./_permissions');
 const { canActAs } = require('./_family');
 const { fetchSheet, getAuth, parseBillingSheet } = require('./sheets');
 
@@ -784,7 +784,7 @@ async function handleRegistrationDecline(body, req, res) {
   const auth = await verifyWorkspaceAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const canDecline = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+  const canDecline = isSuperUser(auth.email) ||
     await canEditAsRole(auth.email, 'Membership Director');
   if (!canDecline) {
     const expected = await getRoleHolderEmail('Membership Director');
@@ -939,7 +939,7 @@ async function handleRegistrationMarkPaid(body, req, res) {
   const auth = await verifyWorkspaceAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const canMark = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+  const canMark = isSuperUser(auth.email) ||
     await canEditAsRole(auth.email, 'Treasurer');
   if (!canMark) {
     const expected = await getRoleHolderEmail('Treasurer');
@@ -990,7 +990,7 @@ async function handleOnboardingStep(body, req, res) {
   const auth = await verifyWorkspaceAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const isComms = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+  const isComms = isSuperUser(auth.email) ||
     await canEditAsRole(auth.email, 'Communications Director');
   if (!isComms) {
     const expected = await getRoleHolderEmail('Communications Director');
@@ -1032,7 +1032,7 @@ async function handleSendWelcomeEmail(body, req, res) {
   const auth = await verifyWorkspaceAuth(req);
   if (!auth) return res.status(401).json({ error: 'Unauthorized' });
 
-  const isComms = String(auth.email).toLowerCase() === SUPER_USER_EMAIL ||
+  const isComms = isSuperUser(auth.email) ||
     await canEditAsRole(auth.email, 'Communications Director');
   if (!isComms) {
     const expected = await getRoleHolderEmail('Communications Director');
@@ -1617,13 +1617,14 @@ function sanitizeKid(k) {
 }
 
 // Owner: the JWT'd Workspace email MUST equal the family_email, OR appear in
-// the family's additional_emails (a co-parent), OR the caller is
-// communications@ (super user). The co-parent path requires a DB lookup.
+// the family's additional_emails (a co-parent), OR the caller is one of
+// the app-wide super users (communications@ / vicepresident@). The
+// co-parent path requires a DB lookup.
 async function canEditFamily(sql, userEmail, familyEmail) {
   const u = normalizeEmail(userEmail);
   const f = normalizeEmail(familyEmail);
   if (!u || !f) return false;
-  if (u === SUPER_USER_EMAIL) return true;
+  if (isSuperUser(u)) return true;
   if (u === f) return true;
   return canActAs(sql, u, f);
 }

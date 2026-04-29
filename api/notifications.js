@@ -7,19 +7,20 @@
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { ALLOWED_ORIGINS } = require('./_config');
+const { isSuperUser } = require('./_permissions');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
-const SUPER_USER_EMAIL = 'communications@rootsandwingsindy.com';
 const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// If the real signed-in user is communications@ and they've asked to view as
-// another @rootsandwingsindy.com member (via ?view_as=), return that email;
-// otherwise return the real user's email. This mirrors the existing dashboard
-// View As pattern so the super user can triage notifications on behalf of
+// If the real signed-in user is a super user (communications@ /
+// vicepresident@) and they've asked to view as another
+// @rootsandwingsindy.com member (via ?view_as=), return that email;
+// otherwise return the real user's email. Mirrors the dashboard View
+// As pattern so super users can triage notifications on behalf of
 // whoever they're helping.
 function resolveRecipient(user, viewAsQuery) {
-  if (user.email.toLowerCase() !== SUPER_USER_EMAIL) return user.email;
+  if (!isSuperUser(user.email)) return user.email;
   var va = (viewAsQuery || '').toString().trim().toLowerCase();
   if (!va) return user.email;
   if ((va.split('@')[1] || '') !== ALLOWED_DOMAIN) return user.email;

@@ -15,7 +15,21 @@
 const { google } = require('googleapis');
 
 const SUPER_USER_EMAIL = 'communications@rootsandwingsindy.com';
+// All addresses that get app-wide super-user privileges (edit anything,
+// View-As any family). communications@ is the primary; vicepresident@
+// (and its vp@ alias) was added so the VP can help members from their
+// own mailbox without sharing comms@ credentials.
+const SUPER_USER_EMAILS = [
+  SUPER_USER_EMAIL,
+  'vicepresident@rootsandwingsindy.com',
+  'vp@rootsandwingsindy.com'
+];
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
+
+function isSuperUser(email) {
+  if (!email) return false;
+  return SUPER_USER_EMAILS.indexOf(String(email).toLowerCase()) !== -1;
+}
 // Short TTL keeps any transient sheet-fetch hiccup from poisoning the
 // role gate for long. Worst case the user retries and the next request
 // re-fetches the live data.
@@ -248,7 +262,7 @@ async function getRoleHolderEmails(roleTitles) {
 async function canEditAsRole(userEmail, roleTitle) {
   if (!userEmail) return false;
   const email = userEmail.toLowerCase();
-  if (email === SUPER_USER_EMAIL) return true;
+  if (isSuperUser(email)) return true;
   // Dedicated board-role mailbox short-circuits the sheet lookup. Lets
   // Tiffany / Molly / etc. act in their board capacity even when the
   // sheet derivation can't resolve their personal email.
@@ -277,6 +291,8 @@ async function canEditAsRole(userEmail, roleTitle) {
 
 module.exports = {
   SUPER_USER_EMAIL,
+  SUPER_USER_EMAILS,
+  isSuperUser,
   canEditAsRole,
   getRoleHolderEmail,
   getRoleHolderEmails,

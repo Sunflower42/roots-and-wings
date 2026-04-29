@@ -197,6 +197,17 @@
   var CACHE_KEY = 'rw_sheets_cache';
   var CACHE_PHOTOS_KEY = 'rw_photos_cache';
   var COMMS_EMAIL = 'communications@rootsandwingsindy.com';
+  // App-wide super users — communications@ is the original; vicepresident@
+  // (and its vp@ alias) was added so the VP can help members from her own
+  // mailbox. Backend mirror: SUPER_USER_EMAILS in api/_permissions.js.
+  var SUPER_USER_EMAILS = [
+    COMMS_EMAIL,
+    'vicepresident@rootsandwingsindy.com',
+    'vp@rootsandwingsindy.com'
+  ];
+  function isSuperUserEmail(e) {
+    return SUPER_USER_EMAILS.indexOf(String(e || '').toLowerCase()) !== -1;
+  }
   var VIEW_AS_KEY = 'rw_view_as_email';
 
   // Compute a whole-number age from a birth date string ('YYYY-MM-DD' or any
@@ -281,8 +292,13 @@
     return localStorage.getItem('rw_user_email');
   }
 
+  // True if the *real* signed-in user is one of the app-wide super users
+  // (communications@ / vicepresident@). Function name predates the VP
+  // addition — kept to avoid touching every caller, but it gates super-
+  // user UI in general (View As picker, edit-anything affordances), not
+  // just communications@.
   function isCommsUser() {
-    return localStorage.getItem('rw_user_email') === COMMS_EMAIL;
+    return isSuperUserEmail(localStorage.getItem('rw_user_email'));
   }
 
   // Header-level "View as" picker for the communications@ super user.
@@ -7752,10 +7768,11 @@
   }
 
   function computeSupplyClosetCanEdit() {
-    // True only for the Supply Coordinator. communications@ is the app-wide
-    // super user and can always edit (including while impersonating via View As).
+    // True only for the Supply Coordinator. App-wide super users
+    // (communications@ / vicepresident@) can always edit, including
+    // while impersonating via View As.
     var realEmail = localStorage.getItem('rw_user_email');
-    if (realEmail === COMMS_EMAIL) return true;
+    if (isSuperUserEmail(realEmail)) return true;
     var email = getActiveEmail();
     if (!email) return false;
     var me = null;
@@ -11412,12 +11429,13 @@
 
   var notifState = { notifications: [], unreadCount: 0, dropdownOpen: false };
 
-  // When communications@ is logged in AND has a View As set, the server
-  // reads that user's notification inbox instead of comms@'s own. This lets
-  // the super user triage on behalf of whoever they're helping.
+  // When a super user (communications@ / vicepresident@) is logged in
+  // AND has a View As set, the server reads that user's notification
+  // inbox instead of the super user's own. Lets them triage on behalf
+  // of whoever they're helping.
   function notifViewAsSuffix() {
     var realEmail = localStorage.getItem('rw_user_email');
-    if (realEmail !== COMMS_EMAIL) return '';
+    if (!isSuperUserEmail(realEmail)) return '';
     var viewAs = sessionStorage.getItem(VIEW_AS_KEY);
     if (!viewAs) return '';
     return '&view_as=' + encodeURIComponent(viewAs);

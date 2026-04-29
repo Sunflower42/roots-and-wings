@@ -15,7 +15,7 @@ const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { Resend } = require('resend');
 const { ALLOWED_ORIGINS } = require('./_config');
-const { canEditAsRole, getRoleHolderEmail, SUPER_USER_EMAIL } = require('./_permissions');
+const { canEditAsRole, getRoleHolderEmail, isSuperUser } = require('./_permissions');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
@@ -382,7 +382,7 @@ function normalizeReviewerPatch(body) {
 // VP, Afternoon Class Liaison, and the super user can review all submissions.
 async function canReviewSubmissions(email) {
   if (!email) return false;
-  if (String(email).toLowerCase() === SUPER_USER_EMAIL) return true;
+  if (isSuperUser(email)) return true;
   if (await canEditAsRole(email, 'Vice President')) return true;
   if (await canEditAsRole(email, 'Afternoon Class Liaison')) return true;
   return false;

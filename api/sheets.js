@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const { neon } = require('@neondatabase/serverless');
 const { ALLOWED_ORIGINS } = require('./_config');
-const { canEditAsRole, SUPER_USER_EMAIL } = require('./_permissions');
+const { canEditAsRole, isSuperUser } = require('./_permissions');
 
 function getDb() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL not configured');
@@ -1296,7 +1296,7 @@ async function applyMemberProfileOverlay(families) {
 
 async function participationCanRead(email) {
   if (!email) return false;
-  if (String(email).toLowerCase() === SUPER_USER_EMAIL) return true;
+  if (isSuperUser(email)) return true;
   if (await canEditAsRole(email, 'Vice President')) return true;
   if (await canEditAsRole(email, 'Afternoon Class Liaison')) return true;
   return false;
@@ -1304,7 +1304,7 @@ async function participationCanRead(email) {
 
 async function participationCanWrite(email) {
   if (!email) return false;
-  if (String(email).toLowerCase() === SUPER_USER_EMAIL) return true;
+  if (isSuperUser(email)) return true;
   return await canEditAsRole(email, 'Vice President');
 }
 
@@ -1780,14 +1780,15 @@ async function handleParticipationAction(req, res, action, userEmail, authGivenN
   var sql = getDb();
 
   // Personal participation view — any authed @rootsandwingsindy.com member
-  // can fetch their own row. Super user (communications@) can fetch any
-  // family's row by passing ?email=<target> (used by the View As picker).
+  // can fetch their own row. Super users (communications@ / vicepresident@)
+  // can fetch any family's row by passing ?email=<target> (used by the
+  // View As picker).
   if (action === 'participation-mine' && req.method === 'GET') {
     var emailLc = String(userEmail || '').toLowerCase();
-    var isSuperUser = emailLc === SUPER_USER_EMAIL;
+    var canViewAny = isSuperUser(emailLc);
     var targetEmail = String((req.query && req.query.email) || userEmail || '').toLowerCase();
     if (!targetEmail) return res.status(400).json({ error: 'email required' });
-    if (targetEmail !== emailLc && !isSuperUser) {
+    if (targetEmail !== emailLc && !canViewAny) {
       return res.status(403).json({ error: 'Not authorized' });
     }
     var auth = getAuth();

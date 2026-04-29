@@ -17,7 +17,7 @@
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { ALLOWED_ORIGINS } = require('./_config');
-const { canEditAsRole, SUPER_USER_EMAIL } = require('./_permissions');
+const { canEditAsRole, isSuperUser } = require('./_permissions');
 
 // Editing a role_descriptions row is gated by which bucket of fields
 // you're touching. Meta = title / hierarchy / lifecycle, reserved for
@@ -56,7 +56,7 @@ const VALID_STATUSES = ['active', 'archived'];
 
 async function canEditRoleMeta(userEmail) {
   if (!userEmail) return false;
-  if (String(userEmail).toLowerCase() === SUPER_USER_EMAIL) return true;
+  if (isSuperUser(userEmail)) return true;
   return await canEditAsRole(userEmail, 'President');
 }
 
