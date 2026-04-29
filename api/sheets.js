@@ -1948,7 +1948,20 @@ async function handleParticipationAction(req, res, action, userEmail, authGivenN
     }
     if (!mine) mine = familyMembers[0];
     mine.tier = participationTier(mine.status);
-    return res.status(200).json({ season: report.season, member: mine });
+    // Temporary debug — remove once participation disambiguation is
+    // confirmed working on prod. Surfaces what the server saw so we
+    // can tell whether the JWT given_name and the email-localpart
+    // fallback are matching as expected.
+    var _debug = {
+      userEmail: emailLc,
+      targetEmail: targetEmail,
+      authGivenName: authGivenName || '',
+      canonicalFamilyEmail: canonicalFamilyEmail,
+      familyMembersCount: familyMembers.length,
+      familyMemberFirsts: familyMembers.map(function (m) { return m.first; }),
+      matchedKey: mine && mine.key
+    };
+    return res.status(200).json({ season: report.season, member: mine, _debug: _debug });
   }
 
   var canRead = await participationCanRead(userEmail);
