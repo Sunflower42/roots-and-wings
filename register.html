@@ -330,11 +330,11 @@
         <legend>How would you like to pay?</legend>
         <label class="reg-pay-option">
           <input type="radio" name="reg-pay-method" value="paypal" checked>
-          <span><strong>Pay now with PayPal</strong><small>Card or PayPal balance &middot; finalizes registration immediately</small></span>
+          <span><strong>Pay now online</strong><small>Credit card, debit card, or PayPal balance &middot; no PayPal account required &middot; finalizes registration immediately</small></span>
         </label>
         <label class="reg-pay-option">
           <input type="radio" name="reg-pay-method" value="cash_check">
-          <span><strong>Pay by cash or check at co-op</strong><small>We'll hold your spot &middot; bring $40 cash or a check (payable to Roots and Wings Homeschool, Inc.) on your tour or first co-op day</small></span>
+          <span><strong>Pay by cash or check</strong><small>We'll hold your spot &middot; contact <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a> to arrange payment</small></span>
         </label>
       </fieldset>
 
@@ -345,15 +345,14 @@
           <p><strong>PayPal didn't load.</strong> Some browsers block PayPal; try disabling ad blockers or
             <button type="button" class="reg-back-btn" id="reg-paypal-retry" style="padding: 0 4px;">reload the payment step</button>.
           </p>
-          <p>Or switch the option above to "Pay by cash or check at co-op" and we'll hold your spot.</p>
+          <p>Or switch the option above to "Pay by cash or check" and we'll hold your spot.</p>
         </div>
       </div>
 
       <!-- Cash/check sub-step -->
       <div id="reg-cashcheck-section" style="display:none;">
         <div class="reg-cashcheck-summary">
-          <p>Click <strong>Reserve my spot</strong> to submit your registration. Your spot is held — bring <strong>$40 cash or a check payable to <em>Roots and Wings Homeschool, Inc.</em></strong> to Jessica Shewan (Treasurer) on your tour day or your first co-op day.</p>
-          <p>Questions? <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a></p>
+          <p>Click <strong>Reserve my spot</strong> to submit your registration. Your spot is held — please contact <a href="mailto:treasurer@rootsandwingsindy.com"><strong>treasurer@rootsandwingsindy.com</strong></a> to arrange payment of the <strong>$40</strong> registration fee by cash or check (payable to <em>Roots and Wings Homeschool, Inc.</em>).</p>
         </div>
         <button type="button" class="btn btn-primary" id="reg-cashcheck-submit">Reserve my spot &rarr;</button>
       </div>
@@ -997,7 +996,7 @@
         btn.disabled = false; btn.textContent = orig;
         if (res && res.id) {
           document.getElementById('reg-done-msg').textContent =
-            "Thanks! Your registration is saved and your spot is held. Bring $40 cash or a check (payable to Roots and Wings Homeschool, Inc.) to Jessica Shewan on your tour day or your first co-op day. You'll get a confirmation email shortly, and another email once payment is recorded.";
+            "Thanks! Your registration is saved and your spot is held. Please contact treasurer@rootsandwingsindy.com to arrange payment of the $40 registration fee by cash or check (payable to Roots and Wings Homeschool, Inc.). You'll get a confirmation email shortly, and another email once payment is recorded.";
           showStep('done');
         } else {
           showError('reg-pay-error', 'Could not save your registration. Please try again or email treasurer@rootsandwingsindy.com.');
