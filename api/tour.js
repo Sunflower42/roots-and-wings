@@ -15,6 +15,7 @@ const { put } = require('@vercel/blob');
 const { ALLOWED_ORIGINS } = require('./_config');
 const { canEditAsRole, getRoleHolderEmail, SUPER_USER_EMAIL } = require('./_permissions');
 const { canActAs } = require('./_family');
+const { fetchSheet, getAuth, parseBillingSheet } = require('./sheets');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
@@ -461,6 +462,40 @@ async function handleList(req, res) {
       WHERE r.season = ${season}
       ORDER BY r.created_at DESC
     `;
+
+    // Auto-reconcile pending registrations against the billing sheet's
+    // Fall Deposit (Next Year) column. When the Treasurer marks a row
+    // "Paid" in the sheet for cash/check receipts, this lights up the
+    // family's My Family billing card on the next read AND fires the
+    // payment-received email — Treasurer's only action is the sheet
+    // edit; no separate Mark Paid click required.
+    const pendingRegs = rows.filter(r => String(r.payment_status || '').toLowerCase() !== 'paid');
+    if (pendingRegs.length > 0 && process.env.BILLING_SHEET_ID) {
+      try {
+        const sheetsClient = google.sheets({ version: 'v4', auth: getAuth() });
+        const billingTabs = await fetchSheet(sheetsClient, process.env.BILLING_SHEET_ID);
+        const parsed = parseBillingSheet(billingTabs, season);
+        for (const reg of pendingRegs) {
+          const famName = deriveFamilyName(reg.main_learning_coach, reg.existing_family_name);
+          if (!famName) continue;
+          const entry = parsed.families[famName.toLowerCase()];
+          if (!entry || !entry.fall || entry.fall.deposit !== 'Paid') continue;
+          // Sheet shows Paid for this family — flip DB + send email.
+          // Mutate the row in `rows` so the response reflects the new
+          // status without a re-fetch.
+          try {
+            await applyMarkPaid(sql, reg, '');
+            const target = rows.find(r => r.id === reg.id);
+            if (target) target.payment_status = 'paid';
+          } catch (innerErr) {
+            console.error(`Auto-reconcile failed for reg ${reg.id} (${famName}):`, innerErr);
+          }
+        }
+      } catch (recErr) {
+        console.error('Registration auto-reconcile error (non-fatal):', recErr);
+      }
+    }
+
     return res.status(200).json({ registrations: rows });
   } catch (err) {
     console.error('Registration list error:', err);
@@ -747,6 +782,71 @@ async function handleRegistrationDecline(body, req, res) {
   }
 }
 
+// Apply Mark-Paid side effects to an already-fetched registration row:
+// flip registrations + payments to Paid, then send the payment-received
+// email. Shared by the Treasurer's Mark Paid button and the auto-
+// reconcile pass on the Membership Report list endpoint.
+async function applyMarkPaid(sql, reg, note) {
+  await sql`
+    UPDATE registrations
+    SET payment_status = 'paid', updated_at = NOW()
+    WHERE id = ${reg.id}
+  `;
+
+  // Flip the matching payments row to Paid so the My Family billing
+  // card surfaces it. Match by family_email when available (canonical),
+  // falling back to family_name for pre-Phase-4 rows that haven't been
+  // backfilled yet.
+  try {
+    const famName = deriveFamilyName(reg.main_learning_coach, reg.existing_family_name);
+    const famEmail = deriveFamilyEmail(reg.main_learning_coach, famName) || '';
+    if (famName || famEmail) {
+      await sql`
+        UPDATE payments
+        SET status = 'Paid'
+        WHERE school_year = ${reg.season}
+          AND semester_key = 'fall'
+          AND payment_type = 'deposit'
+          AND (
+            (${famEmail} <> '' AND LOWER(family_email) = LOWER(${famEmail}))
+            OR (${famName} <> '' AND LOWER(family_name) = LOWER(${famName}))
+          )
+      `;
+    }
+  } catch (pErr) {
+    console.error('payments mark Paid (non-fatal):', pErr);
+  }
+
+  // Confirmation email — the second of the two emails this family will
+  // see (the first went out at registration submit).
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const noteHtml = note
+      ? `<p><strong>Note from Treasurer:</strong><br>${escapeHtml(note).replace(/\n/g, '<br>')}</p>`
+      : '';
+    await resend.emails.send({
+      from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+      to: reg.email,
+      cc: [
+        'treasurer@rootsandwingsindy.com',
+        'membership@rootsandwingsindy.com',
+        'communications@rootsandwingsindy.com'
+      ],
+      replyTo: 'treasurer@rootsandwingsindy.com',
+      subject: `Roots & Wings ${reg.season} Payment Received — ${reg.main_learning_coach} family`,
+      html: `
+        <h2>Payment Received &mdash; You're All Set</h2>
+        <p>Hi ${escapeHtml(reg.main_learning_coach)},</p>
+        <p>Thanks! The Treasurer has recorded your $${escapeHtml(String(reg.payment_amount || ''))} ${escapeHtml(reg.season)} Fall Membership Fee. Your registration is now fully complete.</p>
+        ${noteHtml}
+        <p style="margin-top:16px;">Questions? Reply to this email and it'll reach the Treasurer.</p>
+      `,
+    });
+  } catch (mailErr) {
+    console.error('Mark-paid email error (non-fatal):', mailErr);
+  }
+}
+
 // ── Treasurer Workspace: mark a pending cash/check registration as Paid ──
 // Updates registrations.payment_status → 'paid', updates the matching
 // payments row → 'Paid' (so the family's My Family billing card flips),
@@ -784,64 +884,7 @@ async function handleRegistrationMarkPaid(body, req, res) {
       return res.status(200).json({ success: true, already: true });
     }
 
-    await sql`
-      UPDATE registrations
-      SET payment_status = 'paid', updated_at = NOW()
-      WHERE id = ${id}
-    `;
-
-    // Flip the matching payments row to Paid so the My Family billing
-    // card surfaces it. Match by family_email when available (canonical),
-    // falling back to family_name for pre-Phase-4 rows that haven't been
-    // backfilled yet.
-    try {
-      const famName = deriveFamilyName(reg.main_learning_coach, reg.existing_family_name);
-      const famEmail = deriveFamilyEmail(reg.main_learning_coach, famName) || '';
-      if (famName || famEmail) {
-        await sql`
-          UPDATE payments
-          SET status = 'Paid'
-          WHERE school_year = ${reg.season}
-            AND semester_key = 'fall'
-            AND payment_type = 'deposit'
-            AND (
-              (${famEmail} <> '' AND LOWER(family_email) = LOWER(${famEmail}))
-              OR (${famName} <> '' AND LOWER(family_name) = LOWER(${famName}))
-            )
-        `;
-      }
-    } catch (pErr) {
-      console.error('payments mark Paid (non-fatal):', pErr);
-    }
-
-    // Confirmation email — the second of the two emails this family will
-    // see (the first went out at registration submit).
-    try {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      const noteHtml = note
-        ? `<p><strong>Note from Treasurer:</strong><br>${escapeHtml(note).replace(/\n/g, '<br>')}</p>`
-        : '';
-      await resend.emails.send({
-        from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
-        to: reg.email,
-        cc: [
-          'treasurer@rootsandwingsindy.com',
-          'membership@rootsandwingsindy.com',
-          'communications@rootsandwingsindy.com'
-        ],
-        replyTo: 'treasurer@rootsandwingsindy.com',
-        subject: `Roots & Wings ${reg.season} Payment Received — ${reg.main_learning_coach} family`,
-        html: `
-          <h2>Payment Received &mdash; You're All Set</h2>
-          <p>Hi ${escapeHtml(reg.main_learning_coach)},</p>
-          <p>Thanks! The Treasurer has recorded your $${escapeHtml(String(reg.payment_amount || ''))} ${escapeHtml(reg.season)} Fall Membership Fee. Your registration is now fully complete.</p>
-          ${noteHtml}
-          <p style="margin-top:16px;">Questions? Reply to this email and it'll reach the Treasurer.</p>
-        `,
-      });
-    } catch (mailErr) {
-      console.error('Mark-paid email error (non-fatal):', mailErr);
-    }
+    await applyMarkPaid(sql, reg, note);
 
     return res.status(200).json({ success: true });
   } catch (err) {

@@ -872,8 +872,13 @@ function parseClassIdeas(rows) {
 // Billing spreadsheet layout:
 //   "Family Payment Tracking" tab:
 //     Row 1 = headers, rows 2+ = data.
-//     A = Family Name, B = Fall Deposit, C = Fall Fees,
-//     D = Spring Deposit, E = Spring Fees.
+//     A = Family Name (always).
+//     Current-year columns: B = Fall Deposit, C = Fall Fees,
+//       D = Spring Deposit, E = Spring Fees.
+//     F = "Fall Deposit (Next Year)" — Treasurer's working column for
+//       upcoming-year registration deposits (e.g. tracking 26/27 deposits
+//       while 25/26 is still the current year). When billing is requested
+//       for the next school year, fall.deposit reads from F instead of B.
 //     Cell value "Paid" (case-insensitive) means paid; anything else → not paid.
 //   "Morning Classes" tab: H2 = Sem1 rate, H3 = Sem2 rate.
 //   "Afternoons" tab:     H2 = Sem1 rate, H3 = Sem2 rate.
@@ -885,7 +890,18 @@ function numFromCell(raw) {
   return isFinite(n) ? n : 0;
 }
 
-function parseBillingSheet(tabs) {
+// Column indexes for the Family Payment Tracking tab. Switches the Fall
+// Deposit column based on requested school year because the Treasurer
+// uses "Fall Deposit (Next Year)" (col F) for the upcoming year while
+// the current-year columns (B-E) cover this year.
+function billingColumnsFor(schoolYear) {
+  if (schoolYear === '2026-2027') {
+    return { fallDeposit: 5, fallClassFee: -1, springDeposit: -1, springClassFee: -1 };
+  }
+  return { fallDeposit: 1, fallClassFee: 2, springDeposit: 3, springClassFee: 4 };
+}
+
+function parseBillingSheet(tabs, schoolYear) {
   var out = {
     rates: {
       fall: { amRate: 0, pmRate: 0 },
@@ -902,6 +918,7 @@ function parseBillingSheet(tabs) {
   if (pmTab[1]) out.rates.fall.pmRate = numFromCell(pmTab[1][7]);
   if (pmTab[2]) out.rates.spring.pmRate = numFromCell(pmTab[2][7]);
 
+  var cols = billingColumnsFor(schoolYear);
   var payTab = tabs['Family Payment Tracking'] || [];
   for (var r = 1; r < payTab.length; r++) {
     var row = payTab[r];
@@ -914,12 +931,12 @@ function parseBillingSheet(tabs) {
     out.families[famName.toLowerCase()] = {
       name: famName,
       fall: {
-        deposit: statusOf(cell(row, 1)),
-        classFee: statusOf(cell(row, 2))
+        deposit: statusOf(cell(row, cols.fallDeposit)),
+        classFee: statusOf(cell(row, cols.fallClassFee))
       },
       spring: {
-        deposit: statusOf(cell(row, 3)),
-        classFee: statusOf(cell(row, 4))
+        deposit: statusOf(cell(row, cols.springDeposit)),
+        classFee: statusOf(cell(row, cols.springClassFee))
       }
     };
   }
@@ -953,8 +970,8 @@ async function handleBillingGet(req, res, sheets) {
     return res.status(502).json({ error: 'Failed to fetch billing sheet' });
   }
 
-  var parsed = parseBillingSheet(billingTabs);
   var schoolYear = String(req.query.school_year || activeSchoolYearLabel());
+  var parsed = parseBillingSheet(billingTabs, schoolYear);
 
   // Attach family_email to each sheet entry by joining against
   // member_profiles (LOWER(family_name) match). The frontend prefers email
@@ -2064,5 +2081,6 @@ module.exports = async function handler(req, res) {
 // they stay in lockstep with the live parser. Vercel treats the default
 // module.exports function as the handler and ignores attached properties.
 module.exports.parseDirectory = parseDirectory;
+module.exports.parseBillingSheet = parseBillingSheet;
 module.exports.fetchSheet = fetchSheet;
 module.exports.getAuth = getAuth;
