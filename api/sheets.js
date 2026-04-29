@@ -1385,37 +1385,51 @@ function participationBlankCounts() {
   };
 }
 
+// Build the families[] shape buildParticipationReport expects — name,
+// parents string ("First & First"), email — directly from member_profiles.
+// Replaces the prior Directory-sheet read; everyone in the co-op has a
+// member_profiles row (seeded historically + auto-written by the
+// registration flow), so the DB is now authoritative for "who exists".
+async function loadFamiliesFromProfiles(sql) {
+  var rows = await sql`
+    SELECT family_email, family_name, parents
+    FROM member_profiles
+    ORDER BY LOWER(family_name)
+  `;
+  return rows.map(function (r) {
+    var parents = Array.isArray(r.parents) ? r.parents : [];
+    var firstNames = parents.map(function (p) {
+      var fn = String((p && p.first_name) || '').trim();
+      if (fn) return fn;
+      var nm = String((p && p.name) || '').trim();
+      return nm.split(/\s+/)[0] || '';
+    }).filter(Boolean);
+    return {
+      name: String(r.family_name || '').trim(),
+      parents: firstNames.join(' & '),
+      email: String(r.family_email || '').toLowerCase()
+    };
+  });
+}
+
 async function participationFetchSheetData(sheetsClient) {
-  var directorySheetId = process.env.DIRECTORY_SHEET_ID;
   var masterSheetId = process.env.MASTER_SHEET_ID;
 
-  // Fetch both sheets in parallel — on Vercel Hobby we're on a 10s budget
-  // and the DB rollup still has to run after this.
-  var directoryTabs = {}, masterTabs = {};
-  var results = await Promise.all([
-    fetchSheet(sheetsClient, directorySheetId).catch(function (e) { console.error('Directory fetch failed:', e.message); return {}; }),
-    fetchSheet(sheetsClient, masterSheetId).catch(function (e) { console.error('Master fetch failed:', e.message); return {}; })
-  ]);
-  directoryTabs = results[0] || {};
-  masterTabs = results[1] || {};
-
-  var dirTab = directoryTabs['Directory'] || null;
-  var classTab = directoryTabs['Classlist'] || null;
-  var allergyTab = directoryTabs['Allergies'] || null;
-  var dirParsed = parseDirectory(dirTab, classTab, allergyTab);
-  var families = dirParsed.families || [];
-
-  try { await applyMemberProfileOverlay(families); } catch (e) { /* sheet-only fine */ }
-
-  // Default loginEmails = [primary] for every family, so the client can use
-  // a single uniform shape (loginEmails.includes(...)) regardless of whether
-  // the family had a member_profiles row when the overlay ran.
-  families.forEach(function (fam) {
-    if (!Array.isArray(fam.loginEmails)) {
-      var primary = String(fam.email || '').toLowerCase();
-      fam.loginEmails = primary ? [primary] : [];
-    }
+  // Phase 5: families come from member_profiles (DB), not the Directory
+  // sheet. Saves a sheet fetch on the 10s Hobby budget and removes the
+  // Directory parse from the participation hot path. The Master sheet
+  // still owns AM/PM/cleaning/events/volunteer assignments — that data
+  // hasn't migrated yet.
+  var sql = getDb();
+  var familiesPromise = loadFamiliesFromProfiles(sql).catch(function (e) {
+    console.error('Profiles fetch failed:', e.message); return [];
   });
+  var masterPromise = fetchSheet(sheetsClient, masterSheetId).catch(function (e) {
+    console.error('Master fetch failed:', e.message); return {};
+  });
+  var resultsP = await Promise.all([familiesPromise, masterPromise]);
+  var families = resultsP[0];
+  var masterTabs = resultsP[1] || {};
 
   var amTab = null;
   for (var k1 in masterTabs) if (k1.match(/AM.*Volunteer/i)) { amTab = masterTabs[k1]; break; }

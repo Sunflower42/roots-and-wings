@@ -248,20 +248,32 @@ async function handleRegistration(body, req, res) {
     `;
     const id = inserted[0].id;
 
-    // Propagate the Main LC's photo consent into member_profiles so the portal
-    // + public rendering honors it without the family having to visit Edit My
-    // Info. Non-fatal: if we can't derive a family email, the DB upsert is
-    // skipped and the choice still lives on the registrations row.
+    // Push the registration's family snapshot into member_profiles so the
+    // family's Edit My Info page shows what they just submitted (kid
+    // birthdates, allergies, schedule, MLC photo consent, etc.) without
+    // them having to re-enter it. Merge-not-clobber: existing profile
+    // fields (pronouns, photo URLs, EMI-edited values) are preserved
+    // when registration doesn't supply them. Non-fatal — registration
+    // still succeeds if this fails.
     try {
       const famName = deriveFamilyName(main_learning_coach, existing_family_name);
       const famEmail = deriveFamilyEmail(main_learning_coach, famName);
       if (famEmail) {
-        await upsertParentPhotoConsent(
-          sql, famEmail, famName, main_learning_coach, waiver_photo_consent === 'yes'
-        );
+        await upsertProfileFromRegistration(sql, {
+          familyEmail: famEmail,
+          familyName: famName,
+          mlcName: main_learning_coach,
+          mlcEmail: email,
+          mlcPhotoConsent: waiver_photo_consent === 'yes',
+          backupCoaches: backup_coaches,
+          kids: kids,
+          phone: phone,
+          address: address,
+          placementNotes: placement_notes
+        });
       }
-    } catch (consentErr) {
-      console.error('Main LC photo consent propagation error (non-fatal):', consentErr);
+    } catch (profileErr) {
+      console.error('Registration → member_profiles upsert error (non-fatal):', profileErr);
     }
 
     // Create a unique signing token per backup Learning Coach and email each one.
@@ -1388,6 +1400,170 @@ async function upsertParentPhotoConsent(sql, familyEmail, familyName, parentFull
       family_name = COALESCE(NULLIF(member_profiles.family_name, ''), EXCLUDED.family_name),
       updated_at = NOW(),
       updated_by = 'waiver-sign'
+  `;
+}
+
+// Comprehensive member_profiles upsert from a registration submission.
+// Replaces the narrow upsertParentPhotoConsent path so kid data captured
+// at registration (birth_date, schedule, last_name, allergies) shows up
+// in Edit My Info instead of being discarded after the registrations
+// row is saved.
+//
+// Merge semantics — registration is authoritative for what it provides;
+// existing Edit My Info edits are preserved for fields registration
+// doesn't touch:
+//   - phone / address / placement_notes: write only if registration
+//     supplied a non-empty value (preserves later EMI edits when a
+//     family re-registers without updating those).
+//   - parents: matched by lowercased first_name. Reg-provided fields
+//     (role, photo_consent, last_name) overwrite; pronouns / photo_url /
+//     personal_email / phone fall back to whatever's already there.
+//     Existing parents not in this registration are kept as-is.
+//   - kids: matched by lowercased name. Reg-provided fields (last_name,
+//     birth_date, schedule, allergies, photo_consent) overwrite;
+//     pronouns / photo_url fall back to existing. Existing kids not in
+//     this registration are kept as-is.
+async function upsertProfileFromRegistration(sql, params) {
+  const familyEmail = String(params.familyEmail || '').toLowerCase();
+  const familyName = String(params.familyName || '').trim();
+  const mlcName = String(params.mlcName || '').trim();
+  if (!familyEmail || !mlcName) return;
+
+  function nameToParts(fullName) {
+    const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return null;
+    if (parts.length === 1) return { first: parts[0], last: '' };
+    return { first: parts[0], last: parts.slice(1).join(' ') };
+  }
+
+  // Build the parent entries the registration knows about. The MLC name
+  // string can hold multiple first names ("Erin & Joey Lee") — split them
+  // into separate parent rows so a co-parent who isn't a backup coach
+  // still surfaces on the family card.
+  const newParents = [];
+  const mlcChunks = mlcName.split(/\s*[&\/,]\s*/).map(s => s.trim()).filter(Boolean);
+  // The last chunk carries the surname; earlier chunks are first-only.
+  const lastChunk = mlcChunks[mlcChunks.length - 1] || '';
+  const sharedSurname = nameToParts(lastChunk);
+  const sharedLast = (sharedSurname && sharedSurname.last) || familyName || '';
+  mlcChunks.forEach((chunk, idx) => {
+    const isLastChunk = idx === mlcChunks.length - 1;
+    const parts = isLastChunk ? sharedSurname : { first: chunk, last: sharedLast };
+    if (!parts || !parts.first) return;
+    newParents.push({
+      name: parts.first + (parts.last ? ' ' + parts.last : ''),
+      first_name: parts.first,
+      last_name: parts.last || sharedLast,
+      pronouns: '',
+      photo_url: '',
+      photo_consent: !!params.mlcPhotoConsent,
+      role: idx === 0 ? 'mlc' : 'parent',
+      email: '',
+      personal_email: idx === 0 ? String(params.mlcEmail || '').toLowerCase() : '',
+      phone: ''
+    });
+  });
+  (Array.isArray(params.backupCoaches) ? params.backupCoaches : []).forEach(bc => {
+    if (!bc || !bc.name) return;
+    const parts = nameToParts(bc.name);
+    if (!parts) return;
+    newParents.push({
+      name: bc.name,
+      first_name: parts.first,
+      last_name: parts.last,
+      pronouns: '',
+      photo_url: '',
+      photo_consent: true, // flips when the BLC signs the waiver
+      role: 'blc',
+      email: '',
+      personal_email: String(bc.email || '').trim().toLowerCase(),
+      phone: ''
+    });
+  });
+
+  const newKids = (Array.isArray(params.kids) ? params.kids : [])
+    .map(sanitizeKid)
+    .filter(Boolean);
+
+  const existingRows = await sql`
+    SELECT parents, kids FROM member_profiles WHERE family_email = ${familyEmail} LIMIT 1
+  `;
+  const exParents = (existingRows[0] && Array.isArray(existingRows[0].parents)) ? existingRows[0].parents : [];
+  const exKids = (existingRows[0] && Array.isArray(existingRows[0].kids)) ? existingRows[0].kids : [];
+
+  function firstKey(p) {
+    const fn = String((p && p.first_name) || '').trim();
+    if (fn) return fn.toLowerCase();
+    const nm = String((p && p.name) || '').trim();
+    return (nm.split(/\s+/)[0] || '').toLowerCase();
+  }
+
+  // Merge parents.
+  const mergedParents = [];
+  const seenFirsts = new Set();
+  newParents.forEach(np => {
+    const key = firstKey(np);
+    if (!key) return;
+    seenFirsts.add(key);
+    const ex = exParents.find(p => firstKey(p) === key) || {};
+    mergedParents.push({
+      name: np.name || ex.name || '',
+      first_name: np.first_name || ex.first_name || '',
+      last_name: np.last_name || ex.last_name || '',
+      pronouns: ex.pronouns || np.pronouns || '',
+      photo_url: ex.photo_url || np.photo_url || '',
+      photo_consent: typeof np.photo_consent === 'boolean' ? np.photo_consent : (ex.photo_consent !== false),
+      role: np.role || ex.role || '',
+      email: ex.email || np.email || '',
+      personal_email: np.personal_email || ex.personal_email || '',
+      phone: ex.phone || np.phone || ''
+    });
+  });
+  exParents.forEach(p => { if (!seenFirsts.has(firstKey(p))) mergedParents.push(p); });
+
+  // Merge kids by lowercased name.
+  const mergedKids = [];
+  const seenKids = new Set();
+  newKids.forEach(nk => {
+    const key = String(nk.name || '').toLowerCase();
+    if (!key) return;
+    seenKids.add(key);
+    const ex = exKids.find(k => String(k.name || '').toLowerCase() === key) || {};
+    mergedKids.push({
+      name: nk.name,
+      last_name: nk.last_name || ex.last_name || '',
+      birth_date: nk.birth_date || ex.birth_date || '',
+      pronouns: nk.pronouns || ex.pronouns || '',
+      allergies: nk.allergies || ex.allergies || '',
+      schedule: nk.schedule || ex.schedule || '',
+      photo_url: ex.photo_url || nk.photo_url || '',
+      photo_consent: typeof nk.photo_consent === 'boolean' ? nk.photo_consent : (ex.photo_consent !== false)
+    });
+  });
+  exKids.forEach(k => { if (!seenKids.has(String(k.name || '').toLowerCase())) mergedKids.push(k); });
+
+  const phone = String(params.phone || '').trim();
+  const address = String(params.address || '').trim();
+  const placementNotes = String(params.placementNotes || '').trim();
+
+  await sql`
+    INSERT INTO member_profiles (
+      family_email, family_name, phone, address, parents, kids,
+      placement_notes, updated_by
+    ) VALUES (
+      ${familyEmail}, ${familyName}, ${phone}, ${address},
+      ${JSON.stringify(mergedParents)}::jsonb, ${JSON.stringify(mergedKids)}::jsonb,
+      ${placementNotes}, 'registration'
+    )
+    ON CONFLICT (family_email) DO UPDATE SET
+      family_name      = COALESCE(NULLIF(EXCLUDED.family_name, ''), member_profiles.family_name),
+      phone            = COALESCE(NULLIF(EXCLUDED.phone, ''), member_profiles.phone),
+      address          = COALESCE(NULLIF(EXCLUDED.address, ''), member_profiles.address),
+      parents          = EXCLUDED.parents,
+      kids             = EXCLUDED.kids,
+      placement_notes  = COALESCE(NULLIF(EXCLUDED.placement_notes, ''), member_profiles.placement_notes),
+      updated_at       = NOW(),
+      updated_by       = 'registration'
   `;
 }
 
