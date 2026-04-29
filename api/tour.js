@@ -503,6 +503,76 @@ async function handleList(req, res) {
   }
 }
 
+// ── Daily cron: reconcile pending registrations against the billing sheet ──
+// Vercel Cron hits /api/tour?cron=reconcile-payments once per day (see
+// vercel.json). Same auto-reconcile pass that runs when the Membership
+// Report is opened, but on a schedule so the family + treasurer/membership
+// /comms get the payment-received email even when no one's actively
+// browsing the report. Early-returns cheaply when there are no pending
+// registrations to check, so it's safe to keep running year-round.
+//
+// Auth: Vercel cron requests include a `User-Agent: vercel-cron/1.0`
+// header; we accept those plus an optional CRON_SECRET bearer token for
+// manual invocations / testing.
+async function handleReconcileCron(req, res) {
+  const ua = String(req.headers['user-agent'] || '');
+  const isVercelCron = ua.indexOf('vercel-cron') !== -1;
+  const cronSecret = process.env.CRON_SECRET || '';
+  const authHeader = String(req.headers['authorization'] || '');
+  const hasSecret = cronSecret && authHeader === `Bearer ${cronSecret}`;
+  if (!isVercelCron && !hasSecret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const season = String(req.query.season || DEFAULT_SEASON);
+  const sql = getSql();
+  try {
+    const pending = await sql`
+      SELECT id, season, email, existing_family_name, main_learning_coach,
+             payment_amount, payment_status
+      FROM registrations
+      WHERE season = ${season}
+        AND LOWER(payment_status) <> 'paid'
+    `;
+    if (pending.length === 0) {
+      return res.status(200).json({ ok: true, season, pending: 0, reconciled: 0 });
+    }
+
+    if (!process.env.BILLING_SHEET_ID) {
+      return res.status(500).json({ error: 'BILLING_SHEET_ID not configured' });
+    }
+
+    const sheetsClient = google.sheets({ version: 'v4', auth: getAuth() });
+    const billingTabs = await fetchSheet(sheetsClient, process.env.BILLING_SHEET_ID);
+    const parsed = parseBillingSheet(billingTabs, season);
+
+    const reconciled = [];
+    for (const reg of pending) {
+      const famName = deriveFamilyName(reg.main_learning_coach, reg.existing_family_name);
+      if (!famName) continue;
+      const entry = parsed.families[famName.toLowerCase()];
+      if (!entry || !entry.fall || entry.fall.deposit !== 'Paid') continue;
+      try {
+        await applyMarkPaid(sql, reg, '');
+        reconciled.push({ id: reg.id, family: famName });
+      } catch (innerErr) {
+        console.error(`Cron reconcile failed for reg ${reg.id} (${famName}):`, innerErr);
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      season,
+      pending: pending.length,
+      reconciled: reconciled.length,
+      families: reconciled
+    });
+  } catch (err) {
+    console.error('Reconcile cron error:', err);
+    return res.status(500).json({ error: 'Reconcile cron failed' });
+  }
+}
+
 // ── Public config (no secrets — just the public Maps key) ──
 function handleConfig(res) {
   return res.status(200).json({
@@ -1520,6 +1590,7 @@ module.exports = async function handler(req, res) {
     if (req.query.backup_waiver_token) return handleBackupWaiverInfo(req, res);
     if (req.query.waivers_report === '1') return handleWaiversReport(req, res);
     if (req.query.action === 'profile') return handleProfileGet(req, res);
+    if (req.query.cron === 'reconcile-payments') return handleReconcileCron(req, res);
     return res.status(400).json({ error: 'Unknown GET action.' });
   }
 
