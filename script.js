@@ -3098,7 +3098,24 @@
     if (!fam || !billingStatus || !billingStatus.families) {
       return { deposit: 'Due', classFee: 'Due' };
     }
-    var entry = billingStatus.families[String(fam.name || '').toLowerCase()];
+    // Prefer email match — names drift (compound surnames, hyphens). Email
+    // is the canonical family identity from member_profiles. Falls back to
+    // name lookup so sheet rows that haven't been linked to a profile yet
+    // still light up.
+    var entry = null;
+    var emailKey = String(fam.email || '').toLowerCase();
+    if (emailKey) {
+      var fams = billingStatus.families;
+      for (var k in fams) {
+        if (fams[k] && String(fams[k].email || '').toLowerCase() === emailKey) {
+          entry = fams[k];
+          break;
+        }
+      }
+    }
+    if (!entry) {
+      entry = billingStatus.families[String(fam.name || '').toLowerCase()];
+    }
     if (!entry || !entry[semKey]) return { deposit: 'Due', classFee: 'Due' };
     var sem = entry[semKey];
     return {
@@ -4033,7 +4050,7 @@
 
     // Record a Pending payment to /api/sheets?action=billing so the UI can
     // show "Pending" until the Treasurer marks the row Paid in the sheet.
-    function recordPendingPayment(familyName, semKey, paymentType, paypalId, amount, payerEmail) {
+    function recordPendingPayment(familyName, familyEmail, semKey, paymentType, paypalId, amount, payerEmail) {
       var googleCred = localStorage.getItem('rw_google_credential');
       if (!googleCred) return Promise.resolve();
       return fetch('/api/sheets?action=billing', {
@@ -4044,6 +4061,7 @@
         },
         body: JSON.stringify({
           family_name: familyName,
+          family_email: familyEmail || '',
           semester_key: semKey,
           payment_type: paymentType,
           school_year: ACTIVE_YEAR.label,
@@ -4080,7 +4098,7 @@
               var wrap = btn.closest('.mf-billing-pay-wrap');
               wrap.innerHTML = '<div class="mf-billing-success">Payment complete! Transaction ID: ' + details.id + '</div>';
               // Record Pending in our DB so the UI flips to "Pending" on next load.
-              recordPendingPayment(fam.name, semKey, paymentType, details.id, amount, email)
+              recordPendingPayment(fam.name, fam.email, semKey, paymentType, details.id, amount, email)
                 .then(function () { loadBillingStatus(function () { renderMyFamily(); }); });
             });
           },

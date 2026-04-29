@@ -449,6 +449,15 @@ CREATE INDEX IF NOT EXISTS payments_family_sem_type_idx
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS school_year TEXT NOT NULL DEFAULT '2025-2026';
 CREATE INDEX IF NOT EXISTS payments_school_year_idx ON payments (school_year);
 
+-- Canonical family identity. Pre-Phase-4 we joined the My Family billing
+-- card to the sheet/DB by family_name (last word of MLC), which silently
+-- broke for compound surnames and existing_family_name mismatches. Going
+-- forward all writes set family_email (member_profiles PK); the GET
+-- overlay matches by email-then-name. Backfilled by
+-- scripts/backfill-payments-family-email.js.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS family_email TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS payments_family_email_idx ON payments (LOWER(family_email));
+
 -- ──────────────────────────────────────────────
 -- Participation tracking: VP + Afternoon Class Liaison report
 -- Weights are admin-editable so the scoring can be tuned without a

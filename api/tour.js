@@ -314,14 +314,15 @@ async function handleRegistration(body, req, res) {
     // if this fails.
     try {
       const famNameForBilling = deriveFamilyName(main_learning_coach, existing_family_name);
+      const famEmailForBilling = deriveFamilyEmail(main_learning_coach, famNameForBilling) || '';
       if (famNameForBilling) {
         const paymentStatus = isCashCheck ? 'Pending' : 'Paid';
         await sql`
           INSERT INTO payments (
-            family_name, semester_key, payment_type, school_year,
+            family_name, family_email, semester_key, payment_type, school_year,
             paypal_transaction_id, amount_cents, payer_email, status
           ) VALUES (
-            ${famNameForBilling}, 'fall', 'deposit', ${season},
+            ${famNameForBilling}, ${famEmailForBilling}, 'fall', 'deposit', ${season},
             ${paypal_transaction_id || ''}, ${Math.round((parseFloat(payment_amount) || 0) * 100)},
             ${email}, ${paymentStatus}
           )
@@ -790,18 +791,23 @@ async function handleRegistrationMarkPaid(body, req, res) {
     `;
 
     // Flip the matching payments row to Paid so the My Family billing
-    // card surfaces it. Match by family name + school year + 'fall'
-    // 'deposit' (the auto-write inserted exactly one such row).
+    // card surfaces it. Match by family_email when available (canonical),
+    // falling back to family_name for pre-Phase-4 rows that haven't been
+    // backfilled yet.
     try {
       const famName = deriveFamilyName(reg.main_learning_coach, reg.existing_family_name);
-      if (famName) {
+      const famEmail = deriveFamilyEmail(reg.main_learning_coach, famName) || '';
+      if (famName || famEmail) {
         await sql`
           UPDATE payments
           SET status = 'Paid'
-          WHERE LOWER(family_name) = LOWER(${famName})
-            AND school_year = ${reg.season}
+          WHERE school_year = ${reg.season}
             AND semester_key = 'fall'
             AND payment_type = 'deposit'
+            AND (
+              (${famEmail} <> '' AND LOWER(family_email) = LOWER(${famEmail}))
+              OR (${famName} <> '' AND LOWER(family_name) = LOWER(${famName}))
+            )
         `;
       }
     } catch (pErr) {

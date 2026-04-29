@@ -956,27 +956,70 @@ async function handleBillingGet(req, res, sheets) {
   var parsed = parseBillingSheet(billingTabs);
   var schoolYear = String(req.query.school_year || activeSchoolYearLabel());
 
-  // Overlay DB payment records on top of the sheet. Sheet still wins for
-  // anything it explicitly marks Paid; DB Paid records (mostly from the
-  // registration auto-write) light up cells the sheet hasn't touched yet,
-  // and DB Pending records show "Pending" until the Treasurer confirms.
-  // Scoped to the requested school_year so prior years' Paid markers
-  // don't bleed into the current view.
+  // Attach family_email to each sheet entry by joining against
+  // member_profiles (LOWER(family_name) match). The frontend prefers email
+  // over name when matching billingStatus to fam, so a compound surname
+  // ("O'Connor Gading") resolves cleanly even when the sheet still has the
+  // last-word form ("Gading").
   try {
     var sql = getDb();
+    var profiles = await sql`SELECT family_email, family_name FROM member_profiles`;
+    var nameToEmail = {};
+    profiles.forEach(function (p) {
+      var nm = String(p.family_name || '').toLowerCase();
+      if (nm) nameToEmail[nm] = String(p.family_email || '');
+    });
+    Object.keys(parsed.families).forEach(function (k) {
+      var hit = nameToEmail[k];
+      if (hit) parsed.families[k].email = hit;
+    });
+
+    // Overlay DB payment records on top of the sheet. Sheet still wins for
+    // anything it explicitly marks Paid; DB Paid records (mostly from the
+    // registration auto-write) light up cells the sheet hasn't touched yet,
+    // and DB Pending records show "Pending" until the Treasurer confirms.
+    // Scoped to the requested school_year so prior years' Paid markers
+    // don't bleed into the current view.
     var dbRows = await sql`
-      SELECT family_name, semester_key, payment_type, status
+      SELECT family_name, family_email, semester_key, payment_type, status
       FROM payments
       WHERE school_year = ${schoolYear}
         AND status IN ('Pending', 'Paid')
     `;
     dbRows.forEach(function (p) {
-      var key = String(p.family_name || '').toLowerCase();
-      var fam = parsed.families[key];
-      if (!fam) {
-        fam = { name: p.family_name, fall: { deposit: '', classFee: '' }, spring: { deposit: '', classFee: '' } };
-        parsed.families[key] = fam;
+      var emailKey = String(p.family_email || '').toLowerCase();
+      var nameKey = String(p.family_name || '').toLowerCase();
+
+      // Find the entry by email match first (canonical), then by name.
+      var fam = null;
+      if (emailKey) {
+        for (var k in parsed.families) {
+          if (String(parsed.families[k].email || '').toLowerCase() === emailKey) {
+            fam = parsed.families[k];
+            break;
+          }
+        }
       }
+      if (!fam && nameKey) {
+        fam = parsed.families[nameKey] || null;
+      }
+      if (!fam) {
+        // No sheet row for this family yet — create one keyed by email
+        // when available so subsequent DB rows for the same family
+        // collapse onto it.
+        var newKey = emailKey || nameKey;
+        if (!newKey) return;
+        fam = {
+          name: p.family_name || '',
+          email: emailKey,
+          fall: { deposit: '', classFee: '' },
+          spring: { deposit: '', classFee: '' }
+        };
+        parsed.families[newKey] = fam;
+      } else if (emailKey && !fam.email) {
+        fam.email = emailKey;
+      }
+
       var sem = fam[p.semester_key];
       if (!sem) return;
       var field = p.payment_type === 'deposit' ? 'deposit' : 'classFee';
@@ -997,6 +1040,7 @@ async function handleBillingGet(req, res, sheets) {
 async function handleBillingPost(req, res) {
   var body = req.body || {};
   var familyName = String(body.family_name || '').trim();
+  var familyEmail = String(body.family_email || '').trim().toLowerCase();
   var semesterKey = String(body.semester_key || '').trim();
   var paymentType = String(body.payment_type || '').trim();
   var schoolYear = String(body.school_year || activeSchoolYearLabel()).trim();
@@ -1004,7 +1048,9 @@ async function handleBillingPost(req, res) {
   var amountCents = parseInt(body.amount_cents, 10) || 0;
   var payerEmail = String(body.payer_email || '').trim();
 
-  if (!familyName) return res.status(400).json({ error: 'family_name required' });
+  if (!familyName && !familyEmail) {
+    return res.status(400).json({ error: 'family_name or family_email required' });
+  }
   if (semesterKey !== 'fall' && semesterKey !== 'spring') {
     return res.status(400).json({ error: "semester_key must be 'fall' or 'spring'" });
   }
@@ -1016,11 +1062,11 @@ async function handleBillingPost(req, res) {
     var sql = getDb();
     var rows = await sql`
       INSERT INTO payments (
-        family_name, semester_key, payment_type, school_year,
+        family_name, family_email, semester_key, payment_type, school_year,
         paypal_transaction_id, amount_cents, payer_email, status
       )
       VALUES (
-        ${familyName}, ${semesterKey}, ${paymentType}, ${schoolYear},
+        ${familyName}, ${familyEmail}, ${semesterKey}, ${paymentType}, ${schoolYear},
         ${paypalId}, ${amountCents}, ${payerEmail}, 'Pending'
       )
       RETURNING id, created_at
