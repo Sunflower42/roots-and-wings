@@ -5486,6 +5486,58 @@
         h += '</ul>';
         return h;
       }
+    },
+    'source-sheets': {
+      title: 'Source Google Sheets',
+      // Visible to anyone on the board so they can jump straight to the
+      // sheet they need. Not gated to super users only because the same
+      // sheets are already shared with these roles in Drive — this widget
+      // is just a faster index than hunting through their Drive UI.
+      roleGate: ['President', 'Vice President', 'Communications Director', 'Membership Director', 'Treasurer'],
+      render: function () {
+        var h = '<p class="ws-body-hint">Read-only references the app pulls data from. Click to open in Google Sheets.</p>';
+        h += '<ul class="ws-link-list" id="ws-source-sheets-list"><li class="ws-empty">Loading…</li></ul>';
+        return h;
+      },
+      afterRender: function () {
+        var listEl = document.getElementById('ws-source-sheets-list');
+        if (!listEl) return;
+        var googleCred = localStorage.getItem('rw_google_credential');
+        if (!googleCred) {
+          listEl.innerHTML = '<li class="ws-empty">Sign in to load.</li>';
+          return;
+        }
+        fetch('/api/sheets?action=sheet-index', {
+          headers: { 'Authorization': 'Bearer ' + googleCred }
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var rows = (data && data.sheets) || [];
+            if (rows.length === 0) {
+              listEl.innerHTML = '<li class="ws-empty">No sheets configured.</li>';
+              return;
+            }
+            var html = '';
+            rows.forEach(function (s) {
+              if (!s.url) {
+                html += '<li class="ws-source-sheet-item"><a><span class="ws-link-icon">⚠️</span><strong>' + escapeHtml(s.label) + '</strong></a><div class="ws-source-sheet-purpose">' + escapeHtml(s.envVar) + ' env var not set</div></li>';
+                return;
+              }
+              html += '<li class="ws-source-sheet-item"><a href="' + escapeHtml(s.url) + '" target="_blank" rel="noopener">';
+              html += '<span class="ws-link-icon">📊</span>';
+              html += '<strong>' + escapeHtml(s.label) + '</strong>';
+              html += '</a>';
+              if (s.purpose) {
+                html += '<div class="ws-source-sheet-purpose">' + escapeHtml(s.purpose) + '</div>';
+              }
+              html += '</li>';
+            });
+            listEl.innerHTML = html;
+          })
+          .catch(function () {
+            listEl.innerHTML = '<li class="ws-empty">Could not load sheet index.</li>';
+          });
+      }
     }
   };
 
@@ -5516,11 +5568,11 @@
   };
 
   var WORKSPACE_DEFAULTS = {
-    'President': ['roles', 'my-links', 'ways-to-help', 'resources'],
-    'Communications Director': ['todos', 'reports', 'forms', 'admin-consoles', 'my-links', 'ways-to-help', 'resources'],
-    'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
-    'Treasurer': ['todos', 'reports', 'my-links', 'ways-to-help', 'resources'],
-    'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
+    'President': ['roles', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
+    'Communications Director': ['todos', 'reports', 'forms', 'admin-consoles', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
+    'Membership Director': ['reports', 'forms', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
+    'Treasurer': ['todos', 'reports', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
+    'Vice President': ['reports', 'forms', 'pm-scheduling', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
     'Afternoon Class Liaison': ['reports', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     '*': ['my-links', 'ways-to-help', 'resources']
   };

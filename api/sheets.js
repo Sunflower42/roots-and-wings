@@ -1943,8 +1943,56 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // ── Billing sub-routes ──
   var action = (req.query && req.query.action) || '';
+
+  // ── Source-sheets index ──
+  // Returns the canonical list of Google Sheets the app reads from, with
+  // shareable URLs. Powers the Workspace "Source Sheets" widget so board
+  // members can jump straight to whichever sheet they need without
+  // hunting through Drive. Sheet IDs are pulled from env vars so this
+  // stays accurate even if a sheet is swapped out.
+  if (action === 'sheet-index' && req.method === 'GET') {
+    function urlFor(id) {
+      return id ? ('https://docs.google.com/spreadsheets/d/' + id + '/edit') : '';
+    }
+    var entries = [
+      {
+        key: 'directory',
+        label: 'Directory',
+        purpose: 'Family directory + Classlist (kid → AM group) + Allergies. Being phased out — most fields now live in member_profiles.',
+        envVar: 'DIRECTORY_SHEET_ID',
+        id: process.env.DIRECTORY_SHEET_ID || '',
+        url: urlFor(process.env.DIRECTORY_SHEET_ID)
+      },
+      {
+        key: 'master',
+        label: 'Master Coordination',
+        purpose: 'AM/PM class assignments, cleaning crew, year-long volunteer roles, special events.',
+        envVar: 'MASTER_SHEET_ID',
+        id: process.env.MASTER_SHEET_ID || '',
+        url: urlFor(process.env.MASTER_SHEET_ID)
+      },
+      {
+        key: 'billing',
+        label: 'Billing — Family Payment Tracking',
+        purpose: 'Treasurer marks Paid here; site reads it for the My Family billing card. Also holds AM/PM semester rates.',
+        envVar: 'BILLING_SHEET_ID',
+        id: process.env.BILLING_SHEET_ID || '',
+        url: urlFor(process.env.BILLING_SHEET_ID)
+      },
+      {
+        key: 'membership',
+        label: 'Membership Report (CSV append)',
+        purpose: 'Flat append-log of every registration submission for the Membership Director’s view.',
+        envVar: 'MEMBERSHIP_SHEET_ID',
+        id: process.env.MEMBERSHIP_SHEET_ID || '',
+        url: urlFor(process.env.MEMBERSHIP_SHEET_ID)
+      }
+    ];
+    return res.status(200).json({ sheets: entries });
+  }
+
+  // ── Billing sub-routes ──
   if (action === 'billing') {
     try {
       var billingAuth = getAuth();

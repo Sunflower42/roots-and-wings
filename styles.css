@@ -8913,6 +8913,19 @@ button.staff-role:hover {
   align-items: center;
   gap: 8px;
 }
+/* Source-sheets widget items have a label + purpose blurb stacked
+   vertically; override the default centered single-line flex. */
+.ws-link-list li.ws-source-sheet-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.ws-source-sheet-purpose {
+  font-size: 0.85em;
+  color: var(--color-text-light);
+  padding-left: 26px;
+  line-height: 1.35;
+}
 /* Explicit override so the `hidden` attribute actually hides the row —
    .ws-link-list li's display:flex above wins against [hidden]'s
    display:none otherwise (CSS specificity gotcha). */
