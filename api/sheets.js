@@ -1504,6 +1504,14 @@ async function loadFamiliesFromProfiles(sql) {
     var firstNames = [];
     var parentInfo = [];
     parents.forEach(function (p) {
+      // Backup Learning Coaches (BLCs) aren't expected to hit the
+      // same participation baseline — they only step in for the MLC's
+      // absences. Excluding them from the families list means they
+      // don't get a participation row, their first name doesn't get
+      // indexed, and any master-sheet entry under their name credits
+      // no one (rather than misattributing). Mirror this filter when
+      // reading parent roles in any new participation logic.
+      if (p && String(p.role || '').toLowerCase() === 'blc') return;
       var fn = String((p && p.first_name) || '').trim();
       if (!fn) {
         var nm = String((p && p.name) || '').trim();
@@ -1963,6 +1971,15 @@ async function handleParticipationAction(req, res, action, userEmail, authGivenN
           }
         }
       }
+    }
+    // If neither match hit AND the user signed in with a co-parent
+    // address (not the canonical family_email), they're a Backup
+    // Learning Coach or other non-tracked co-parent — BLCs are
+    // intentionally excluded from the participation report. Return
+    // null so the panel renders "you're not tracked" rather than
+    // falsely surfacing the MLC's row to them.
+    if (!mine && !canViewAny && targetEmail !== canonicalFamilyEmail) {
+      return res.status(200).json({ season: report.season, member: null });
     }
     if (!mine) mine = familyMembers[0];
     mine.tier = participationTier(mine.status);
