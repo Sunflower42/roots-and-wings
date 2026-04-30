@@ -1327,7 +1327,16 @@ function sanitizeParent(p) {
     role,
     email,
     personal_email,
-    phone
+    phone,
+    // Nicknames feed participation name resolution so the master sheet
+    // can write "Becca" / "Jess" and still credit the right parent.
+    // Stored lowercase, trimmed, deduped, capped at 8 entries × 40 chars
+    // each so the JSONB stays tidy.
+    nicknames: Array.from(new Set(
+      (Array.isArray(p.nicknames) ? p.nicknames : [])
+        .map(n => String(n || '').trim().toLowerCase().slice(0, 40))
+        .filter(Boolean)
+    )).slice(0, 8)
   };
 }
 
@@ -1532,7 +1541,10 @@ async function upsertProfileFromRegistration(sql, params) {
       role: np.role || ex.role || '',
       email: ex.email || np.email || '',
       personal_email: np.personal_email || ex.personal_email || '',
-      phone: ex.phone || np.phone || ''
+      phone: ex.phone || np.phone || '',
+      // Registration form doesn't collect nicknames, so registration
+      // never overwrites existing ones — they come from Edit My Info.
+      nicknames: Array.isArray(ex.nicknames) ? ex.nicknames : []
     });
   });
   exParents.forEach(p => { if (!seenFirsts.has(firstKey(p))) mergedParents.push(p); });

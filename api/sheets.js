@@ -1197,7 +1197,8 @@ async function applyMemberProfileOverlay(families) {
         role: hit.role || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent')),
         email: hit.email || '',
         personalEmail: hit.personal_email || '',
-        phone: hit.phone || ''
+        phone: hit.phone || '',
+        nicknames: Array.isArray(hit.nicknames) ? hit.nicknames : []
       };
     });
     // Any DB-only parents (name not yet in the sheet) appended so edits are
@@ -1222,7 +1223,8 @@ async function applyMemberProfileOverlay(families) {
           role: pp.role || (nextIdx === 0 ? 'mlc' : (nextIdx === 1 ? 'blc' : 'parent')),
           email: pp.email || '',
           personalEmail: pp.personal_email || '',
-          phone: pp.phone || ''
+          phone: pp.phone || '',
+          nicknames: Array.isArray(pp.nicknames) ? pp.nicknames : []
         });
         if (pp.pronouns) {
           fam.parentPronouns = fam.parentPronouns || {};
@@ -1499,16 +1501,31 @@ async function loadFamiliesFromProfiles(sql) {
   `;
   return rows.map(function (r) {
     var parents = Array.isArray(r.parents) ? r.parents : [];
-    var firstNames = parents.map(function (p) {
+    var firstNames = [];
+    var parentInfo = [];
+    parents.forEach(function (p) {
       var fn = String((p && p.first_name) || '').trim();
-      if (fn) return fn;
-      var nm = String((p && p.name) || '').trim();
-      return nm.split(/\s+/)[0] || '';
-    }).filter(Boolean);
+      if (!fn) {
+        var nm = String((p && p.name) || '').trim();
+        fn = nm.split(/\s+/)[0] || '';
+      }
+      if (!fn) return;
+      firstNames.push(fn);
+      parentInfo.push({
+        name: String((p && p.name) || '').trim(),
+        firstName: fn,
+        lastName: String((p && p.last_name) || '').trim(),
+        nicknames: Array.isArray(p && p.nicknames) ? p.nicknames : []
+      });
+    });
     return {
       name: String(r.family_name || '').trim(),
       parents: firstNames.join(' & '),
-      email: String(r.family_email || '').toLowerCase()
+      email: String(r.family_email || '').toLowerCase(),
+      // parentInfo carries per-parent metadata (notably nicknames) so
+      // participationBuildNameIndex can register sheet-side aliases like
+      // "Becca" → "Rebecca" for each individual.
+      parentInfo: parentInfo
     };
   });
 }

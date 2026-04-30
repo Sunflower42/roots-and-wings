@@ -5489,11 +5489,10 @@
     },
     'source-sheets': {
       title: 'Source Google Sheets',
-      // Visible to anyone on the board so they can jump straight to the
-      // sheet they need. Not gated to super users only because the same
-      // sheets are already shared with these roles in Drive — this widget
-      // is just a faster index than hunting through their Drive UI.
-      roleGate: ['President', 'Vice President', 'Communications Director', 'Membership Director', 'Treasurer'],
+      // Communications-only — these are admin/debug references for the
+      // person managing the app, not a general board affordance. Other
+      // board roles can still find sheets via Drive directly.
+      roleGate: ['Communications Director'],
       render: function () {
         var h = '<p class="ws-body-hint">Read-only references the app pulls data from. Click to open in Google Sheets.</p>';
         h += '<ul class="ws-link-list" id="ws-source-sheets-list"><li class="ws-empty">Loading…</li></ul>';
@@ -5568,11 +5567,11 @@
   };
 
   var WORKSPACE_DEFAULTS = {
-    'President': ['roles', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
+    'President': ['roles', 'my-links', 'ways-to-help', 'resources'],
     'Communications Director': ['todos', 'reports', 'forms', 'admin-consoles', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
-    'Membership Director': ['reports', 'forms', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
-    'Treasurer': ['todos', 'reports', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
-    'Vice President': ['reports', 'forms', 'pm-scheduling', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
+    'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
+    'Treasurer': ['todos', 'reports', 'my-links', 'ways-to-help', 'resources'],
+    'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     'Afternoon Class Liaison': ['reports', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     '*': ['my-links', 'ways-to-help', 'resources']
   };
@@ -14009,6 +14008,7 @@
           email: p.email || '',
           personal_email: p.personalEmail || '',
           phone: p.phone || '',
+          nicknames: Array.isArray(p.nicknames) ? p.nicknames.slice() : [],
           _queuedPhoto: null
         };
       });
@@ -14026,11 +14026,12 @@
           email: '',
           personal_email: '',
           phone: '',
+          nicknames: [],
           _queuedPhoto: null
         };
       });
     }
-    if (parentSeed.length === 0) parentSeed.push({ name: '', first_name: '', last_name: '', pronouns: '', photo_url: '', photo_consent: true, role: 'mlc', email: '', personal_email: '', phone: '', _queuedPhoto: null });
+    if (parentSeed.length === 0) parentSeed.push({ name: '', first_name: '', last_name: '', pronouns: '', photo_url: '', photo_consent: true, role: 'mlc', email: '', personal_email: '', phone: '', nicknames: [], _queuedPhoto: null });
 
     var state = {
       family_email: fam.email,
@@ -14116,6 +14117,12 @@
       // from their R&W Workspace login).
       h += '<input class="rd-input" type="email" placeholder="Personal email (gmail, etc.)" data-field="personal_email" value="' + escapeHtml(p.personal_email || '') + '">';
       h += '<input class="rd-input" type="tel" placeholder="Their phone number" data-field="phone" value="' + escapeHtml(p.phone) + '">';
+      // Nicknames feed the participation score's name resolution. Comma-
+      // separated; e.g. "Jess, Jessie" so the master sheet's "Jess Shewan"
+      // entry counts toward Jessica. Common forms (Becca↔Rebecca, Matt↔
+      // Matthew, etc.) are already built in — only add idiosyncratic ones.
+      var nicksDisplay = (Array.isArray(p.nicknames) ? p.nicknames : []).join(', ');
+      h += '<input class="rd-input" type="text" placeholder="Nicknames (comma-separated, e.g. Jess, Jessie)" data-field="nicknames" value="' + escapeHtml(nicksDisplay) + '">';
       var pOptOut = p.photo_consent === false;
       h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
            '<input type="checkbox" data-field="photo_consent_optout"' + (pOptOut ? ' checked' : '') + '>' +
@@ -14248,6 +14255,14 @@
           var field = el.getAttribute('data-field');
           if (field === 'photo_consent_optout') {
             state.parents[idx].photo_consent = !el.checked;
+          } else if (field === 'nicknames') {
+            // Comma-separated string → array of trimmed lowercase
+            // entries. Server re-sanitizes with the same shape so a
+            // malformed input here just means a blank list, not a 400.
+            state.parents[idx].nicknames = String(el.value || '')
+              .split(',')
+              .map(function (s) { return s.trim().toLowerCase(); })
+              .filter(Boolean);
           } else {
             state.parents[idx][field] = el.value;
           }
@@ -14454,7 +14469,7 @@
             var first = String(p.first_name || '').trim();
             var last = String(p.last_name || '').trim();
             var composed = [first, last].filter(Boolean).join(' ').trim();
-            return { name: composed || String(p.name || '').trim(), first_name: first, last_name: last, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '' };
+            return { name: composed || String(p.name || '').trim(), first_name: first, last_name: last, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '', nicknames: Array.isArray(p.nicknames) ? p.nicknames : [] };
           }),
           kids: state.kids.map(function (k) { return { name: k.name, last_name: k.last_name || '', birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
         };
