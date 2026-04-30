@@ -9415,6 +9415,24 @@ button.staff-role:hover {
 }
 .ws-wv-ok      { background: rgba(90, 107, 57, 0.14);   color: var(--color-leaf); }
 .ws-wv-pending { background: rgba(224, 181, 44, 0.18);  color: var(--color-accent-dark); }
+/* Neutral count-strip pill — used for informational tallies that
+   aren't a status signal (e.g. Membership Report's per-track kid
+   counts). Same shape/typography as .ws-wv-* so the strip reads as
+   one row, but plum-on-cream so it doesn't compete with the
+   green/amber Paid/Pending status pills next to it. */
+.ws-track-count {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: rgba(var(--color-primary-rgb), 0.10);
+  color: var(--color-primary-dark);
+}
 .ws-wv-stamp { color: var(--color-text-light); font-weight: 500; font-size: 0.86em; margin-left: 2px; }
 .ws-wv-context { color: var(--color-text-light); font-size: 0.78rem; font-style: italic; }
 .ws-waivers-table-wrap {

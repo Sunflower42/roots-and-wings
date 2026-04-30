@@ -6783,7 +6783,16 @@
       var total = regs.length;
       var paidCount = regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; }).length;
       var pendingCount = total - paidCount;
-      var signed = regs.filter(function (r) { return !!r.waiver_member_agreement && !!r.signature_name; }).length;
+      // Per-track kid counts. Track is family-level (one value per
+      // registration), so each kid inherits their family's bucket.
+      var kidsAm = 0, kidsPm = 0, kidsBoth = 0;
+      regs.forEach(function (r) {
+        var n = (r.kids || []).length;
+        var t = String(r.track || '');
+        if      (t === 'Morning Only')   kidsAm   += n;
+        else if (t === 'Afternoon Only') kidsPm   += n;
+        else if (t === 'Both')           kidsBoth += n;
+      });
 
       // Modal meta line \u2014 total registrations.
       var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
@@ -6794,7 +6803,9 @@
       var countsHtml = '<div class="rd-counts">';
       countsHtml += '<span class="ws-wv-ok">' + paidCount + ' Paid</span>';
       countsHtml += '<span class="ws-wv-pending">' + pendingCount + ' Pending</span>';
-      countsHtml += '<span class="ws-wv-ok">' + signed + ' Signed waiver</span>';
+      countsHtml += '<span class="ws-track-count">' + kidsAm   + ' Kids AM only</span>';
+      countsHtml += '<span class="ws-track-count">' + kidsPm   + ' Kids PM only</span>';
+      countsHtml += '<span class="ws-track-count">' + kidsBoth + ' Kids Both</span>';
       countsHtml += '</div>';
 
       if (regs.length === 0) {
