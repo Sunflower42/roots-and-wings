@@ -102,6 +102,14 @@ Phased so the auth path doesn't all change at once.
   2. Roles Manager: decide pattern first (tabular or kept as a tree-modal). If tabular: same shape as the others. If tree: at minimum adopt `renderReportModal`'s shell + chrome icons (export CSV of role holders by school year) without forcing the column convention.
 - **Priority:** low — the migrated three were the high-traffic ones. Waivers is rarely opened; Roles Manager is President-only and her current view works. Revisit when touching either for another reason.
 
+### Open design question: where do row actions live?
+The migrated reports are now inconsistent on this:
+- **PM Class Submissions** puts actions as an inline table column (Approve / Decline / Re-queue buttons in a per-row Actions cell).
+- **Membership Report** puts actions inside the expanded row detail panel (Mark Paid, Decline, Send Welcome Email — all live in `renderMembershipRegDetail` below an expanded row).
+- **Participation Tracker** has no per-row actions today, so it doesn't surface the question.
+
+Tradeoffs: an inline column is faster (one click to act) but crowds the table when there are many actions or long labels; an expanded panel is roomier for context (kid list, waiver state, onboarding checklist) but takes a click to reach. Pick one or define when each applies — e.g. inline for ≤2 binary actions per row; expanded panel when actions need supporting context. Once chosen, the existing reports may need to converge. Decide before migrating Waivers (which has its own resend-link action).
+
 ## BLC Workspace account flow (on-request provisioning)
 
 - **Status:** Auto-derivation removed 2026-04-29 — the Directory and member-lookup paths no longer surface a `firstname+lastinitial@rootsandwingsindy.com` for BLCs by default. Need to design the explicit "request → grant" flow.
