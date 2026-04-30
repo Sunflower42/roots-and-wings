@@ -2033,9 +2033,16 @@
       });
 
     } else {
-      // ---- Face grid view (Everyone / Parents Only / search) ----
+      // ---- Face grid view (Everyone / Main Learning Coach / search) ----
+      // The "parents" filter is now scoped to Main Learning Coach only.
+      // BLCs and third+ parents (role='parent') still show under
+      // "Everyone" but the labelled MLC pill stays honest — users
+      // looking for the primary family contact get one face per family.
       allPeople.forEach(function (person, idx) {
-        if (activeFilter === 'parents' && person.type !== 'parent') return;
+        if (activeFilter === 'parents') {
+          if (person.type !== 'parent') return;
+          if (person.role !== 'mlc') return;
+        }
         if (isGroupFilter(activeFilter)) {
           if (person.type === 'parent') return;
           if (person.group !== activeFilter) return;
@@ -13076,37 +13083,55 @@
     }).join(', ');
   }
 
-  // Builds the filter-dropdown row for the PM Submissions report. Lives
-  // inside the body slot (not the shell) so re-renders preserve the
-  // dropdown values via _pmReportState.filters.
-  function renderPmSubmissionsFilters() {
+  // Filters live inside the table header row (one <th> per filterable
+  // column with a <select> aligned under its label) so they read as
+  // "filter for THIS column" instead of a generic nav bar. Year is the
+  // exception — it scopes the entire table, not a single column —
+  // and surfaces in the modal meta line as a small inline select.
+  function renderPmYearMetaSelect() {
     var f = _pmReportState.filters;
-    var h = '<div class="rd-filters pmrep-filters">';
-    h += '<span class="rd-filters-label">Show</span>';
-    h += '<label class="pmrep-flabel">Status <select class="pmrep-f" data-filter="status">';
-    ['submitted','drafted','scheduled','declined','withdrawn','all'].forEach(function (v) {
-      var lab = v === 'all' ? 'All' : v.charAt(0).toUpperCase() + v.slice(1);
-      h += '<option value="' + v + '"' + (f.status === v ? ' selected' : '') + '>' + lab + '</option>';
+    var html = '<select class="rd-meta-select" data-filter="school_year" aria-label="School year">';
+    ['2026-2027','2027-2028'].forEach(function (yr) {
+      html += '<option value="' + yr + '"' + (f.school_year === yr ? ' selected' : '') + '>' + yr.replace('-','–') + '</option>';
     });
-    h += '</select></label>';
-    h += '<label class="pmrep-flabel">Session <select class="pmrep-f" data-filter="session">';
+    html += '</select>';
+    return html;
+  }
+  function renderPmHeaderFilterRow() {
+    var f = _pmReportState.filters;
+    var h = '<tr class="rd-filter-row">';
+    // Class — no filter (free-text class names; not bucketable).
+    h += '<th></th>';
+    // Submitter — no filter for now (could add a "by me / by anyone" later).
+    h += '<th></th>';
+    // Sessions
+    h += '<th><select class="pmrep-f rd-th-filter" data-filter="session" aria-label="Filter by session">';
     h += '<option value="all"' + (f.session === 'all' ? ' selected' : '') + '>Any</option>';
     h += '<option value="flexible"' + (f.session === 'flexible' ? ' selected' : '') + '>Flexible</option>';
     for (var s = 1; s <= 5; s++) {
       h += '<option value="' + s + '"' + (f.session === String(s) ? ' selected' : '') + '>S' + s + '</option>';
     }
-    h += '</select></label>';
-    h += '<label class="pmrep-flabel">Age <select class="pmrep-f" data-filter="age">';
+    h += '</select></th>';
+    // Hour — no filter (rare to scope; status + sessions usually narrow enough).
+    h += '<th></th>';
+    // Ages
+    h += '<th><select class="pmrep-f rd-th-filter" data-filter="age" aria-label="Filter by age group">';
     [['all','Any'],['3-7','3–7'],['7-9','7–9'],['10-12','10–12'],['teens','Teens']].forEach(function (pair) {
       h += '<option value="' + pair[0] + '"' + (f.age === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
     });
-    h += '</select></label>';
-    h += '<label class="pmrep-flabel">Year <select class="pmrep-f" data-filter="school_year">';
-    ['2026-2027','2027-2028'].forEach(function (yr) {
-      h += '<option value="' + yr + '"' + (f.school_year === yr ? ' selected' : '') + '>' + yr.replace('-','–') + '</option>';
+    h += '</select></th>';
+    // Max — numeric, no filter.
+    h += '<th></th>';
+    // Status
+    h += '<th><select class="pmrep-f rd-th-filter" data-filter="status" aria-label="Filter by status">';
+    ['submitted','drafted','scheduled','declined','withdrawn','all'].forEach(function (v) {
+      var lab = v === 'all' ? 'Any' : v.charAt(0).toUpperCase() + v.slice(1);
+      h += '<option value="' + v + '"' + (f.status === v ? ' selected' : '') + '>' + lab + '</option>';
     });
-    h += '</select></label>';
-    h += '</div>';
+    h += '</select></th>';
+    // Actions — no filter.
+    h += '<th></th>';
+    h += '</tr>';
     return h;
   }
 
@@ -13130,29 +13155,47 @@
       return true;
     });
 
-    // Update the modal's meta line ("Show: 8 submissions" or "8 of 25").
+    // Update the modal's meta line: count + a year scope-picker. The
+    // year is the only filter that doesn't map to a single column, so
+    // it lives here instead of in the table header row. innerHTML is
+    // safe — values are class-controlled, not user input.
     var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
     if (metaEl) {
-      metaEl.textContent = filtered.length === all.length
+      var countText = filtered.length === all.length
         ? filtered.length + ' submission' + (filtered.length === 1 ? '' : 's')
         : filtered.length + ' of ' + all.length;
-    }
-
-    var filtersHtml = renderPmSubmissionsFilters();
-    if (filtered.length === 0) {
-      body.innerHTML = filtersHtml + '<p class="ws-empty">No submissions match these filters.</p>';
-      wirePmFilterChange(body);
-      return;
+      metaEl.innerHTML = 'Year ' + renderPmYearMetaSelect() + ' · ' + escapeHtmlWs(countText);
+      // Wire the year select inline since the meta lives in the modal
+      // shell (not the body that gets re-rendered every filter change).
+      var yearSel = metaEl.querySelector('[data-filter="school_year"]');
+      if (yearSel && !yearSel._pmrepWired) {
+        yearSel._pmrepWired = true;
+        yearSel.addEventListener('change', function () {
+          _pmReportState.filters.school_year = this.value;
+          renderPmSubmissionsReport();
+        });
+      }
     }
 
     // Use the shared ws-waivers-table classes so PM Submissions inherits
     // the standard sticky header + sticky-first-column treatment used by
-    // every tabular Workspace report.
-    var h = filtersHtml;
-    h += '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table">';
+    // every tabular Workspace report. Filter row sits inside <thead> so
+    // each filter aligns with its column. The header (and its filters)
+    // ALWAYS renders even on zero matches so the user can adjust the
+    // filter that's hiding everything.
+    var h = '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table">';
     h += '<thead><tr>';
     h += '<th>Class</th><th>Submitter</th><th>Sessions</th><th>Hour</th><th>Ages</th><th>Max</th><th>Status</th><th class="pmrep-actions-col">Actions</th>';
-    h += '</tr></thead><tbody>';
+    h += '</tr>';
+    h += renderPmHeaderFilterRow();
+    h += '</thead><tbody>';
+    if (filtered.length === 0) {
+      h += '<tr><td colspan="8" class="ws-empty" style="text-align:center;">No submissions match these filters.</td></tr>';
+      h += '</tbody></table></div>';
+      body.innerHTML = h;
+      wirePmFilterChange(body);
+      return;
+    }
     filtered.forEach(function (s) {
       h += '<tr data-sub-id="' + s.id + '">';
       h += '<td class="pmrep-class-cell"><strong>' + escapeHtml(s.class_name) + '</strong>';

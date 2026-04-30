@@ -3475,6 +3475,53 @@ p + p { margin-top: 1rem; }
 }
 .rd-supp-popover[hidden] { display: none; }
 
+/* In-table-header filter row. Sits as a second <tr> inside <thead>
+   so each filter <select> aligns under its column label. Padding +
+   background distinguish it from the column-label row but keep the
+   same sticky-top behavior so the filters scroll with the labels. */
+.ws-waivers-table thead tr.rd-filter-row th {
+  padding: 4px 10px 6px;
+  background: rgba(var(--color-primary-rgb), 0.04);
+  border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.12);
+  position: sticky;
+  top: 1.85em;  /* sits below the column-label row, which is also sticky-top */
+  text-transform: none;
+  font-weight: normal;
+  letter-spacing: 0;
+  color: var(--color-text);
+  z-index: 2;
+}
+.rd-th-filter {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-white);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.rd-th-filter:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+/* Inline meta-line select — used for filters that scope the whole
+   table (year picker on PM Submissions). Lives in the modal's meta
+   line, not a column. Smaller and quieter than column filters. */
+.rd-meta-select {
+  display: inline-block;
+  margin: 0 4px;
+  padding: 1px 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-white);
+  color: var(--color-text);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.rd-meta-select:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
 /* Filter chip row — sits below the header chrome. Visually quieter
    than the chrome buttons (no default fill, smaller text, slim
    padding) so it reads as a "scope of data" control rather than as
