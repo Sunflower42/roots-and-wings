@@ -474,11 +474,22 @@
               // P4: prefer the explicit per-parent email/phone from parentInfo
               // (set via Edit My Info), then fall back to the firstname+
               // lastinitial derivation, then to fam.email as a last resort.
+              //
+              // Exception — Backup Learning Coaches don't get a derived
+              // Workspace email by default. R&W only provisions BLC
+              // accounts on request (see PARKING_LOT.md "BLC Workspace
+              // account flow"); deriving one here would surface a
+              // non-existent address in the Directory and let lookups
+              // try to fetch a profile photo that 404s. If a BLC has
+              // an explicit account assigned via EMI / Comms, piHit.email
+              // is set and that wins regardless of role.
               // Phone falls back to the family-level phone for legacy rows.
-              var pDerivedEmail = (pFirstLc && pLastInit)
-                ? (pFirstLc + pLastInit + '@rootsandwingsindy.com')
-                : (fam.email || '');
-              var pEmail = piHit.email || pDerivedEmail;
+              var pEmail = piHit.email || '';
+              if (!pEmail && piHit.role !== 'blc') {
+                pEmail = (pFirstLc && pLastInit)
+                  ? (pFirstLc + pLastInit + '@rootsandwingsindy.com')
+                  : (fam.email || '');
+              }
               var pPhone = piHit.phone || fam.phone || '';
               // Per-parent first + last name. Each adult has their own first
               // and last. last_name falls back to fam.name in display via

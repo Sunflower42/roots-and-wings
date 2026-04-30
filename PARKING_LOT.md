@@ -90,6 +90,21 @@ Phased so the auth path doesn't all change at once.
 - **Migration:** for each existing family with a real co-parent (Jay Shewan + future ones), populate `additional_emails` (or `member_logins` rows). Existing single-login families keep `additional_emails` empty.
 - **Auth-path scope = real risk:** miss one comparison and a co-parent silently can't claim coverage / can't edit their kids / etc. The test script is mandatory before this phase ships.
 
+## BLC Workspace account flow (on-request provisioning)
+
+- **Status:** Auto-derivation removed 2026-04-29 — the Directory and member-lookup paths no longer surface a `firstname+lastinitial@rootsandwingsindy.com` for BLCs by default. Need to design the explicit "request → grant" flow.
+- **Why:** Most BLCs (grandparents, friends, occasional spouses) don't need their own Workspace login — they just sign waivers via the public link. Auto-creating accounts pollutes the directory with addresses that 404, and burns Workspace seats. MLCs always get one (it's their family's primary login); BLCs should be opt-in.
+- **What's needed:**
+  1. **UI surface for request.** EMI's BLC row could grow an "Request a Workspace login for this person" button → fires a request email to `communications@` with the BLC's name + family + intended email. Or a dedicated "Co-parent access" admin page in the Membership widget.
+  2. **Comms-side grant flow.** Comms creates the Workspace account via Admin (or via the future `auto-onboard` automation — see "Member onboarding — full automation"), then types the new email into the BLC's row in EMI. That populates `member_profiles.parents[i].email`, which automatically gets added to `additional_emails` (handleProfileUpdate already derives it from non-MLC parent rows). At that point `resolveFamily` finds them by their own email and the participation guard correctly identifies them.
+  3. **Audit:** capture `created_at`, `created_by` on the BLC's parent entry so we can tell who's been provisioned and when. Maybe a simple `member_login_grants` table if we want history; otherwise piggyback on the existing `updated_by` column.
+  4. **Removal:** when a BLC leaves (divorced, no longer in the family), Comms should be able to revoke. Today nothing prevents the existing email from being used — needs the same `admin.users.delete` path the main onboarding parking-lot item describes.
+- **Open questions:**
+  - Should the BLC themselves be able to request via the public site (with their MLC's approval), or strictly MLC-initiated from EMI?
+  - Email convention when the BLC has their own surname (Brian Richter married into the Shewan family): `brianr@` (his initial) or `brians@` (Shewan's initial)? Pick one and document.
+  - How does this interact with the auto-onboarding parking-lot item — same automation path or a separate flow?
+- **Priority:** Low until a real request comes in. The current set of co-parents with their own accounts (Jay Shewan, Brian Richter) were granted manually and are working fine.
+
 ## Family data model: Main Learning Coach + Back Up Learning Coach
 
 End-state goal: align the portal's family data model with the vocabulary already used by registration + waivers — Main Learning Coach (MLC) and Back Up Learning Coach (BLC) — instead of a generic "parents" list. Each role gets its own contact info (name, email, phone, pronouns, photo). Subsumes the Phase 3 co-parent story into a clearer primary/backup model and gives every role-holder its own phone number (today there's one phone per family).
