@@ -6478,24 +6478,12 @@
   // Column spec shared by every render of the Membership Report table —
   // hoisted out of showMembershipReportModal so the filter-change re-render
   // can re-use it without duplicating the schema.
+  // Column order matches the standard report convention: row identifier
+  // (Main Learning Coach) → status pills (Paid, Waiver) → domain
+  // columns (Track, Kids, Email, Registered).
   var MEMBERSHIP_TABLE_COLS = [
     { key: 'main_learning_coach', label: 'Main Learning Coach', type: 'string',
       render: function (r) { return escapeHtmlWs(r.main_learning_coach); }
-    },
-    { key: 'email', label: 'Email', type: 'string',
-      render: function (r) { return escapeHtmlWs(r.email); }
-    },
-    { key: 'track', label: 'Track', type: 'string',
-      sortValue: function (r) { return r.track || ''; },
-      render: function (r) {
-        var t = r.track || '';
-        if (r.track === 'Other' && r.track_other) t = 'Other: ' + r.track_other;
-        return escapeHtmlWs(t);
-      }
-    },
-    { key: 'kidsCount', label: 'Kids', type: 'number',
-      sortValue: function (r) { return (r.kids || []).length; },
-      render: function (r) { return String((r.kids || []).length); }
     },
     { key: 'payment_status', label: 'Paid', type: 'string',
       sortValue: function (r) { return String(r.payment_status || '').toLowerCase() === 'paid' ? 'z' : 'a'; },
@@ -6511,30 +6499,51 @@
         return renderStatusPill(ok ? 'signed' : 'pending', r.signature_date);
       }
     },
+    { key: 'track', label: 'Track', type: 'string',
+      sortValue: function (r) { return r.track || ''; },
+      render: function (r) {
+        var t = r.track || '';
+        if (r.track === 'Other' && r.track_other) t = 'Other: ' + r.track_other;
+        return escapeHtmlWs(t);
+      }
+    },
+    { key: 'kidsCount', label: 'Kids', type: 'number',
+      sortValue: function (r) { return (r.kids || []).length; },
+      render: function (r) { return String((r.kids || []).length); }
+    },
+    { key: 'email', label: 'Email', type: 'string',
+      render: function (r) { return escapeHtmlWs(r.email); }
+    },
     { key: 'created_at', label: 'Registered', type: 'date',
       render: function (r) { return formatReportDate(r.created_at); }
     }
   ];
 
-  function showMembershipReportModal() {
-    if (!personDetail || !personDetailCard) return;
-    var sheetUrl = 'https://docs.google.com/spreadsheets/d/1ACLxC6nYfzb2vXbL3JzeaedNlqXzAPL-lEfq6dTIkRg/edit';
-    var html = '<div class="detail-actions no-print">';
-    html += '<a class="sc-btn" href="' + sheetUrl + '" target="_blank" rel="noopener" aria-label="Open the flat CSV-style Google Sheet of all registrations in a new tab">\uD83D\uDCCA View as Google Sheet</a>';
-    html += '</div>';
-    html += '<button class="detail-close" aria-label="Close">&times;</button>';
-    html += '<div class="elective-detail rd-modal">';
-    html += '<h3 class="rd-title">Membership Report</h3>';
-    html += '<p class="rd-subtitle">Every registration this season, with payment and waiver status.</p>';
-    html += '<div id="ws-membership-report-body"><p class="ws-empty">Loading registrations\u2026</p></div>';
-    html += '</div>';
-    personDetailCard.innerHTML = html;
-    personDetail.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
-    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+  // Cached registrations + active filter, so re-renders (filter change,
+  // post-mark-paid reload) don't re-fetch and don't lose user scroll.
+  var _membershipRegs = null;
+  var _membershipFilter = 'all';
 
-    var body = personDetailCard.querySelector('#ws-membership-report-body');
+  function showMembershipReportModal(opts) {
+    // Preserve the user's filter across closes/reopens unless the
+    // caller explicitly passes initialFilter (treasurer-pending action
+    // forces 'pending' to scope to the pending-payments todo list).
+    if (opts && opts.initialFilter) _membershipFilter = opts.initialFilter;
+    var sheetUrl = 'https://docs.google.com/spreadsheets/d/1ACLxC6nYfzb2vXbL3JzeaedNlqXzAPL-lEfq6dTIkRg/edit';
+    var icons = [
+      { label: 'View as Google Sheet', icon: ICON_SVG.sheet, aria: 'Open the source Google Sheet in a new tab', href: sheetUrl },
+      { label: 'Print',      icon: ICON_SVG.print,    aria: 'Print the visible registrations',         action: function () { printMembershipReport(); } },
+      { label: 'Export CSV', icon: ICON_SVG.download, aria: 'Download the visible registrations as CSV', action: function () { exportMembershipCSV(); } }
+    ];
+    var body = renderReportModal({
+      title: 'Membership Report',
+      subtitle: 'Every registration this season, with payment and waiver status.',
+      meta: '',
+      icons: icons,
+      bodyId: 'ws-membership-report-body',
+      bodyPlaceholder: '<p class="ws-empty">Loading registrations\u2026</p>'
+    });
+    if (!body) return;
     var cred = localStorage.getItem('rw_google_credential');
     fetch('/api/tour?list=registrations', {
       method: 'GET',
@@ -6560,48 +6569,59 @@
         } catch (e) { backups = []; }
         return Object.assign({}, r, { kids: kids || [], backup_coaches: backups || [] });
       });
+      _membershipRegs = regs;
       var total = regs.length;
       var paidCount = regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; }).length;
       var pendingCount = total - paidCount;
       var signed = regs.filter(function (r) { return !!r.waiver_member_agreement && !!r.signature_name; }).length;
 
-      // Filter pill: All / Paid / Pending. Treasurer typically wants
-      // "Pending" first (action queue); Membership / Comms typically
-      // want "All". Default to All.
-      var filterHtml = '<div class="ws-mr-filter-row">';
-      filterHtml += '<label class="ws-mr-filter-label">Payment status</label>';
-      filterHtml += '<select class="cl-input ws-mr-filter" id="ws-mr-status-filter">';
-      filterHtml += '<option value="all" selected>All (' + total + ')</option>';
-      filterHtml += '<option value="paid">Paid (' + paidCount + ')</option>';
-      filterHtml += '<option value="pending">Pending (' + pendingCount + ')</option>';
-      filterHtml += '</select>';
-      filterHtml += '</div>';
+      // Modal meta line \u2014 total registrations.
+      var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
+      if (metaEl) metaEl.textContent = total + ' registration' + (total === 1 ? '' : 's');
 
-      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> registered \u00b7 <strong class="ws-wv-ok">' + paidCount + ' paid</strong> \u00b7 <strong class="ws-wv-pending">' + pendingCount + ' pending</strong> \u00b7 <strong class="ws-wv-ok">' + signed + ' signed</strong> \u00b7 click a row to expand</p>';
+      // Always-visible counts strip \u2014 same pill shape as the in-row
+      // Paid / Signed badges so the summary maps onto the columns.
+      var countsHtml = '<div class="rd-counts">';
+      countsHtml += '<span class="ws-wv-ok">' + paidCount + ' Paid</span>';
+      countsHtml += '<span class="ws-wv-pending">' + pendingCount + ' Pending</span>';
+      countsHtml += '<span class="ws-wv-ok">' + signed + ' Signed waiver</span>';
+      countsHtml += '</div>';
+
       if (regs.length === 0) {
-        body.innerHTML = headerHtml + '<p class="ws-empty">No registrations yet for this season.</p>';
+        body.innerHTML = countsHtml + '<p class="ws-empty">No registrations yet for this season.</p>';
         return;
       }
-      body.innerHTML = filterHtml + headerHtml + '<div id="ws-membership-table-target"></div>';
+      body.innerHTML = countsHtml + '<div id="ws-membership-table-target"></div>';
       var tableTarget = body.querySelector('#ws-membership-table-target');
 
-      // Filter handler \u2014 re-render the table with the filtered subset.
-      var statusFilterEl = body.querySelector('#ws-mr-status-filter');
       function regsForFilter() {
-        var v = statusFilterEl ? statusFilterEl.value : 'all';
-        if (v === 'paid') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; });
-        if (v === 'pending') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() !== 'paid'; });
+        if (_membershipFilter === 'paid') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; });
+        if (_membershipFilter === 'pending') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() !== 'paid'; });
         return regs;
       }
       function renderTable() {
-        renderSortableTable(tableTarget, MEMBERSHIP_TABLE_COLS, regsForFilter(), {
+        // Attach a column-header funnel filter to the Paid column \u2014
+        // same pattern Participation + PM Submissions use. Funnel
+        // popover lists All / Paid / Pending with their counts.
+        var cols = MEMBERSHIP_TABLE_COLS.slice();
+        cols.forEach(function (col) {
+          if (col.key === 'payment_status') {
+            col.filter = {
+              options: [
+                { value: 'all',     label: 'Any',     count: total },
+                { value: 'paid',    label: 'Paid',    count: paidCount },
+                { value: 'pending', label: 'Pending', count: pendingCount }
+              ],
+              current: _membershipFilter,
+              onChange: function (v) { _membershipFilter = v; renderTable(); }
+            };
+          }
+        });
+        renderSortableTable(tableTarget, cols, regsForFilter(), {
           initialSort: { key: 'created_at', dir: 'desc' },
           expandable: true,
           renderDetail: renderMembershipRegDetail
         });
-      }
-      if (statusFilterEl) {
-        statusFilterEl.addEventListener('change', renderTable);
       }
 
       // Delegated click handler for the Decline flow + Treasurer's Mark
@@ -7088,6 +7108,83 @@
         });
       });
     });
+  }
+
+  // Returns the registration set the report should currently surface
+  // (filtered by _membershipFilter). Both Print and Export CSV use it
+  // so the visible-on-screen scope and the exported scope match.
+  function membershipFilteredRegs() {
+    var regs = _membershipRegs || [];
+    if (_membershipFilter === 'paid') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() === 'paid'; });
+    if (_membershipFilter === 'pending') return regs.filter(function (r) { return String(r.payment_status || '').toLowerCase() !== 'paid'; });
+    return regs;
+  }
+
+  function exportMembershipCSV() {
+    var regs = membershipFilteredRegs();
+    var headers = ['Main Learning Coach', 'Paid', 'Waiver', 'Track', 'Kids', 'Email', 'Phone', 'Address', 'Registered', 'Returning family'];
+    function esc(v) {
+      var s = String(v == null ? '' : v);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+    var lines = [headers.join(',')];
+    regs.forEach(function (r) {
+      var paid = String(r.payment_status || '').toLowerCase() === 'paid' ? 'Paid' : 'Pending';
+      var waiver = (!!r.waiver_member_agreement && !!r.signature_name) ? 'Signed' : 'Pending';
+      var track = r.track || '';
+      if (r.track === 'Other' && r.track_other) track = 'Other: ' + r.track_other;
+      lines.push([
+        esc(r.main_learning_coach),
+        esc(paid),
+        esc(waiver),
+        esc(track),
+        esc((r.kids || []).length),
+        esc(r.email),
+        esc(r.phone),
+        esc(r.address),
+        esc(r.created_at),
+        esc(r.existing_family_name || '')
+      ].join(','));
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'membership-report-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function printMembershipReport() {
+    var regs = membershipFilteredRegs();
+    var doc = '<!doctype html><html><head><meta charset="utf-8"><title>Membership Report</title>';
+    doc += '<style>body{font:13px Georgia,serif;color:#222;padding:24px;}h1{font-size:18px;margin:0 0 4px;}p.meta{color:#666;margin:0 0 16px;font-size:12px;}table{border-collapse:collapse;width:100%;font-size:12px;}th,td{border-bottom:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;}th{background:#f5f0e8;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;}</style>';
+    doc += '</head><body>';
+    doc += '<h1>Membership Report</h1>';
+    doc += '<p class="meta">' + regs.length + ' registration' + (regs.length === 1 ? '' : 's') + ' · printed ' + new Date().toLocaleDateString() + '</p>';
+    doc += '<table><thead><tr><th>Main Learning Coach</th><th>Paid</th><th>Waiver</th><th>Track</th><th>Kids</th><th>Email</th><th>Registered</th></tr></thead><tbody>';
+    regs.forEach(function (r) {
+      var paid = String(r.payment_status || '').toLowerCase() === 'paid' ? 'PAID' : 'PENDING';
+      var waiver = (!!r.waiver_member_agreement && !!r.signature_name) ? 'SIGNED' : 'PENDING';
+      var track = r.track || '';
+      if (r.track === 'Other' && r.track_other) track = 'Other: ' + r.track_other;
+      doc += '<tr>';
+      doc += '<td><strong>' + escapeHtml(r.main_learning_coach || '') + '</strong>';
+      if (r.existing_family_name) doc += ' <span style="color:#666;font-size:11px;">(returning)</span>';
+      doc += '</td>';
+      doc += '<td>' + paid + '</td>';
+      doc += '<td>' + waiver + '</td>';
+      doc += '<td>' + escapeHtml(track) + '</td>';
+      doc += '<td>' + (r.kids || []).length + '</td>';
+      doc += '<td>' + escapeHtml(r.email || '') + '</td>';
+      doc += '<td>' + escapeHtml(formatReportDate(r.created_at)) + '</td>';
+      doc += '</tr>';
+    });
+    doc += '</tbody></table></body></html>';
+    openPrintIframe(doc);
   }
 
   function renderMembershipRegDetail(r) {
@@ -10815,17 +10912,8 @@
     else if (action === 'member-onboarding' && typeof showMemberOnboardingModal === 'function') showMemberOnboardingModal();
     else if (action === 'waivers-pending' && typeof showWaiversReportModal === 'function') showWaiversReportModal();
     else if (action === 'treasurer-pending-payments' && typeof showMembershipReportModal === 'function') {
-      // Open the Membership Report and pre-set the payment-status filter
-      // to "pending" once the table renders. Filter element id is fixed
-      // so this is a simple setTimeout poll.
-      showMembershipReportModal();
-      var tries = 0;
-      var t = setInterval(function () {
-        tries++;
-        var sel = document.getElementById('ws-mr-status-filter');
-        if (sel) { sel.value = 'pending'; sel.dispatchEvent(new Event('change')); clearInterval(t); }
-        else if (tries > 40) clearInterval(t); // give up after ~4s
-      }, 100);
+      // Open the Membership Report pre-scoped to pending payments.
+      showMembershipReportModal({ initialFilter: 'pending' });
     }
   });
 
