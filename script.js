@@ -14105,6 +14105,14 @@
       h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(p.last_name || '') + '">';
       h += '<input class="rd-input" style="flex:1.5;min-width:0;" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
       h += '</div>';
+      // Nicknames row — placed right after the name row so it reads as
+      // part of "who is this person" identity. Comma-separated; e.g.
+      // "Jess, Jessie" so the master sheet's "Jess Shewan" cleaning-crew
+      // entry counts toward Jessica. Common forms (Becca↔Rebecca,
+      // Matt↔Matthew, etc.) are already built in — only add the
+      // idiosyncratic ones.
+      var nicksDisplay = (Array.isArray(p.nicknames) ? p.nicknames : []).join(', ');
+      h += '<input class="rd-input" type="text" placeholder="Nicknames (comma-separated, e.g. Jess, Jessie)" data-field="nicknames" value="' + escapeHtml(nicksDisplay) + '">';
       // Email: MLC's email is the family_email (PK) — read-only here so the
       // member can't accidentally orphan their family. BLC + Parent are
       // editable so members can fill in their own Workspace login.
@@ -14117,12 +14125,6 @@
       // from their R&W Workspace login).
       h += '<input class="rd-input" type="email" placeholder="Personal email (gmail, etc.)" data-field="personal_email" value="' + escapeHtml(p.personal_email || '') + '">';
       h += '<input class="rd-input" type="tel" placeholder="Their phone number" data-field="phone" value="' + escapeHtml(p.phone) + '">';
-      // Nicknames feed the participation score's name resolution. Comma-
-      // separated; e.g. "Jess, Jessie" so the master sheet's "Jess Shewan"
-      // entry counts toward Jessica. Common forms (Becca↔Rebecca, Matt↔
-      // Matthew, etc.) are already built in — only add idiosyncratic ones.
-      var nicksDisplay = (Array.isArray(p.nicknames) ? p.nicknames : []).join(', ');
-      h += '<input class="rd-input" type="text" placeholder="Nicknames (comma-separated, e.g. Jess, Jessie)" data-field="nicknames" value="' + escapeHtml(nicksDisplay) + '">';
       var pOptOut = p.photo_consent === false;
       h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
            '<input type="checkbox" data-field="photo_consent_optout"' + (pOptOut ? ' checked' : '') + '>' +
