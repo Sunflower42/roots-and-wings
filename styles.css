@@ -3377,42 +3377,143 @@ p + p { margin-top: 1rem; }
   padding-top: 22px;
 }
 
-/* Collapsible "Manage" panel that sits above the table on tabular
-   Workspace reports (Participation Tracker, Membership Report, etc.).
-   Holds admin-only supplemental controls — Weights, Exemptions, Email
-   Templates — so the header chrome stays focused on consume-the-data
-   icons (Print, Export, Sheet link). Built by the renderReportModal
-   helper in script.js. */
-.rd-supplemental {
-  margin: 8px 0 18px;
-  padding: 10px 14px;
+/* ════════════════════════════════════════════════════════════════
+   renderReportModal — shared shell for tabular Workspace reports
+   ════════════════════════════════════════════════════════════════
+   Single-row header replaces the prior 3-band stack (chrome row +
+   title/subtitle + Manage panel). Title block flexes left, icon-only
+   chrome cluster pins right. Filter chips with built-in counts live
+   immediately below.
+
+   See script.js renderReportModal() for the contract; markup is:
+     .rd-report-modal
+       .rd-header-row  (title-block + chrome icons)
+       .rd-supp-popover (admin-only, hidden until ⚙ click)
+       <body slot> (filters + table) */
+
+.rd-header-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 4px 0 12px;
+}
+.rd-title-block { flex: 1; min-width: 0; }
+.rd-title-block .rd-title { margin: 0; }
+.rd-title-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--color-text-light);
+  letter-spacing: 0.02em;
+}
+.rd-title-block .rd-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+}
+
+.rd-chrome {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.rd-icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 1.05rem;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  line-height: 1;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.rd-icon:hover {
+  background: rgba(var(--color-primary-rgb), 0.08);
+  border-color: rgba(var(--color-primary-rgb), 0.18);
+}
+.rd-icon[aria-expanded="true"] {
+  background: rgba(var(--color-primary-rgb), 0.12);
+  border-color: rgba(var(--color-primary-rgb), 0.25);
+}
+.rd-icon-close {
+  color: var(--color-text-light);
+  font-size: 1.35rem;
+}
+
+/* Inline popover anchored to the chrome row that holds admin-only
+   supplemental controls (Weights, Exemptions, Email Templates).
+   Toggled by the ⚙ icon in the chrome cluster. */
+.rd-supp-popover {
+  margin: -6px 0 14px;
+  padding: 10px 12px;
   background: rgba(var(--color-primary-rgb), 0.04);
   border: 1px solid rgba(var(--color-primary-rgb), 0.15);
   border-radius: 8px;
-}
-.rd-supplemental > summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--color-primary);
-  font-size: 0.92rem;
-  list-style: none;
-}
-.rd-supplemental > summary::-webkit-details-marker { display: none; }
-.rd-supplemental > summary::before {
-  content: '▶';
-  display: inline-block;
-  margin-right: 6px;
-  font-size: 0.75em;
-  transition: transform 0.15s ease;
-}
-.rd-supplemental[open] > summary::before {
-  transform: rotate(90deg);
-}
-.rd-supplemental-row {
-  margin-top: 12px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+.rd-supp-popover[hidden] { display: none; }
+
+/* Filter chip row — chips bake their count in via <em>. Selected chip
+   takes the deep-purple filled treatment; status semantics ride on a
+   small dot prefix so the chip body stays scannable. */
+.rd-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.rd-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-white);
+  color: var(--color-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.rd-chip:hover { border-color: rgba(var(--color-primary-rgb), 0.4); }
+.rd-chip em {
+  font-style: normal;
+  margin-left: 6px;
+  font-weight: 500;
+  opacity: 0.6;
+}
+.rd-chip.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+.rd-chip.is-active em { color: var(--color-accent); opacity: 0.95; }
+.rd-chip-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.rd-dot-ok   { background: var(--color-leaf); }
+.rd-dot-warn { background: var(--color-accent-dark); }
+.rd-dot-bad  { background: var(--color-coral); }
+
+@media (max-width: 600px) {
+  .rd-header-row { flex-wrap: wrap; }
+  .rd-icon { width: 32px; height: 32px; font-size: 1rem; }
 }
 
 .detail-header {

@@ -5991,72 +5991,87 @@
   //    full-width row below.
   // Shared shell for tabular Workspace reports (Participation Tracker,
   // Membership Report, Waivers Report, etc.). Builds the modal chrome
-  // — title + subtitle, header icon row (Print / View as Sheet / Export
-  // CSV), and an optional collapsible "Manage" section above the table
-  // for admin-only supplemental controls (Weights, Exemptions, Email
-  // templates, etc.). Returns the body element so the caller can paint
-  // headers, filter chips, and the table into it.
+  // as a single header row — title + meta on the left, icon-only
+  // chrome on the right (Print / Sheet / Export CSV / × close, plus an
+  // optional ⚙ Manage gear that toggles a popover with admin-only
+  // controls). Returns the body element so the caller paints filters
+  // + table into it.
+  //
+  // The single-row layout intentionally collapses the prior 3-band
+  // header (chrome | title+subtitle | Manage panel) into 1 band — see
+  // the design review note in the commit message for the rationale.
   //
   // opts: {
-  //   title:         string                       — H3 inside the modal
-  //   subtitle:      string                       — optional descriptor under the title
-  //   icons:         [{ label, icon, aria, href?, action? }]   — header chrome,
-  //                                                  href = link out (e.g. Google
-  //                                                  Sheet); action = onClick.
-  //   supplemental:  { title?, items: [{ label, icon, aria, action }] } — admin
-  //                                                  controls in a collapsible
-  //                                                  panel above the table. Pass
-  //                                                  null to omit.
-  //   bodyId:        string                       — id for the body container so
-  //                                                  the caller can re-target via
-  //                                                  document.getElementById.
-  //   bodyPlaceholder: string                     — initial HTML (e.g. "Loading…").
+  //   title:         string  — required
+  //   meta:          string  — optional small label after the title ("Season 25_26 · 46 members")
+  //   subtitle:      string  — optional, de-emphasized (rendered below title only when provided)
+  //   icons:         [{ label, icon, aria, href?, action? }]
+  //                                  href = external link (target=_blank);
+  //                                  action = onClick handler.
+  //                                  Rendered icon-only with title=label tooltip.
+  //   supplemental:  { title?, items: [{ label, icon, aria, action }] }
+  //                                  Admin-only controls. Surfaces as a ⚙ icon
+  //                                  in the chrome that toggles an inline
+  //                                  popover with the items as buttons. Null/
+  //                                  empty omits.
+  //   bodyId:          string
+  //   bodyPlaceholder: string
   // }
   function renderReportModal(opts) {
     if (!personDetail || !personDetailCard) return null;
     opts = opts || {};
     var icons = Array.isArray(opts.icons) ? opts.icons : [];
-    var supp = opts.supplemental || null;
+    var supp = (opts.supplemental && Array.isArray(opts.supplemental.items) && opts.supplemental.items.length > 0)
+      ? opts.supplemental : null;
+    var bodyId = opts.bodyId || ('ws-report-body-' + Date.now());
+    var poppId = bodyId + '-supp-pop';
 
-    var html = '';
-    if (icons.length > 0) {
-      html += '<div class="detail-actions no-print">';
-      icons.forEach(function (ic, i) {
-        var aria = escapeHtmlWs(ic.aria || ic.label || '');
-        var label = (ic.icon || '') + ' ' + escapeHtmlWs(ic.label || '');
-        if (ic.href) {
-          html += '<a class="sc-btn" href="' + escapeHtmlWs(ic.href) + '" target="_blank" rel="noopener" aria-label="' + aria + '">' + label + '</a>';
-        } else {
-          html += '<button class="sc-btn" type="button" data-report-icon="' + i + '" aria-label="' + aria + '">' + label + '</button>';
-        }
-      });
-      html += '</div>';
-    }
-    html += '<button class="detail-close" aria-label="Close">&times;</button>';
-    html += '<div class="elective-detail rd-modal">';
+    var html = '<div class="elective-detail rd-modal rd-report-modal">';
+    html += '<div class="rd-header-row">';
+    html += '<div class="rd-title-block">';
     html += '<h3 class="rd-title">' + escapeHtmlWs(opts.title || '') + '</h3>';
+    if (opts.meta) {
+      html += '<span class="rd-title-meta">' + escapeHtmlWs(opts.meta) + '</span>';
+    }
     if (opts.subtitle) {
       html += '<p class="rd-subtitle">' + escapeHtmlWs(opts.subtitle) + '</p>';
     }
-    if (supp && Array.isArray(supp.items) && supp.items.length > 0) {
-      html += '<details class="rd-supplemental no-print">';
-      html += '<summary>' + escapeHtmlWs(supp.title || 'Manage') + '</summary>';
-      html += '<div class="rd-supplemental-row">';
+    html += '</div>';
+    html += '<div class="rd-chrome no-print">';
+    if (supp) {
+      html += '<button class="rd-icon" type="button" data-supp-toggle="' + escapeHtmlWs(poppId) + '" aria-label="' + escapeHtmlWs(supp.title || 'Manage') + '" aria-expanded="false" title="' + escapeHtmlWs(supp.title || 'Manage') + '">⚙</button>';
+    }
+    icons.forEach(function (ic, i) {
+      var aria = escapeHtmlWs(ic.aria || ic.label || '');
+      var label = escapeHtmlWs(ic.label || '');
+      var iconChar = ic.icon || '';
+      if (ic.href) {
+        html += '<a class="rd-icon" href="' + escapeHtmlWs(ic.href) + '" target="_blank" rel="noopener" aria-label="' + aria + '" title="' + label + '">' + iconChar + '</a>';
+      } else {
+        html += '<button class="rd-icon" type="button" data-report-icon="' + i + '" aria-label="' + aria + '" title="' + label + '">' + iconChar + '</button>';
+      }
+    });
+    html += '<button class="rd-icon rd-icon-close" type="button" aria-label="Close" title="Close">&times;</button>';
+    html += '</div>';  // .rd-chrome
+    html += '</div>';  // .rd-header-row
+    if (supp) {
+      html += '<div class="rd-supp-popover no-print" id="' + escapeHtmlWs(poppId) + '" hidden>';
       supp.items.forEach(function (item, i) {
         var aria = escapeHtmlWs(item.aria || item.label || '');
-        var label = (item.icon || '') + ' ' + escapeHtmlWs(item.label || '');
+        var label = (item.icon ? item.icon + ' ' : '') + escapeHtmlWs(item.label || '');
         html += '<button class="sc-btn" type="button" data-report-supp="' + i + '" aria-label="' + aria + '">' + label + '</button>';
       });
-      html += '</div></details>';
+      html += '</div>';
     }
-    var bodyId = opts.bodyId || ('ws-report-body-' + Date.now());
     html += '<div id="' + escapeHtmlWs(bodyId) + '">' + (opts.bodyPlaceholder || '') + '</div>';
-    html += '</div>';
+    html += '</div>';  // .rd-modal
 
     personDetailCard.innerHTML = html;
     personDetail.style.display = 'flex';
     document.body.style.overflow = 'hidden';
-    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+
+    var closeBtn = personDetailCard.querySelector('.rd-icon-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeDetail);
     personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
 
     personDetailCard.querySelectorAll('[data-report-icon]').forEach(function (el) {
@@ -6066,7 +6081,17 @@
         if (ic && typeof ic.action === 'function') ic.action();
       });
     });
-    if (supp && Array.isArray(supp.items)) {
+    if (supp) {
+      var trigger = personDetailCard.querySelector('[data-supp-toggle="' + poppId + '"]');
+      var popover = personDetailCard.querySelector('#' + poppId);
+      if (trigger && popover) {
+        trigger.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var open = !popover.hasAttribute('hidden');
+          if (open) { popover.setAttribute('hidden', ''); trigger.setAttribute('aria-expanded', 'false'); }
+          else { popover.removeAttribute('hidden'); trigger.setAttribute('aria-expanded', 'true'); }
+        });
+      }
       personDetailCard.querySelectorAll('[data-report-supp]').forEach(function (el) {
         el.addEventListener('click', function (e) {
           e.stopPropagation();
@@ -7176,13 +7201,13 @@
 
   function showParticipationReportModal() {
     var canWrite = participationCanWrite();
+    // Header chrome — icon-only buttons. The Manage gear (Weights /
+    // Exemptions) is rendered separately by renderReportModal when
+    // supplemental is set.
     var icons = [
-      { label: 'Print', icon: '🖨️', aria: 'Print the report', action: printParticipationReport },
-      { label: 'Export CSV', icon: '⬇️', aria: 'Download the full report as CSV', action: exportParticipationCSV }
+      { label: 'Print', icon: '🖨', aria: 'Print the report', action: printParticipationReport },
+      { label: 'Export CSV', icon: '⬇', aria: 'Download the full report as CSV', action: exportParticipationCSV }
     ];
-    // Admin-only supplemental controls — kept out of the header chrome
-    // so the print/export icons stay focused on "consume the data" while
-    // weights/exemptions live in their own "Manage" panel for editing it.
     var supplemental = canWrite ? {
       title: 'Manage',
       items: [
@@ -7190,9 +7215,13 @@
         { label: 'Exemptions', icon: '🩺', aria: 'Add or edit health/family exemptions', action: showParticipationExemptionsModal }
       ]
     } : null;
+    // Subtitle is intentionally omitted — the title is self-evident in
+    // context and the row-click hint surfaces in the table itself.
+    // Meta line ("Season 25_26 · 46 members") is filled in after the
+    // data loads (renderParticipationReport).
     var body = renderReportModal({
       title: 'Member Participation Tracker',
-      subtitle: 'Session-slot counts for every member this school year. Click a row for the session-by-session breakdown.',
+      meta: '',
       icons: icons,
       supplemental: supplemental,
       bodyId: 'ws-participation-body',
@@ -7240,27 +7269,37 @@
       if (statusCounts[bucket] != null) statusCounts[bucket] += 1;
     });
 
-    var headerHtml = '<p class="ws-body-hint"><strong>' + members.length + '</strong> members · Season <strong>' + escapeHtmlWs(season) + '</strong>'
-      + ' · <strong class="ws-wv-ok">' + statusCounts.on_track + ' on track</strong>'
-      + ' · <strong class="ws-wv-pending">' + statusCounts.near + ' close</strong>'
-      + ' · <strong class="ws-wv-err">' + statusCounts.behind + ' behind</strong>'
-      + ' · <strong>' + statusCounts['new'] + ' new</strong>'
-      + ' · <strong>' + statusCounts.exempt + ' exempt</strong>'
-      + '</p>';
+    // Fill in the modal's meta line ("Season 25_26 · 46 members") now
+    // that the data is loaded. Stats counts merge into the filter chips
+    // below, so we drop the prior bullet-stats line entirely.
+    var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
+    if (metaEl) {
+      metaEl.textContent = 'Season ' + season + ' · ' + members.length + ' members';
+    }
 
-    // Status filter chips
-    var filterHtml = '<div class="ws-part-filter">Filter: '
-      + '<button type="button" class="sc-btn ws-part-filter-btn ws-part-filter-active" data-filter="all">All</button>'
-      + '<button type="button" class="sc-btn ws-part-filter-btn" data-filter="behind">Behind</button>'
-      + '<button type="button" class="sc-btn ws-part-filter-btn" data-filter="near">Close</button>'
-      + '<button type="button" class="sc-btn ws-part-filter-btn" data-filter="new">New</button>'
-      + '<button type="button" class="sc-btn ws-part-filter-btn" data-filter="exempt">Exempt</button>'
-      + '<button type="button" class="sc-btn ws-part-filter-btn" data-filter="on_track">On track</button>'
+    // Filter chips with built-in counts + status dots. Selected chip
+    // gets the deep-purple filled treatment. Status colors live on a
+    // small dot prefix so the chip itself stays scannable.
+    function chip(filter, label, count, dotClass) {
+      var dot = dotClass ? '<span class="rd-chip-dot ' + dotClass + '"></span>' : '';
+      return '<button type="button" class="rd-chip" data-filter="' + filter + '">'
+        + dot + escapeHtmlWs(label) + ' <em>' + count + '</em></button>';
+    }
+    var filterHtml = '<div class="rd-filters">'
+      + chip('all',      'All',      members.length, '')
+      + chip('on_track', 'On track', statusCounts.on_track, 'rd-dot-ok')
+      + chip('near',     'Close',    statusCounts.near, 'rd-dot-warn')
+      + chip('behind',   'Behind',   statusCounts.behind, 'rd-dot-bad')
+      + chip('new',      'New',      statusCounts['new'], '')
+      + chip('exempt',   'Exempt',   statusCounts.exempt, '')
       + '</div>';
 
-    body.innerHTML = headerHtml + filterHtml + '<div id="ws-part-table-target"></div>';
+    body.innerHTML = filterHtml + '<div id="ws-part-table-target"></div>';
 
     var currentFilter = 'all';
+    var firstChip = body.querySelector('.rd-chip[data-filter="all"]');
+    if (firstChip) firstChip.classList.add('is-active');
+
     function filteredRows() {
       if (currentFilter === 'all') return members;
       if (currentFilter === 'exempt') {
@@ -7281,10 +7320,10 @@
       });
     }
 
-    body.querySelectorAll('.ws-part-filter-btn').forEach(function (btn) {
+    body.querySelectorAll('.rd-chip').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        body.querySelectorAll('.ws-part-filter-btn').forEach(function (b) { b.classList.remove('ws-part-filter-active'); });
-        this.classList.add('ws-part-filter-active');
+        body.querySelectorAll('.rd-chip').forEach(function (b) { b.classList.remove('is-active'); });
+        this.classList.add('is-active');
         currentFilter = this.getAttribute('data-filter');
         renderTable();
       });
