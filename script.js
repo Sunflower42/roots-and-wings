@@ -7347,6 +7347,10 @@
   }
 
   function participationTableColumns() {
+    // Column order: identity → headline summary (Status, Weighted,
+    // Expected) → the activity-count breakdown that explains how
+    // Weighted got computed → Coverage Given trailing as a note
+    // (informational only — not part of the weighted score).
     var cols = [
       { key: 'displayName', label: 'Member', type: 'string',
         sortValue: function (r) { return (r.family + ' ' + r.first).toLowerCase(); },
@@ -7357,6 +7361,23 @@
           if (r.exemption) badges += ' <span class="ws-part-badge ws-part-badge-exempt">Exempt</span>';
           return '<strong>' + escapeHtmlWs(r.displayName) + '</strong>' + badges;
         }
+      },
+      { key: 'status', label: 'Status', type: 'string',
+        sortValue: function (r) {
+          // Behind first, then near, new, on-track, exempt last
+          var order = { behind: 0, near: 1, 'new': 2, on_track: 3, exempt: 4 };
+          return String(order[r.status] != null ? order[r.status] : 5);
+        },
+        render: function (r) {
+          var cls = 'ws-part-status ws-part-status-' + r.status;
+          return '<span class="' + cls + '">' + escapeHtmlWs(PARTICIPATION_STATUS_LABELS[r.status] || r.status) + '</span>';
+        }
+      },
+      { key: 'weightedTotal', label: 'Weighted', type: 'number',
+        render: function (r) { return '<strong>' + (r.weightedTotal || 0) + '</strong>'; }
+      },
+      { key: 'expectedPoints', label: 'Expected', type: 'number',
+        render: function (r) { return String(r.expectedPoints || 0); }
       }
     ];
     PARTICIPATION_COUNT_FIELDS.forEach(function (f) {
@@ -7370,30 +7391,10 @@
       });
     });
     cols.push({
-      key: 'weightedTotal', label: 'Weighted', type: 'number',
-      render: function (r) { return '<strong>' + (r.weightedTotal || 0) + '</strong>'; }
-    });
-    cols.push({
-      key: 'expectedPoints', label: 'Expected', type: 'number',
-      render: function (r) { return String(r.expectedPoints || 0); }
-    });
-    cols.push({
       key: 'coverageGiven', label: 'Coverage Given', type: 'number',
       render: function (r) {
         var v = r.coverageGiven || 0;
         return v > 0 ? String(v) : '<span class="ws-part-zero">–</span>';
-      }
-    });
-    cols.push({
-      key: 'status', label: 'Status', type: 'string',
-      sortValue: function (r) {
-        // Behind first, then near, new, on-track, exempt last
-        var order = { behind: 0, near: 1, 'new': 2, on_track: 3, exempt: 4 };
-        return String(order[r.status] != null ? order[r.status] : 5);
-      },
-      render: function (r) {
-        var cls = 'ws-part-status ws-part-status-' + r.status;
-        return '<span class="' + cls + '">' + escapeHtmlWs(PARTICIPATION_STATUS_LABELS[r.status] || r.status) + '</span>';
       }
     });
     return cols;
