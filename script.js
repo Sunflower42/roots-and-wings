@@ -5989,6 +5989,18 @@
   //    expandable rows get a toggle caret in the first column; clicking any
   //    cell (except the caret's row-dedupe) shows renderDetail(row) in a
   //    full-width row below.
+  // Inline SVGs for renderReportModal chrome — keeps icon rendering
+  // consistent across platforms (emoji rendering varies wildly on
+  // Windows + Android). Stroke-only line icons match the deep-purple
+  // primary; sized 18×18 inside the 36px button so there's air.
+  var ICON_SVG = {
+    print: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>',
+    download: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    gear: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    sheet: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>',
+    close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+  };
+
   // Shared shell for tabular Workspace reports (Participation Tracker,
   // Membership Report, Waivers Report, etc.). Builds the modal chrome
   // as a single header row — title + meta on the left, icon-only
@@ -6039,7 +6051,7 @@
     html += '</div>';
     html += '<div class="rd-chrome no-print">';
     if (supp) {
-      html += '<button class="rd-icon" type="button" data-supp-toggle="' + escapeHtmlWs(poppId) + '" aria-label="' + escapeHtmlWs(supp.title || 'Manage') + '" aria-expanded="false" title="' + escapeHtmlWs(supp.title || 'Manage') + '">⚙</button>';
+      html += '<button class="rd-icon" type="button" data-supp-toggle="' + escapeHtmlWs(poppId) + '" aria-label="' + escapeHtmlWs(supp.title || 'Manage') + '" aria-expanded="false" title="' + escapeHtmlWs(supp.title || 'Manage') + '">' + ICON_SVG.gear + '</button>';
     }
     icons.forEach(function (ic, i) {
       var aria = escapeHtmlWs(ic.aria || ic.label || '');
@@ -6051,7 +6063,7 @@
         html += '<button class="rd-icon" type="button" data-report-icon="' + i + '" aria-label="' + aria + '" title="' + label + '">' + iconChar + '</button>';
       }
     });
-    html += '<button class="rd-icon rd-icon-close" type="button" aria-label="Close" title="Close">&times;</button>';
+    html += '<button class="rd-icon rd-icon-close" type="button" aria-label="Close" title="Close">' + ICON_SVG.close + '</button>';
     html += '</div>';  // .rd-chrome
     html += '</div>';  // .rd-header-row
     if (supp) {
@@ -7203,10 +7215,11 @@
     var canWrite = participationCanWrite();
     // Header chrome — icon-only buttons. The Manage gear (Weights /
     // Exemptions) is rendered separately by renderReportModal when
-    // supplemental is set.
+    // supplemental is set. Inline SVGs read more reliably than emoji
+    // (no Windows / Android emoji-font rendering surprises).
     var icons = [
-      { label: 'Print', icon: '🖨', aria: 'Print the report', action: printParticipationReport },
-      { label: 'Export CSV', icon: '⬇', aria: 'Download the full report as CSV', action: exportParticipationCSV }
+      { label: 'Print',      icon: ICON_SVG.print,    aria: 'Print the report',                       action: printParticipationReport },
+      { label: 'Export CSV', icon: ICON_SVG.download, aria: 'Download the full report as CSV',         action: exportParticipationCSV }
     ];
     var supplemental = canWrite ? {
       title: 'Manage',

@@ -3420,32 +3420,44 @@ p + p { margin-top: 1rem; }
   flex-shrink: 0;
 }
 .rd-icon {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.18);
+  background: rgba(var(--color-primary-rgb), 0.05);
   color: var(--color-primary);
-  font-size: 1.05rem;
   border-radius: 8px;
   cursor: pointer;
   text-decoration: none;
   line-height: 1;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
+.rd-icon svg { display: block; }
 .rd-icon:hover {
-  background: rgba(var(--color-primary-rgb), 0.08);
-  border-color: rgba(var(--color-primary-rgb), 0.18);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+.rd-icon:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 .rd-icon[aria-expanded="true"] {
-  background: rgba(var(--color-primary-rgb), 0.12);
-  border-color: rgba(var(--color-primary-rgb), 0.25);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
 }
 .rd-icon-close {
+  border-color: rgba(0, 0, 0, 0.06);
+  background: transparent;
   color: var(--color-text-light);
-  font-size: 1.35rem;
+}
+.rd-icon-close:hover {
+  background: rgba(217, 95, 59, 0.12);
+  border-color: rgba(217, 95, 59, 0.4);
+  color: var(--color-coral);
 }
 
 /* Inline popover anchored to the chrome row that holds admin-only
@@ -9266,6 +9278,9 @@ button.staff-role:hover {
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: top;
+}
+.ws-waivers-table td {
+  /* Long member / role names need to wrap; headers stay on one line. */
   word-break: break-word;
   overflow-wrap: anywhere;
 }
@@ -9274,10 +9289,11 @@ button.staff-role:hover {
   top: 0;
   background: var(--color-cream);
   font-weight: 700;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--color-text-light);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
 }
 .ws-waivers-table tbody tr:last-child td { border-bottom: none; }
 .ws-report-request-hint {
