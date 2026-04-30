@@ -90,6 +90,18 @@ Phased so the auth path doesn't all change at once.
 - **Migration:** for each existing family with a real co-parent (Jay Shewan + future ones), populate `additional_emails` (or `member_logins` rows). Existing single-login families keep `additional_emails` empty.
 - **Auth-path scope = real risk:** miss one comparison and a co-parent silently can't claim coverage / can't edit their kids / etc. The test script is mandatory before this phase ships.
 
+## Convert remaining Workspace reports to the standard modal pattern
+
+- **Status:** Three reports migrated 2026-04-29 (Participation Tracker, PM Class Submissions, Membership Report). Two reports still use the old hand-rolled modals.
+- **Goal:** every tabular report in My Workspace uses `renderReportModal` + the column-header funnel filter pattern + the all-caps status pills, so they read as one cohesive admin tool. See `feedback_rw_report_modal_standard.md` (auto-memory) for the full convention.
+- **Reports left to migrate:**
+  - **Waivers Report** (`showWaiversReportModal`) — tracks every waiver sent (registration backups + one-off sends). Status column is signed/pending. Should be a quick migration: ~similar shape to Membership Report, no inline row actions other than a resend link.
+  - **Roles Manager** (`showRolesManagerModal`) — board + committee roles with assigned holders, hierarchy tree, edit-in-place, archive/restore. More complex than the others (tree-style nesting, inline edit forms, multiple per-row actions). Will need design thought about how to fit a hierarchy into the standard tabular shape — a separate "manager" pattern might be more appropriate than forcing it into a flat table.
+- **What to do:**
+  1. Waivers Report: straight conversion. Move the existing filter (`<select>` for sent/signed) into a column-header funnel. Add a count strip (signed / pending). Add Print + Export CSV chrome icons.
+  2. Roles Manager: decide pattern first (tabular or kept as a tree-modal). If tabular: same shape as the others. If tree: at minimum adopt `renderReportModal`'s shell + chrome icons (export CSV of role holders by school year) without forcing the column convention.
+- **Priority:** low — the migrated three were the high-traffic ones. Waivers is rarely opened; Roles Manager is President-only and her current view works. Revisit when touching either for another reason.
+
 ## BLC Workspace account flow (on-request provisioning)
 
 - **Status:** Auto-derivation removed 2026-04-29 — the Directory and member-lookup paths no longer surface a `firstname+lastinitial@rootsandwingsindy.com` for BLCs by default. Need to design the explicit "request → grant" flow.
