@@ -3508,6 +3508,9 @@ p + p { margin-top: 1rem; }
   cursor: pointer;
   vertical-align: -3px;
 }
+/* Without this, clicks on the SVG polygon target the SVG instead of
+   the button — hits the parent <th>'s sort handler instead. */
+.ws-th-filter-btn svg { pointer-events: none; }
 .ws-th-filter-btn:hover {
   background: rgba(var(--color-primary-rgb), 0.12);
   color: var(--color-primary);
@@ -3524,7 +3527,10 @@ p + p { margin-top: 1rem; }
 
 .ws-th-filter-popover {
   position: absolute;
-  z-index: 100;
+  /* Modal overlay (.person-detail-overlay) sits at z-index 9999, so
+     the popover has to sit above that to be visible when triggered
+     from a column header inside the modal. */
+  z-index: 10000;
   min-width: 180px;
   max-width: 280px;
   background: var(--color-white);
