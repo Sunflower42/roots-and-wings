@@ -12,7 +12,8 @@ const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { google } = require('googleapis');
 const { put } = require('@vercel/blob');
-const { ALLOWED_ORIGINS } = require('./_config');
+const { waitUntil } = require('@vercel/functions');
+const { ALLOWED_ORIGINS, emailSubject } = require('./_config');
 const { canEditAsRole, getRoleHolderEmail, isSuperUser } = require('./_permissions');
 const { canActAs } = require('./_family');
 const { fetchSheet, getAuth, parseBillingSheet } = require('./sheets');
@@ -197,13 +198,24 @@ async function handleTour(body, res) {
     }
   }
 
+  // Build the email payloads but don't await them — handing them to
+  // waitUntil() lets the function return immediately while Resend
+  // finishes in the background. Response time drops from ~1-3s
+  // (Resend round-trip) to ~100-300ms (just the DB insert). Trade-off:
+  // we no longer surface email-send failures to the user — but the DB
+  // row is already saved, so Membership sees the request in the Tour
+  // Pipeline either way.
   const resend = new Resend(process.env.RESEND_API_KEY);
-  try {
-    const { error } = await resend.emails.send({
+  const familySlotLine = slotRow
+    ? `<p>You picked: <strong>${slotRow.replace(/<[^>]+>/g, '').replace(/^Preferred slot/, '').trim()}</strong>. We'll confirm the exact time by reply.</p>`
+    : `<p>We'll reach out by reply to find a time that works.</p>`;
+
+  const emailWork = Promise.allSettled([
+    resend.emails.send({
       from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
       to: 'membership@rootsandwingsindy.com',
       replyTo: email,
-      subject: `New Tour Request from ${safeName}`,
+      subject: emailSubject(`New Tour Request from ${safeName}`),
       html: `
         <h2>New Tour Request</h2>
         <table style="border-collapse:collapse;font-family:sans-serif;">
@@ -216,16 +228,37 @@ async function handleTour(body, res) {
         </table>
         <p style="color:#666;font-size:0.9rem;margin-top:16px;">Open the Tour Pipeline in My Workspace to schedule, follow up, or close out this request.</p>
       `,
-    });
-    if (error) {
-      console.error('Tour email error:', error);
-      return res.status(500).json({ error: 'Failed to send. Please try again.' });
+    }),
+    resend.emails.send({
+      from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+      to: email,
+      cc: ['membership@rootsandwingsindy.com'],
+      replyTo: 'membership@rootsandwingsindy.com',
+      subject: emailSubject(`Roots & Wings: We received your tour request`),
+      html: `
+        <h2>Thanks for reaching out!</h2>
+        <p>Hi ${safeName},</p>
+        <p>We've received your request for a tour of Roots &amp; Wings Homeschool Co-op and we're looking forward to meeting your family. We host tours on Wednesdays during co-op so you can see the day in action.</p>
+        ${familySlotLine}
+        <p>If anything changes on your end before then, just reply to this email — it'll reach our Membership Director directly.</p>
+        <p style="color:#666;font-size:0.9rem;margin-top:20px;">— The Roots &amp; Wings Membership team<br>membership@rootsandwingsindy.com</p>
+      `,
+    })
+  ]).then(function (results) {
+    // Log Resend errors so we can spot delivery issues in Vercel logs.
+    // Both sends are best-effort once the DB row is persisted.
+    if (results[0].status === 'rejected' || (results[0].value && results[0].value.error)) {
+      console.error('Tour membership email error:',
+        results[0].reason || (results[0].value && results[0].value.error));
     }
-    return res.status(200).json({ success: true, tourId });
-  } catch (err) {
-    console.error('Tour email error:', err);
-    return res.status(500).json({ error: 'Failed to send. Please try again.' });
-  }
+    if (results[1].status === 'rejected' || (results[1].value && results[1].value.error)) {
+      console.error('Tour family-confirmation email error:',
+        results[1].reason || (results[1].value && results[1].value.error));
+    }
+  });
+  waitUntil(emailWork);
+
+  return res.status(200).json({ success: true, tourId });
 }
 
 // ── Membership Sheet dual-write ──
@@ -425,7 +458,7 @@ async function handleRegistration(body, req, res) {
             from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
             to: bc.email,
             replyTo: 'membership@rootsandwingsindy.com',
-            subject: `Roots & Wings Co-op: Please sign the backup Learning Coach waiver`,
+            subject: emailSubject(`Roots & Wings Co-op: Please sign the backup Learning Coach waiver`),
             html: `
               <h2>Backup Learning Coach waiver</h2>
               <p>Hi ${escapeHtml(bc.name)},</p>
@@ -509,7 +542,7 @@ async function handleRegistration(body, req, res) {
           'membership@rootsandwingsindy.com'
         ],
         replyTo: 'membership@rootsandwingsindy.com',
-        subject: subject,
+        subject: emailSubject(subject),
         html: `
           <h2>${heading}</h2>
           ${lead}
@@ -838,7 +871,7 @@ async function handleBackupWaiverSign(body, req, res) {
           to: updated[0].email,
           cc: [info.main_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
           replyTo: 'membership@rootsandwingsindy.com',
-          subject: `Roots & Wings Co-op: Backup Learning Coach waiver on file`,
+          subject: emailSubject(`Roots & Wings Co-op: Backup Learning Coach waiver on file`),
           html: `
             <h2>Waiver signed — thank you</h2>
             <p>Thanks, ${escapeHtml(updated[0].name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(info.main_learning_coach || 'Roots & Wings')} family</strong> is on file.</p>
@@ -876,7 +909,7 @@ async function handleBackupWaiverSign(body, req, res) {
         to: updatedOneOff[0].email,
         cc: [updatedOneOff[0].sent_by_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
         replyTo: 'membership@rootsandwingsindy.com',
-        subject: `Roots & Wings Co-op: Waiver on file`,
+        subject: emailSubject(`Roots & Wings Co-op: Waiver on file`),
         html: `
           <h2>Waiver signed — thank you</h2>
           <p>Thanks, ${escapeHtml(updatedOneOff[0].name)}! Your Roots &amp; Wings waiver is on file.</p>
@@ -965,7 +998,7 @@ async function handleRegistrationDecline(body, req, res) {
           'membership@rootsandwingsindy.com'
         ],
         replyTo: 'membership@rootsandwingsindy.com',
-        subject: `Roots & Wings ${reg.season}: Registration declined — ${reg.main_learning_coach} family`,
+        subject: emailSubject(`Roots & Wings ${reg.season}: Registration declined — ${reg.main_learning_coach} family`),
         html: `
           <h2>Your Roots &amp; Wings registration has been declined</h2>
           <p>Hi ${escapeHtml(reg.main_learning_coach)},</p>
@@ -1040,7 +1073,7 @@ async function applyMarkPaid(sql, reg, note) {
         'communications@rootsandwingsindy.com'
       ],
       replyTo: 'treasurer@rootsandwingsindy.com',
-      subject: `Roots & Wings ${reg.season} Payment Received — ${reg.main_learning_coach} family`,
+      subject: emailSubject(`Roots & Wings ${reg.season} Payment Received — ${reg.main_learning_coach} family`),
       html: `
         <h2>Payment Received &mdash; You're All Set</h2>
         <p>Hi ${escapeHtml(reg.main_learning_coach)},</p>
@@ -1190,7 +1223,7 @@ async function handleSendWelcomeEmail(body, req, res) {
         to: reg.email,
         cc: ['communications@rootsandwingsindy.com'],
         replyTo: 'communications@rootsandwingsindy.com',
-        subject: subject,
+        subject: emailSubject(subject),
         html: html
       });
     } catch (mailErr) {
@@ -1336,7 +1369,7 @@ async function handleWaiverSend(body, req, res) {
         from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
         to: email,
         replyTo: 'membership@rootsandwingsindy.com',
-        subject: `Roots & Wings Co-op: Please sign the waiver`,
+        subject: emailSubject(`Roots & Wings Co-op: Please sign the waiver`),
         html: `
           <h2>Roots &amp; Wings Co-op waiver</h2>
           <p>Hi ${escapeHtml(name)},</p>
@@ -1426,7 +1459,7 @@ async function handleWaiverResend(body, req, res) {
         from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
         to: row.email,
         replyTo: 'membership@rootsandwingsindy.com',
-        subject: subject,
+        subject: emailSubject(subject),
         html: `
           <h2>Roots &amp; Wings Co-op waiver — reminder</h2>
           <p>Hi ${escapeHtml(row.name)},</p>
@@ -1490,7 +1523,7 @@ async function handleRegistrationInvite(body, req, res) {
       from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
       to: email,
       replyTo: 'membership@rootsandwingsindy.com',
-      subject: `Roots & Wings Co-op: Your registration link`,
+      subject: emailSubject(`Roots & Wings Co-op: Your registration link`),
       html: `
         <h2>Welcome to Roots &amp; Wings!</h2>
         <p>Hi ${escapeHtml(name)},</p>
@@ -2048,8 +2081,13 @@ async function handleProfilePhoto(body, req, res) {
 async function handleTourList(req, res) {
   const user = await verifyWorkspaceAuth(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
-  const isMembership = await canEditAsRole(user.email, 'Membership Director');
-  const isComms = !isMembership && await canEditAsRole(user.email, 'Communications Director');
+  // Both role checks fire in parallel — each is a Sheets read, and the
+  // Membership Director user normally short-circuits on the first
+  // anyway. Comms is only a fallback for read-only handoffs.
+  const [isMembership, isComms] = await Promise.all([
+    canEditAsRole(user.email, 'Membership Director'),
+    canEditAsRole(user.email, 'Communications Director')
+  ]);
   if (!isMembership && !isComms) {
     const expected = await getRoleHolderEmail('Membership Director');
     return res.status(403).json({
@@ -2176,7 +2214,7 @@ async function handleTourUpdate(body, req, res) {
           from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
           to: existing.family_email,
           replyTo: 'membership@rootsandwingsindy.com',
-          subject: `Your Roots & Wings tour is confirmed`,
+          subject: emailSubject(`Your Roots & Wings tour is confirmed`),
           html: `
             <h2>Your tour is confirmed</h2>
             <p>Hi ${escapeHtml(existing.family_name)},</p>

@@ -177,6 +177,8 @@ p + p { margin-top: 1rem; }
      .btn .btn-primary         solid accent-filled pill, large
      .btn .btn-outline         transparent on primary-coloured bg
      .btn .btn-outline-dark    outlined primary-colour on light bg
+     .btn .btn-danger          coral-filled pill — destructive CTA
+                               (Confirm decline / Confirm delete inside modals)
      .btn .btn-sm              size modifier — pair with above
 
    Inline row buttons (admin rows in Supply Closet, Directory,
@@ -254,6 +256,23 @@ p + p { margin-top: 1rem; }
 
 .btn-outline-dark:hover {
   background-color: var(--color-primary);
+  color: var(--color-white);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Destructive CTA — same shape as .btn-primary but coral instead of
+   gold, so a confirm-decline / confirm-delete step inside a modal
+   reads as a real "this action is destructive" button instead of a
+   small outlined chip. Pair with .btn .btn-sm for inside-modal use. */
+.btn-danger {
+  background-color: var(--color-coral);
+  color: var(--color-white);
+  border-color: var(--color-coral);
+}
+.btn-danger:hover {
+  background-color: #B7472A;
+  border-color: #B7472A;
   color: var(--color-white);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
@@ -1862,7 +1881,7 @@ p + p { margin-top: 1rem; }
 .tour-modal {
   background: var(--color-white);
   border-radius: 16px;
-  padding: 40px;
+  padding: 28px 32px 32px;
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
@@ -1897,39 +1916,39 @@ p + p { margin-top: 1rem; }
 
 .tour-modal-title {
   font-family: var(--font-heading);
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   color: var(--color-text);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .tour-modal-subtitle {
   color: var(--color-text-light);
-  font-size: 0.95rem;
-  line-height: 1.6;
-  margin-bottom: 28px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-bottom: 16px;
 }
 
 .tour-modal-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 .tour-form-field label {
   display: block;
   font-weight: 700;
   color: var(--color-text);
-  margin-bottom: 6px;
-  font-size: 0.9rem;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
 }
 
 .tour-form-field input {
   width: 100%;
-  padding: 11px 14px;
+  padding: 9px 12px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   background: var(--color-cream);
   color: var(--color-text);
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -1946,11 +1965,11 @@ p + p { margin-top: 1rem; }
    form reads as one continuous shape. */
 .tour-form-field select {
   width: 100%;
-  padding: 11px 14px;
+  padding: 9px 12px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   background: var(--color-cream);
   color: var(--color-text);
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -1964,18 +1983,27 @@ p + p { margin-top: 1rem; }
   color: var(--color-text-light);
   margin: 4px 0 0;
 }
+/* Standalone hint above a row of fields (not a per-field hint).
+   Slightly larger, italic, primary-tinted so it reads as guidance copy
+   rather than a tooltip-style helper. */
+.tour-form-hint-lead {
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--color-primary-dark);
+  margin: 0 0 6px;
+}
 
 .tour-form-row {
   display: grid;
   grid-template-columns: 1fr 2fr;
-  gap: 16px;
+  gap: 12px;
 }
 
 .tour-form-submit {
   align-self: center;
-  padding: 13px 44px;
-  font-size: 1rem;
-  margin-top: 4px;
+  padding: 11px 40px;
+  font-size: 0.95rem;
+  margin-top: 2px;
 }
 
 @media (max-width: 500px) {
@@ -9264,6 +9292,50 @@ button.staff-role:hover {
    .ws-link-list li's display:flex above wins against [hidden]'s
    display:none otherwise (CSS specificity gotcha). */
 .ws-link-list li[hidden] { display: none; }
+
+/* Scheduled Tours To Do item carries a button + an inline glance-list
+   (Date · Time · Family) underneath. Stack them vertically inside the
+   <li>, indent the list to align under the button label. */
+.ws-link-list li#ws-todo-tours-scheduled-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.ws-tours-sched-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-tours-sched-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  border-left: 2px solid rgba(var(--color-primary-rgb), 0.15);
+  padding-left: 10px;
+}
+.ws-tours-sched-when {
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  white-space: nowrap;
+}
+.ws-tours-sched-fam {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-tours-sched-row.ws-tours-sched-more {
+  font-style: italic;
+  color: var(--color-text-light);
+  border-left-color: transparent;
+  font-size: 0.8rem;
+}
 /* Count pill that prepends a To Do item label, e.g. [3] Pending Waivers.
    Coral fill so it reads as "you have N items to action". */
 .ws-link-pre-count {

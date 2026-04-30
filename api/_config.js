@@ -11,4 +11,15 @@ const ALLOWED_ORIGINS = [
   // to the Vercel project.
 ];
 
-module.exports = { ALLOWED_ORIGINS };
+// Subject-line prefix for outbound email. VERCEL_ENV is 'production' on
+// the prod deployment, 'preview' on preview deployments, 'development'
+// under `vercel dev`. Anything that isn't prod gets a [TEST] prefix so
+// recipients (especially membership@) can tell a dev-test email apart
+// from a real one at a glance.
+function emailSubject(subject) {
+  return (process.env.VERCEL_ENV === 'production')
+    ? subject
+    : '[TEST] ' + subject;
+}
+
+module.exports = { ALLOWED_ORIGINS, emailSubject };

@@ -14,7 +14,7 @@
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { Resend } = require('resend');
-const { ALLOWED_ORIGINS } = require('./_config');
+const { ALLOWED_ORIGINS, emailSubject } = require('./_config');
 const { canEditAsRole, getRoleHolderEmail, isSuperUser } = require('./_permissions');
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
@@ -465,7 +465,7 @@ async function sendSubmissionConfirmation(sub) {
       to: sub.submitted_by_email,
       cc,
       replyTo: 'vicepresident@rootsandwingsindy.com',
-      subject: `PM Class Submission Received — ${sub.class_name}`,
+      subject: emailSubject(`PM Class Submission Received — ${sub.class_name}`),
       html: `
         <h2>Thanks for submitting a PM class!</h2>
         <p>Your submission has been logged. The VP and Afternoon Class Liaison have been copied on this email and will reach out when they're planning the next session.</p>

@@ -5467,7 +5467,7 @@
       // Server-side data fetches stay role-scoped via the /api/tour?
       // list=registrations endpoint each loader hits.
       title: 'To Do',
-      roleGate: ['Treasurer', 'Communications Director'],
+      roleGate: ['Treasurer', 'Communications Director', 'Membership Director'],
       render: function (prefs, roles, role) {
         var h = '<p class="ws-body-hint">Quick links to anything waiting on you.</p>';
         h += '<ul class="ws-link-list" id="ws-todo-list">';
@@ -5478,6 +5478,18 @@
           h += '<li id="ws-todo-onboard-item" hidden><button type="button" class="ws-link-btn" data-resource-action="member-onboarding"><span class="ws-link-pre-count" id="ws-onboard-count">0</span><span class="ws-link-icon">🌱</span><span id="ws-onboard-label">Member Onboarding</span></button></li>';
           h += '<li id="ws-todo-waivers-item" hidden><button type="button" class="ws-link-btn" data-resource-action="waivers-pending"><span class="ws-link-pre-count" id="ws-waivers-count">0</span><span class="ws-link-icon">📝</span><span id="ws-waivers-label">Pending Waivers</span></button></li>';
         }
+        if (role === 'Membership Director') {
+          h += '<li id="ws-todo-tours-item" hidden><button type="button" class="ws-link-btn" data-resource-action="membership-tour-requests"><span class="ws-link-pre-count" id="ws-tours-count">0</span><span class="ws-link-icon">🏡</span><span id="ws-tours-label">Tour Requests</span></button></li>';
+          // Scheduled Tours entry has both the button (opens Pipeline
+          // scoped to scheduled) AND a sibling <ul> rendered by
+          // updateMembershipTourTodoCounts() — a glance-view list of
+          // upcoming visits sorted by date/time so Membership can see
+          // what's on her calendar without opening the modal.
+          h += '<li id="ws-todo-tours-scheduled-item" hidden>';
+          h += '<button type="button" class="ws-link-btn" data-resource-action="membership-tours-scheduled"><span class="ws-link-pre-count" id="ws-tours-scheduled-count">0</span><span class="ws-link-icon">📅</span><span id="ws-tours-scheduled-label">Scheduled Tours</span></button>';
+          h += '<ul class="ws-tours-sched-list" id="ws-tours-sched-list"></ul>';
+          h += '</li>';
+        }
         h += '<li id="ws-todo-empty" class="ws-empty">All caught up — nothing pending.</li>';
         h += '</ul>';
         return h;
@@ -5486,11 +5498,12 @@
         // afterRender gets no role context (renderSection calls it once
         // per type, not per role-section). Each loader self-gates by
         // checking for its own DOM element and no-ops if missing — so
-        // we can safely fire all three. Whichever role's tab is on the
+        // we can safely fire all four. Whichever role's tab is on the
         // page picks up its own item.
         if (typeof loadTreasurerPendingCount === 'function') loadTreasurerPendingCount();
         if (typeof loadMemberOnboardingCount === 'function') loadMemberOnboardingCount();
         if (typeof loadPendingWaiversCount === 'function') loadPendingWaiversCount();
+        if (typeof loadMembershipTourRequestsCount === 'function') loadMembershipTourRequestsCount();
       }
     },
     'reports': {
@@ -5628,7 +5641,7 @@
   var WORKSPACE_DEFAULTS = {
     'President': ['roles', 'my-links', 'ways-to-help', 'resources'],
     'Communications Director': ['todos', 'reports', 'forms', 'admin-consoles', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
-    'Membership Director': ['reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
+    'Membership Director': ['todos', 'reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
     'Treasurer': ['todos', 'reports', 'my-links', 'ways-to-help', 'resources'],
     'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     'Afternoon Class Liaison': ['reports', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
@@ -6181,6 +6194,19 @@
   var _toursFilter = 'open';     // open = requested + scheduled + toured
   var _toursSlotsCache = null;   // { dates, times } from /api/tour?config=1
   var _toursPendingAction = null; // { tourId, type: 'schedule' | 'decline' }
+  // Bumped on every optimistic mutation. Background fetches stash the
+  // version they started at and discard their response if it has since
+  // advanced — fixes the "schedule a tour, pill flickers" race where a
+  // pre-mutation fetch returned with stale data after the optimistic
+  // update had already painted the new state.
+  var _toursMutationVersion = 0;
+  // Counter of in-flight tour-update POSTs. A GET that returns while
+  // any POST is still pending may be reading server state from before
+  // the POST landed — those GET responses are discarded too. Together
+  // with the mutation version this covers both "GET started before
+  // mutation, returned after" AND "GET started after mutation, raced
+  // with in-flight POST."
+  var _toursPendingPosts = 0;
 
   // Local time formatter — DB returns 'HH:MM:SS', the picker posts the
   // same shape. Render as "10:00 AM" / "2:30 PM" for human columns.
@@ -6199,6 +6225,36 @@
     if (!date) return '';
     var dateLabel = formatReportDate(date);
     return dateLabel + (time ? ' · ' + formatTourTime(time) : '');
+  }
+
+  // Normalize a raw tour row from /api/tour?list=tours. Neon returns
+  // DATE columns as ISO strings ('2026-05-06T00:00:00.000Z') and TIME
+  // columns as 'HH:MM:SS' (sometimes with fractional seconds). The
+  // schedule form's dropdown values are 'YYYY-MM-DD' and 'HH:MM:SS',
+  // so equality checks (and the value attribute on <option selected>)
+  // need normalized strings here. Also coerces num_kids to Number.
+  function normalizeTourRow(t) {
+    function ymd(v) {
+      if (!v) return null;
+      var s = String(v);
+      // ISO timestamp or 'YYYY-MM-DD…' — slice the date portion.
+      var m = s.match(/^\d{4}-\d{2}-\d{2}/);
+      return m ? m[0] : null;
+    }
+    function hms(v) {
+      if (!v) return null;
+      var s = String(v);
+      var m = s.match(/^(\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (!m) return null;
+      return m[1] + ':' + m[2] + ':' + (m[3] || '00');
+    }
+    return Object.assign({}, t, {
+      num_kids: (t.num_kids != null) ? Number(t.num_kids) : null,
+      preferred_date: ymd(t.preferred_date),
+      preferred_time: hms(t.preferred_time),
+      scheduled_date: ymd(t.scheduled_date),
+      scheduled_time: hms(t.scheduled_time)
+    });
   }
 
   // Column spec — standard order: row identifier (Family) → Status pill
@@ -6269,94 +6325,118 @@
     }
   ];
 
-  function showTourPipelineModal() {
+  function showTourPipelineModal(opts) {
+    // initialFilter lets a caller (e.g. the Membership To Do widget)
+    // open the modal pre-scoped to a specific status bucket. Otherwise
+    // _toursFilter persists across reopens like the other reports.
+    if (opts && opts.initialFilter) _toursFilter = opts.initialFilter;
     var icons = [
       { label: 'Print',      icon: ICON_SVG.print,    aria: 'Print the visible tours',         action: function () { printToursReport(); } },
       { label: 'Export CSV', icon: ICON_SVG.download, aria: 'Download visible tours as CSV',   action: function () { exportToursCSV(); } }
     ];
+    // Stale-while-revalidate: if we already have a cached tour list
+    // from the To Do widget's loader or a prior open, render that
+    // instantly so the modal feels snappy. The fetch then refreshes
+    // the cache in the background.
+    var hasCache = Array.isArray(_toursCache) && _toursCache.length > 0;
     var body = renderReportModal({
       title: 'Tour Pipeline',
       subtitle: 'Prospective families from request through joined or closed out. Tours run on Wednesdays during active sessions, 10:00 AM – 2:30 PM.',
       meta: '',
       icons: icons,
       bodyId: 'ws-tours-report-body',
-      bodyPlaceholder: '<p class="ws-empty">Loading tour pipeline…</p>'
+      bodyPlaceholder: hasCache ? '' : '<p class="ws-empty">Loading tour pipeline…</p>'
     });
     if (!body) return;
-    // Fetch slots + tour list in parallel so the schedule expansion form
-    // always has the date/time options ready when the user clicks
-    // Schedule…. Both endpoints are idempotent.
-    var slotsFetch = _toursSlotsCache
-      ? Promise.resolve(_toursSlotsCache)
-      : fetch('/api/tour?config=1')
-          .then(function (r) { return r.ok ? r.json() : { tourDates: [], tourTimes: [] }; })
-          .then(function (cfg) {
-            _toursSlotsCache = { dates: cfg.tourDates || [], times: cfg.tourTimes || [] };
-            return _toursSlotsCache;
-          })
-          .catch(function () { _toursSlotsCache = { dates: [], times: [] }; return _toursSlotsCache; });
-    slotsFetch.then(function () { loadTourPipeline(body); });
+    // Kick off the slots fetch (only once per session — cached for
+    // reopens) WITHOUT awaiting it before loadTourPipeline. The tour
+    // list fetch starts immediately, the table renders as soon as it
+    // arrives, and the slots arrive in parallel for when the user
+    // clicks Schedule…. Worst-case: clicking Schedule before slots
+    // land shows a partly-loaded date dropdown — easy to retry.
+    if (!_toursSlotsCache) {
+      fetch('/api/tour?config=1')
+        .then(function (r) { return r.ok ? r.json() : { tourDates: [], tourTimes: [] }; })
+        .then(function (cfg) {
+          _toursSlotsCache = { dates: cfg.tourDates || [], times: cfg.tourTimes || [] };
+        })
+        .catch(function () { _toursSlotsCache = { dates: [], times: [] }; });
+    }
+    loadTourPipeline(body, hasCache);
   }
 
-  function loadTourPipeline(body) {
+  function loadTourPipeline(body, hasCache) {
     if (!body) body = document.getElementById('ws-tours-report-body');
     if (!body) return;
-    var cred = localStorage.getItem('rw_google_credential');
-    fetch('/api/tour?list=tours', {
-      method: 'GET',
-      headers: { 'Authorization': 'Bearer ' + cred }
-    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-    .then(function (res) {
-      if (!res.ok) {
-        var msg = (res.data && res.data.error) || 'error';
-        if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
-        body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load tours: ' + msg + '</p>';
-        return;
+
+    // Two slots inside the modal body — the counts strip (refreshed
+    // after every cache mutation) and the table target (handed to
+    // renderSortableTable, also rebuilt in place). Both stay attached
+    // even when _toursCache is empty so optimistic updates that bring
+    // the cache back from empty don't have to re-create them.
+    body.innerHTML = '<div id="ws-tours-counts-strip" class="rd-counts"></div>'
+      + '<div id="ws-tours-table-target"></div>';
+    var stripEl = body.querySelector('#ws-tours-counts-strip');
+    var tableTarget = body.querySelector('#ws-tours-table-target');
+
+      function computeCounts() {
+        var counts = { requested: 0, scheduled: 0, toured: 0, joined: 0, declined: 0, ghosted: 0 };
+        (_toursCache || []).forEach(function (t) { if (counts[t.status] != null) counts[t.status] += 1; });
+        return counts;
       }
-      var tours = (res.data.tours || []).map(function (t) {
-        return Object.assign({}, t, { num_kids: (t.num_kids != null) ? Number(t.num_kids) : null });
-      });
-      _toursCache = tours;
-
-      var total = tours.length;
-      var counts = { requested: 0, scheduled: 0, toured: 0, joined: 0, declined: 0, ghosted: 0 };
-      tours.forEach(function (t) { if (counts[t.status] != null) counts[t.status] += 1; });
-      var openCount = counts.requested + counts.scheduled + counts.toured;
-
-      var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
-      if (metaEl) metaEl.textContent = total + ' tour' + (total === 1 ? '' : 's');
-
-      var countsHtml = '<div class="rd-counts">';
-      countsHtml += '<span class="ws-tour-status ws-tour-status-requested">' + counts.requested + ' Requested</span>';
-      countsHtml += '<span class="ws-tour-status ws-tour-status-scheduled">' + counts.scheduled + ' Scheduled</span>';
-      countsHtml += '<span class="ws-tour-status ws-tour-status-toured">'    + counts.toured    + ' Toured</span>';
-      countsHtml += '<span class="ws-tour-status ws-tour-status-joined">'    + counts.joined    + ' Joined</span>';
-      countsHtml += '<span class="ws-tour-status ws-tour-status-declined">'  + counts.declined  + ' Declined</span>';
-      countsHtml += '<span class="ws-tour-status ws-tour-status-ghosted">'   + counts.ghosted   + ' Ghosted</span>';
-      countsHtml += '</div>';
-
-      if (tours.length === 0) {
-        body.innerHTML = countsHtml + '<p class="ws-empty">No tour requests yet.</p>';
-        return;
-      }
-      body.innerHTML = countsHtml + '<div id="ws-tours-table-target"></div>';
-      var tableTarget = body.querySelector('#ws-tours-table-target');
-
       function rowsForFilter() {
-        if (_toursFilter === 'all') return tours;
-        if (_toursFilter === 'open') return tours.filter(function (t) {
+        if (!_toursCache) return [];
+        if (_toursFilter === 'all') return _toursCache;
+        if (_toursFilter === 'open') return _toursCache.filter(function (t) {
           return t.status === 'requested' || t.status === 'scheduled' || t.status === 'toured';
         });
-        return tours.filter(function (t) { return t.status === _toursFilter; });
+        return _toursCache.filter(function (t) { return t.status === _toursFilter; });
       }
-      function renderTable() {
+      function refreshAll() {
+        var counts = computeCounts();
+        var total = (_toursCache || []).length;
+
+        // Modal meta line — total tours.
+        var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
+        if (metaEl) metaEl.textContent = total + ' tour' + (total === 1 ? '' : 's');
+
+        // Counts strip — replace the inner pills only so the parent
+        // <div class="rd-counts"> wrapper (and its sibling table) stay
+        // attached.
+        if (stripEl) {
+          var s = '';
+          s += '<span class="ws-tour-status ws-tour-status-requested">' + counts.requested + ' Requested</span>';
+          s += '<span class="ws-tour-status ws-tour-status-scheduled">' + counts.scheduled + ' Scheduled</span>';
+          s += '<span class="ws-tour-status ws-tour-status-toured">'    + counts.toured    + ' Toured</span>';
+          s += '<span class="ws-tour-status ws-tour-status-joined">'    + counts.joined    + ' Joined</span>';
+          s += '<span class="ws-tour-status ws-tour-status-declined">'  + counts.declined  + ' Declined</span>';
+          s += '<span class="ws-tour-status ws-tour-status-ghosted">'   + counts.ghosted   + ' Ghosted</span>';
+          stripEl.innerHTML = s;
+        }
+
+        if (total === 0) {
+          if (tableTarget) tableTarget.innerHTML = '<p class="ws-empty">No tour requests yet.</p>';
+          return;
+        }
+        renderTable(counts, total);
+      }
+      function renderTable(counts, total) {
+        // Counts may not be passed — recompute if needed (filter funnel
+        // re-renders pass them through; cache-mutation paths do too).
+        if (!counts) counts = computeCounts();
+        if (total == null) total = (_toursCache || []).length;
+        var openCount = counts.requested + counts.scheduled + counts.toured;
         var cols = TOURS_TABLE_COLS.slice();
         cols.forEach(function (col) {
           if (col.key === 'status') {
+            // 'all' first so it's the canonical "unfiltered" baseline —
+            // any other current value (including the default 'open')
+            // makes the funnel render as active, signaling the user
+            // that something is being hidden.
             col.filter = {
               options: [
-                { value: 'open',      label: 'Open (req/sched/toured)', count: openCount },
                 { value: 'all',       label: 'Any',       count: total },
+                { value: 'open',      label: 'Open (req/sched/toured)', count: openCount },
                 { value: 'requested', label: 'Requested', count: counts.requested },
                 { value: 'scheduled', label: 'Scheduled', count: counts.scheduled },
                 { value: 'toured',    label: 'Toured',    count: counts.toured },
@@ -6365,7 +6445,7 @@
                 { value: 'ghosted',   label: 'Ghosted',   count: counts.ghosted }
               ],
               current: _toursFilter,
-              onChange: function (v) { _toursFilter = v; renderTable(); }
+              onChange: function (v) { _toursFilter = v; refreshAll(); }
             };
           }
         });
@@ -6376,21 +6456,63 @@
         });
       }
 
-      function tourQuickAction(id, newStatus, confirmMsg) {
-        if (!confirm(confirmMsg)) return;
+      // Optimistic update for any tour-update POST. Mutates the local
+      // cache + re-renders immediately, then fires the POST in the
+      // background. On failure, restores the original row + re-renders
+      // + alerts. Avoids the close+reopen (~2-4s of network round-trips)
+      // that the previous shape did.
+      //
+      // mutator(row) applies the optimistic change in place; revert(row)
+      // undoes it. payload is the body posted to /api/tour.
+      function applyTourUpdate(id, payload, mutator, revert, errPrefix) {
+        var idx = (_toursCache || []).findIndex(function (t) { return t.id === id; });
+        if (idx < 0) return;
+        var row = _toursCache[idx];
+        var snapshot = JSON.parse(JSON.stringify(row));
+        try { mutator(row); } catch (e) { console.error(e); return; }
+        // Bump the version so any in-flight background fetches
+        // discard their now-stale results when they return.
+        _toursMutationVersion++;
+        refreshAll();
+        // Keep the Membership To Do pills (Tour Requests / Scheduled
+        // Tours) in lockstep with the cache after every status change.
+        updateMembershipTourTodoCounts();
+
         var c = localStorage.getItem('rw_google_credential');
+        _toursPendingPosts++;
         fetch('/api/tour', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c },
-          body: JSON.stringify({ kind: 'tour-update', id: id, status: newStatus })
+          body: JSON.stringify(payload)
         }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
           .then(function (rres) {
-            if (!rres.ok) { alert('Update failed: ' + ((rres.data && rres.data.error) || 'unknown')); return; }
-            closeDetail();
-            showTourPipelineModal();
+            if (!rres.ok) {
+              if (typeof revert === 'function') revert(row);
+              else Object.assign(row, snapshot);
+              refreshAll();
+              updateMembershipTourTodoCounts();
+              alert((errPrefix || 'Update failed') + ': ' + ((rres.data && rres.data.error) || 'unknown'));
+            }
           }).catch(function (err) {
-            alert('Network error: ' + ((err && err.message) || 'unknown'));
-          });
+            if (typeof revert === 'function') revert(row);
+            else Object.assign(row, snapshot);
+            refreshAll();
+            updateMembershipTourTodoCounts();
+            alert((errPrefix || 'Update failed') + ' — network error: ' + ((err && err.message) || 'unknown'));
+          }).then(function () { _toursPendingPosts--; }, function () { _toursPendingPosts--; });
+      }
+
+      function tourQuickAction(id, newStatus, confirmMsg) {
+        if (!confirm(confirmMsg)) return;
+        applyTourUpdate(id, { kind: 'tour-update', id: id, status: newStatus }, function (row) {
+          var prev = row.status;
+          row.status = newStatus;
+          row.updated_at = new Date().toISOString();
+          row.status_history = (row.status_history || []).concat([{
+            at: new Date().toISOString(),
+            from: prev, to: newStatus
+          }]);
+        });
       }
 
       // Delegated click handler for action buttons + the in-expansion
@@ -6425,7 +6547,7 @@
 
         if (e.target.classList.contains('ws-tour-cancel-btn')) {
           _toursPendingAction = null;
-          renderTable();
+          refreshAll();
           return;
         }
         if (e.target.classList.contains('ws-tour-schedule-confirm-btn')) {
@@ -6440,34 +6562,22 @@
             statusEl.textContent = 'Pick both a date and a time before confirming.';
             return;
           }
-          statusEl.textContent = 'Scheduling…';
-          sCBtn.disabled = true;
-          var c = localStorage.getItem('rw_google_credential');
-          fetch('/api/tour', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c },
-            body: JSON.stringify({
-              kind: 'tour-update',
-              id: sCId,
-              status: 'scheduled',
-              scheduled_date: dateEl.value,
-              scheduled_time: timeEl.value,
-              note: noteEl ? noteEl.value : ''
-            })
-          }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
-            .then(function (rres) {
-              if (!rres.ok) {
-                statusEl.textContent = 'Error: ' + ((rres.data && rres.data.error) || 'unknown');
-                sCBtn.disabled = false;
-                return;
-              }
-              statusEl.textContent = 'Scheduled. Confirmation email sent to the family.';
-              _toursPendingAction = null;
-              setTimeout(function () { closeDetail(); showTourPipelineModal(); }, 700);
-            }).catch(function (err) {
-              statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
-              sCBtn.disabled = false;
-            });
+          var sNote = noteEl ? noteEl.value : '';
+          _toursPendingAction = null;
+          applyTourUpdate(sCId, {
+            kind: 'tour-update', id: sCId, status: 'scheduled',
+            scheduled_date: dateEl.value, scheduled_time: timeEl.value, note: sNote
+          }, function (row) {
+            var prev = row.status;
+            row.status = 'scheduled';
+            row.scheduled_date = dateEl.value;
+            row.scheduled_time = timeEl.value;
+            row.updated_at = new Date().toISOString();
+            row.status_history = (row.status_history || []).concat([{
+              at: new Date().toISOString(),
+              from: prev, to: 'scheduled', note: sNote || undefined
+            }]);
+          }, null, 'Schedule failed');
           return;
         }
         if (e.target.classList.contains('ws-tour-decline-confirm-btn')) {
@@ -6475,40 +6585,69 @@
           var dCId = parseInt(dCBtn.getAttribute('data-tour-id'), 10);
           var dCWrap = dCBtn.closest('.ws-tour-decline-form');
           var reasonEl = dCWrap.querySelector('.ws-tour-decline-reason');
-          var statusEl2 = dCWrap.querySelector('.ws-tour-decline-status');
-          statusEl2.textContent = 'Saving…';
-          dCBtn.disabled = true;
-          var c2 = localStorage.getItem('rw_google_credential');
-          fetch('/api/tour', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c2 },
-            body: JSON.stringify({
-              kind: 'tour-update',
-              id: dCId,
-              status: 'declined',
-              decline_reason: reasonEl ? reasonEl.value : '',
-              note: reasonEl ? reasonEl.value : ''
-            })
-          }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
-            .then(function (rres) {
-              if (!rres.ok) {
-                statusEl2.textContent = 'Error: ' + ((rres.data && rres.data.error) || 'unknown');
-                dCBtn.disabled = false;
-                return;
-              }
-              _toursPendingAction = null;
-              setTimeout(function () { closeDetail(); showTourPipelineModal(); }, 400);
-            }).catch(function (err) {
-              statusEl2.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
-              dCBtn.disabled = false;
-            });
+          var dReason = reasonEl ? reasonEl.value : '';
+          _toursPendingAction = null;
+          applyTourUpdate(dCId, {
+            kind: 'tour-update', id: dCId, status: 'declined',
+            decline_reason: dReason, note: dReason
+          }, function (row) {
+            var prev = row.status;
+            row.status = 'declined';
+            row.decline_reason = dReason;
+            row.updated_at = new Date().toISOString();
+            row.status_history = (row.status_history || []).concat([{
+              at: new Date().toISOString(),
+              from: prev, to: 'declined', note: dReason || undefined
+            }]);
+          }, null, 'Decline failed');
           return;
         }
       });
 
-      renderTable();
+    // Stale-while-revalidate: if we already have a cached tour list
+    // (from the To Do widget's loader or a prior open), render it
+    // immediately so the modal feels instant. The fetch below then
+    // refreshes silently. If no cache, the strip+table stay empty
+    // until the fetch lands.
+    if (hasCache && Array.isArray(_toursCache) && _toursCache.length > 0) {
+      refreshAll();
+    }
+
+    // Background fetch — always runs, even when we already painted
+    // from cache. Updates _toursCache + re-renders. Stashes the
+    // mutation version at fetch-start; if it has advanced by the
+    // time the response lands, an optimistic update happened
+    // mid-flight and our response is stale — discard it.
+    var cred = localStorage.getItem('rw_google_credential');
+    var fetchVersion = _toursMutationVersion;
+    fetch('/api/tour?list=tours', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (res) {
+      if (_toursMutationVersion !== fetchVersion || _toursPendingPosts > 0) {
+        console.debug('[loadTourPipeline] discarding stale fetch (mutation/post in flight)');
+        return;
+      }
+      if (!res.ok) {
+        var msg = (res.data && res.data.error) || 'error';
+        if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+        // If we already painted from cache, leave it visible; only
+        // surface the error when there was nothing to fall back to.
+        if (!hasCache) body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load tours: ' + msg + '</p>';
+        else console.warn('[loadTourPipeline] background refresh failed: ' + msg);
+        return;
+      }
+      _toursCache = (res.data.tours || []).map(normalizeTourRow);
+      refreshAll();
+      // Background refresh also re-syncs the Membership To Do pills
+      // so they reflect the freshest data even if someone scheduled a
+      // tour in another tab.
+      if (typeof updateMembershipTourTodoCounts === 'function') updateMembershipTourTodoCounts();
     }).catch(function (err) {
-      body.innerHTML = '<p class="ws-empty ws-wv-err">Network error: ' + ((err && err.message) || 'unknown') + '</p>';
+      if (_toursMutationVersion !== fetchVersion) return;
+      if (!hasCache) body.innerHTML = '<p class="ws-empty ws-wv-err">Network error: ' + ((err && err.message) || 'unknown') + '</p>';
+      else console.warn('[loadTourPipeline] background refresh network error:', err);
     });
   }
 
@@ -6551,8 +6690,8 @@
         h += '</div>';
         h += '<label>Note for the family (optional)<textarea class="rd-textarea ws-tour-sched-note" rows="2" placeholder="What to expect, what to bring, parking tips&hellip;"></textarea></label>';
         h += '<div class="rd-btn-row">';
-        h += '<button type="button" class="sc-btn ws-tour-schedule-confirm-btn" data-tour-id="' + t.id + '">Confirm — schedule</button>';
-        h += '<button type="button" class="sc-btn ws-tour-cancel-btn">Cancel</button>';
+        h += '<button type="button" class="btn btn-primary btn-sm ws-tour-schedule-confirm-btn" data-tour-id="' + t.id + '">Confirm — schedule</button>';
+        h += '<button type="button" class="btn btn-outline-dark btn-sm ws-tour-cancel-btn">Cancel</button>';
         h += '</div>';
         h += '<p class="ws-tour-sched-status" aria-live="polite" style="margin-top:8px;"></p>';
         h += '</div>';
@@ -6561,8 +6700,8 @@
         h += '<p class="ws-reg-decline-hint"><strong>Mark ' + escapeHtmlWs(t.family_name || '') + ' as declined?</strong> The note below is saved as the decline reason for our records (the family does not receive an automated email).</p>';
         h += '<textarea class="rd-textarea ws-tour-decline-reason" rows="3" placeholder="Reason / context (optional)&hellip;"></textarea>';
         h += '<div class="rd-btn-row">';
-        h += '<button type="button" class="sc-btn sc-btn-del ws-tour-decline-confirm-btn" data-tour-id="' + t.id + '">Confirm — declined</button>';
-        h += '<button type="button" class="sc-btn ws-tour-cancel-btn">Cancel</button>';
+        h += '<button type="button" class="btn btn-danger btn-sm ws-tour-decline-confirm-btn" data-tour-id="' + t.id + '">Confirm — declined</button>';
+        h += '<button type="button" class="btn btn-outline-dark btn-sm ws-tour-cancel-btn">Cancel</button>';
         h += '</div>';
         h += '<p class="ws-tour-decline-status" aria-live="polite" style="margin-top:8px;"></p>';
         h += '</div>';
@@ -11578,6 +11717,16 @@
       // Open the Membership Report pre-scoped to pending payments.
       showMembershipReportModal({ initialFilter: 'pending' });
     }
+    else if (action === 'membership-tour-requests' && typeof showTourPipelineModal === 'function') {
+      // Open the Tour Pipeline pre-scoped to requested-but-not-yet-
+      // scheduled tours — the bucket Membership needs to act on.
+      showTourPipelineModal({ initialFilter: 'requested' });
+    }
+    else if (action === 'membership-tours-scheduled' && typeof showTourPipelineModal === 'function') {
+      // Scheduled tours — the visits Membership has confirmed and
+      // needs to prep for / conduct.
+      showTourPipelineModal({ initialFilter: 'scheduled' });
+    }
   });
 
   // Render all coordination tabs
@@ -13986,6 +14135,129 @@
   // Uses /api/tour?list=registrations (same endpoint as the Membership
   // Report) so we don't add a second route. Counts rows whose
   // payment_status is anything other than 'paid'.
+  // Membership Director To Do widget — paints the tour pipeline's two
+  // counts at once: tours with status 'requested' (Membership needs
+  // to schedule or close out) and 'scheduled' (Membership has a
+  // confirmed slot to prep for / conduct). One fetch, two pills.
+  // Clicking either row opens the Tour Pipeline scoped to that bucket.
+  // Also updates _toursCache as a side effect so re-opening the modal
+  // can render instantly while a fresh fetch runs in the background.
+  function loadMembershipTourRequestsCount() {
+    var reqItem  = document.getElementById('ws-todo-tours-item');
+    var schedItem = document.getElementById('ws-todo-tours-scheduled-item');
+    if (!reqItem && !schedItem) return;
+    var cred = localStorage.getItem('rw_google_credential');
+    if (!cred) return;
+    var fetchVersion = _toursMutationVersion;
+    fetch('/api/tour?list=tours', {
+      headers: { 'Authorization': 'Bearer ' + cred }
+    })
+      .then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; })
+          .catch(function () { return { ok: r.ok, status: r.status, data: null }; });
+      })
+      .then(function (res) {
+        // Discard the response if an optimistic update bumped the
+        // mutation version OR if a POST is still in flight that the
+        // server may not have applied yet — both are stale states our
+        // local cache is more authoritative about.
+        if (_toursMutationVersion !== fetchVersion || _toursPendingPosts > 0) {
+          console.debug('[loadMembershipTourRequestsCount] discarding stale fetch (mutation/post in flight)');
+          return;
+        }
+        if (!res.ok) {
+          var msg = (res.data && res.data.error) || ('HTTP ' + res.status);
+          if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+          console.warn('[loadMembershipTourRequestsCount] ' + msg);
+          if (reqItem)   reqItem.hidden = true;
+          if (schedItem) schedItem.hidden = true;
+          recomputeTodoEmptyState();
+          return;
+        }
+        var tours = Array.isArray(res.data && res.data.tours) ? res.data.tours : [];
+        // Pre-warm the Tour Pipeline cache so opening the modal renders
+        // instantly. Same normalization the Pipeline modal uses so any
+        // surface reading the cache (counts, labels, equality checks
+        // in the schedule form) sees consistent shapes.
+        _toursCache = tours.map(normalizeTourRow);
+        updateMembershipTourTodoCounts();
+      })
+      .catch(function (err) { console.warn('[loadMembershipTourRequestsCount] network error:', err); });
+  }
+
+  // Reads _toursCache + paints the two Membership To Do pills from
+  // it. Used by both the initial fetch and any optimistic update so
+  // the pill counts stay in lockstep with the cache without a server
+  // round-trip after every status change.
+  function updateMembershipTourTodoCounts() {
+    var reqItem  = document.getElementById('ws-todo-tours-item');
+    var schedItem = document.getElementById('ws-todo-tours-scheduled-item');
+    if (!reqItem && !schedItem) return;
+    var tours = _toursCache || [];
+    var requested = tours.filter(function (t) { return t.status === 'requested'; }).length;
+    var scheduled = tours.filter(function (t) { return t.status === 'scheduled'; }).length;
+
+    if (reqItem) {
+      if (requested > 0) {
+        var rLabel = document.getElementById('ws-tours-label');
+        var rPill  = document.getElementById('ws-tours-count');
+        if (rLabel) rLabel.textContent = 'Tour Request' + (requested === 1 ? '' : 's');
+        if (rPill)  rPill.textContent  = String(requested);
+        reqItem.hidden = false;
+      } else {
+        reqItem.hidden = true;
+      }
+    }
+    if (schedItem) {
+      if (scheduled > 0) {
+        var sLabel = document.getElementById('ws-tours-scheduled-label');
+        var sPill  = document.getElementById('ws-tours-scheduled-count');
+        if (sLabel) sLabel.textContent = 'Scheduled Tour' + (scheduled === 1 ? '' : 's');
+        if (sPill)  sPill.textContent  = String(scheduled);
+        schedItem.hidden = false;
+
+        // Populate the inline glance-list under the button. Sort by
+        // (date, time) ascending so the next-soonest tour is on top
+        // and any past-but-not-yet-marked-toured rows surface first
+        // as action items. Cap at 6 with a "+N more" tail so the
+        // To Do card doesn't get tall when the pipeline backs up.
+        var listEl = document.getElementById('ws-tours-sched-list');
+        if (listEl) {
+          var scheduledRows = tours
+            .filter(function (t) { return t.status === 'scheduled'; })
+            .slice()
+            .sort(function (a, b) {
+              var ka = (a.scheduled_date || '9999-12-31') + ' ' + (a.scheduled_time || '99:99:99');
+              var kb = (b.scheduled_date || '9999-12-31') + ' ' + (b.scheduled_time || '99:99:99');
+              return ka < kb ? -1 : ka > kb ? 1 : 0;
+            });
+          var MAX_VISIBLE = 6;
+          var visible = scheduledRows.slice(0, MAX_VISIBLE);
+          var rest = scheduledRows.length - visible.length;
+          var html = '';
+          visible.forEach(function (t) {
+            var dateLabel = formatReportDate(t.scheduled_date) || '—';
+            var timeLabel = t.scheduled_time ? formatTourTime(t.scheduled_time) : '';
+            html += '<li class="ws-tours-sched-row" data-tour-id="' + t.id + '">'
+              + '<span class="ws-tours-sched-when">' + escapeHtmlWs(dateLabel)
+              + (timeLabel ? ' &middot; ' + escapeHtmlWs(timeLabel) : '') + '</span>'
+              + '<span class="ws-tours-sched-fam">' + escapeHtmlWs(t.family_name || '') + '</span>'
+              + '</li>';
+          });
+          if (rest > 0) {
+            html += '<li class="ws-tours-sched-row ws-tours-sched-more">+' + rest + ' more &mdash; open the Pipeline to see all</li>';
+          }
+          listEl.innerHTML = html;
+        }
+      } else {
+        schedItem.hidden = true;
+        var listEl2 = document.getElementById('ws-tours-sched-list');
+        if (listEl2) listEl2.innerHTML = '';
+      }
+    }
+    if (typeof recomputeTodoEmptyState === 'function') recomputeTodoEmptyState();
+  }
+
   function loadTreasurerPendingCount() {
     var item = document.getElementById('ws-todo-pending-item');
     var pill = document.getElementById('ws-todo-pending-count');
