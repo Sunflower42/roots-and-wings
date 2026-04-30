@@ -1935,10 +1935,34 @@ p + p { margin-top: 1rem; }
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.tour-form-field input:focus {
+.tour-form-field input:focus,
+.tour-form-field select:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
+}
+
+/* Date + time pickers share the same chrome as text inputs so the
+   form reads as one continuous shape. */
+.tour-form-field select {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  background: var(--color-cream);
+  color: var(--color-text);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.tour-form-field select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.tour-form-hint {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  margin: 4px 0 0;
 }
 
 .tour-form-row {
@@ -9415,6 +9439,58 @@ button.staff-role:hover {
 }
 .ws-wv-ok      { background: rgba(90, 107, 57, 0.14);   color: var(--color-leaf); }
 .ws-wv-pending { background: rgba(224, 181, 44, 0.18);  color: var(--color-accent-dark); }
+/* Tour Pipeline status pills — same shape as .ws-wv-* / .pmrep-status
+   so all reports' status columns read as the same kind of badge.
+   Color tracks the lifecycle: amber (waiting on us) → plum (committed
+   slot) → chartreuse (in-flight) → green (success) → coral (lost) →
+   gray (no response). */
+.ws-tour-status {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.ws-tour-status-requested { background: rgba(224, 181, 44, 0.18);          color: var(--color-accent-dark); }
+.ws-tour-status-scheduled { background: rgba(var(--color-primary-rgb), 0.14); color: var(--color-primary-dark); }
+.ws-tour-status-toured    { background: rgba(var(--color-accent-light-rgb), 0.35); color: var(--color-accent-dark); }
+.ws-tour-status-joined    { background: rgba(90, 107, 57, 0.16);            color: var(--color-leaf); }
+.ws-tour-status-declined  { background: rgba(var(--color-coral-rgb), 0.18); color: #8A2222; }
+.ws-tour-status-ghosted   { background: rgba(0, 0, 0, 0.08);                color: var(--color-text-light); }
+
+/* Schedule + reschedule form rendered at the top of the expansion
+   panel for a Tour Pipeline row. Two-column grid for date + time,
+   note textarea spans full width. */
+.ws-tour-schedule-form .ws-tour-sched-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 8px 0 10px;
+}
+.ws-tour-schedule-form label,
+.ws-tour-decline-form label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+.ws-tour-schedule-form select.rd-input,
+.ws-tour-schedule-form textarea.rd-textarea,
+.ws-tour-decline-form textarea.rd-textarea {
+  width: 100%;
+}
+.ws-tour-sched-status,
+.ws-tour-decline-status {
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+  min-height: 1em;
+}
+
 /* Neutral count-strip pill — used for informational tallies that
    aren't a status signal (e.g. Membership Report's per-track kid
    counts). Same shape/typography as .ws-wv-* so the strip reads as

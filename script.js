@@ -5602,10 +5602,12 @@
   // safely embedded in data-* attributes.
   var ROLE_REPORTS = {
     'Communications Director': [
+      { key: 'tour-pipeline', title: 'Tour Pipeline' },
       { key: 'waivers', title: 'Waivers Report' },
       { key: 'membership', title: 'Membership Report' }
     ],
     'Membership Director': [
+      { key: 'tour-pipeline', title: 'Tour Pipeline' },
       { key: 'membership', title: 'Membership Report' }
     ],
     'Treasurer': [
@@ -5902,6 +5904,7 @@
         if (key === 'waivers') showWaiversReportModal();
         else if (key === 'membership') showMembershipReportModal();
         else if (key === 'participation') showParticipationReportModal();
+        else if (key === 'tour-pipeline') showTourPipelineModal();
       });
     });
 
@@ -6161,6 +6164,503 @@
       doc += '<td>' + escapeHtml(w.source) + (w.context ? ' <span style="color:#666;font-size:11px;">(' + escapeHtml(w.context) + ')</span>' : '') + '</td>';
       doc += '<td>' + escapeHtml(w.email || '') + '</td>';
       doc += '<td>' + escapeHtml(formatReportDate(w.sent_at)) + '</td>';
+      doc += '</tr>';
+    });
+    doc += '</tbody></table></body></html>';
+    openPrintIframe(doc);
+  }
+
+  // ─── Tour Pipeline (Membership Director) ───
+  // Backed by the `tours` DB table. Public form (index.html) inserts a
+  // row with status='requested'; this modal lets the Membership Director
+  // walk it through scheduled → toured → joined / declined / ghosted.
+  // Slot pickers re-use the public form's server-supplied date + time
+  // lists so available Wednesdays stay in lockstep with SESSION_DATES.
+
+  var _toursCache = null;
+  var _toursFilter = 'open';     // open = requested + scheduled + toured
+  var _toursSlotsCache = null;   // { dates, times } from /api/tour?config=1
+  var _toursPendingAction = null; // { tourId, type: 'schedule' | 'decline' }
+
+  // Local time formatter — DB returns 'HH:MM:SS', the picker posts the
+  // same shape. Render as "10:00 AM" / "2:30 PM" for human columns.
+  function formatTourTime(t) {
+    if (!t) return '';
+    var parts = String(t).split(':');
+    var h = parseInt(parts[0], 10);
+    var m = parts[1] || '00';
+    if (!Number.isFinite(h)) return String(t);
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    var hh = h % 12; if (hh === 0) hh = 12;
+    return hh + ':' + m + ' ' + ampm;
+  }
+
+  function tourSlotLabel(date, time) {
+    if (!date) return '';
+    var dateLabel = formatReportDate(date);
+    return dateLabel + (time ? ' · ' + formatTourTime(time) : '');
+  }
+
+  // Column spec — standard order: row identifier (Family) → Status pill
+  // → domain columns (Preferred / Scheduled / Kids / Requested) → trailing
+  // Actions column with stage-specific buttons.
+  var TOURS_TABLE_COLS = [
+    { key: 'family_name', label: 'Family', type: 'string',
+      sortValue: function (t) { return (t.family_name || '').toLowerCase(); },
+      render: function (t) {
+        var n = escapeHtmlWs(t.family_name || '');
+        var em = t.family_email ? '<br><span class="ws-wv-context">' + escapeHtmlWs(t.family_email) + '</span>' : '';
+        return n + em;
+      }
+    },
+    { key: 'status', label: 'Status', type: 'string',
+      sortValue: function (t) {
+        var order = { requested: 0, scheduled: 1, toured: 2, joined: 3, declined: 4, ghosted: 5 };
+        return String(order[t.status] != null ? order[t.status] : 9);
+      },
+      render: function (t) {
+        return '<span class="ws-tour-status ws-tour-status-' + escapeHtmlWs(t.status) + '">' + escapeHtmlWs(t.status) + '</span>';
+      }
+    },
+    { key: 'preferred_slot', label: 'Preferred', type: 'string',
+      sortValue: function (t) { return (t.preferred_date || '') + ' ' + (t.preferred_time || ''); },
+      render: function (t) {
+        if (!t.preferred_date) return '<span class="ws-srt-actions-empty">no preference</span>';
+        return escapeHtmlWs(tourSlotLabel(t.preferred_date, t.preferred_time));
+      }
+    },
+    { key: 'scheduled_slot', label: 'Scheduled', type: 'string',
+      sortValue: function (t) { return (t.scheduled_date || '') + ' ' + (t.scheduled_time || ''); },
+      render: function (t) {
+        if (!t.scheduled_date) return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        return escapeHtmlWs(tourSlotLabel(t.scheduled_date, t.scheduled_time));
+      }
+    },
+    { key: 'kids', label: 'Kids', type: 'number',
+      sortValue: function (t) { return t.num_kids != null ? Number(t.num_kids) : -1; },
+      render: function (t) {
+        var n = (t.num_kids != null) ? String(t.num_kids) : '?';
+        var ages = t.ages ? ' <span class="ws-wv-context">(' + escapeHtmlWs(t.ages) + ')</span>' : '';
+        return n + ages;
+      }
+    },
+    { key: 'created_at', label: 'Requested', type: 'date',
+      render: function (t) { return formatReportDate(t.created_at); }
+    },
+    { key: '_actions', label: 'Actions', type: 'string', sortable: false,
+      render: function (t) {
+        if (!isMembershipDirector()) return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        var btns = '';
+        if (t.status === 'requested') {
+          btns += '<button type="button" class="sc-btn ws-tour-schedule-btn" data-tour-id="' + t.id + '">Schedule&hellip;</button>';
+          btns += '<button type="button" class="sc-btn ws-tour-ghost-btn" data-tour-id="' + t.id + '">Ghost</button>';
+        } else if (t.status === 'scheduled') {
+          btns += '<button type="button" class="sc-btn ws-tour-toured-btn" data-tour-id="' + t.id + '">Mark toured</button>';
+          btns += '<button type="button" class="sc-btn ws-tour-schedule-btn" data-tour-id="' + t.id + '">Reschedule&hellip;</button>';
+        } else if (t.status === 'toured') {
+          btns += '<button type="button" class="sc-btn ws-tour-joined-btn" data-tour-id="' + t.id + '">Joined</button>';
+          btns += '<button type="button" class="sc-btn sc-btn-del ws-tour-decline-btn" data-tour-id="' + t.id + '">Declined&hellip;</button>';
+          btns += '<button type="button" class="sc-btn ws-tour-ghost-btn" data-tour-id="' + t.id + '">Ghost</button>';
+        } else {
+          return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        }
+        return '<div class="ws-srt-actions">' + btns + '</div>';
+      }
+    }
+  ];
+
+  function showTourPipelineModal() {
+    var icons = [
+      { label: 'Print',      icon: ICON_SVG.print,    aria: 'Print the visible tours',         action: function () { printToursReport(); } },
+      { label: 'Export CSV', icon: ICON_SVG.download, aria: 'Download visible tours as CSV',   action: function () { exportToursCSV(); } }
+    ];
+    var body = renderReportModal({
+      title: 'Tour Pipeline',
+      subtitle: 'Prospective families from request through joined or closed out. Tours run on Wednesdays during active sessions, 10:00 AM – 2:30 PM.',
+      meta: '',
+      icons: icons,
+      bodyId: 'ws-tours-report-body',
+      bodyPlaceholder: '<p class="ws-empty">Loading tour pipeline…</p>'
+    });
+    if (!body) return;
+    // Fetch slots + tour list in parallel so the schedule expansion form
+    // always has the date/time options ready when the user clicks
+    // Schedule…. Both endpoints are idempotent.
+    var slotsFetch = _toursSlotsCache
+      ? Promise.resolve(_toursSlotsCache)
+      : fetch('/api/tour?config=1')
+          .then(function (r) { return r.ok ? r.json() : { tourDates: [], tourTimes: [] }; })
+          .then(function (cfg) {
+            _toursSlotsCache = { dates: cfg.tourDates || [], times: cfg.tourTimes || [] };
+            return _toursSlotsCache;
+          })
+          .catch(function () { _toursSlotsCache = { dates: [], times: [] }; return _toursSlotsCache; });
+    slotsFetch.then(function () { loadTourPipeline(body); });
+  }
+
+  function loadTourPipeline(body) {
+    if (!body) body = document.getElementById('ws-tours-report-body');
+    if (!body) return;
+    var cred = localStorage.getItem('rw_google_credential');
+    fetch('/api/tour?list=tours', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + cred }
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (res) {
+      if (!res.ok) {
+        var msg = (res.data && res.data.error) || 'error';
+        if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
+        body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load tours: ' + msg + '</p>';
+        return;
+      }
+      var tours = (res.data.tours || []).map(function (t) {
+        return Object.assign({}, t, { num_kids: (t.num_kids != null) ? Number(t.num_kids) : null });
+      });
+      _toursCache = tours;
+
+      var total = tours.length;
+      var counts = { requested: 0, scheduled: 0, toured: 0, joined: 0, declined: 0, ghosted: 0 };
+      tours.forEach(function (t) { if (counts[t.status] != null) counts[t.status] += 1; });
+      var openCount = counts.requested + counts.scheduled + counts.toured;
+
+      var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
+      if (metaEl) metaEl.textContent = total + ' tour' + (total === 1 ? '' : 's');
+
+      var countsHtml = '<div class="rd-counts">';
+      countsHtml += '<span class="ws-tour-status ws-tour-status-requested">' + counts.requested + ' Requested</span>';
+      countsHtml += '<span class="ws-tour-status ws-tour-status-scheduled">' + counts.scheduled + ' Scheduled</span>';
+      countsHtml += '<span class="ws-tour-status ws-tour-status-toured">'    + counts.toured    + ' Toured</span>';
+      countsHtml += '<span class="ws-tour-status ws-tour-status-joined">'    + counts.joined    + ' Joined</span>';
+      countsHtml += '<span class="ws-tour-status ws-tour-status-declined">'  + counts.declined  + ' Declined</span>';
+      countsHtml += '<span class="ws-tour-status ws-tour-status-ghosted">'   + counts.ghosted   + ' Ghosted</span>';
+      countsHtml += '</div>';
+
+      if (tours.length === 0) {
+        body.innerHTML = countsHtml + '<p class="ws-empty">No tour requests yet.</p>';
+        return;
+      }
+      body.innerHTML = countsHtml + '<div id="ws-tours-table-target"></div>';
+      var tableTarget = body.querySelector('#ws-tours-table-target');
+
+      function rowsForFilter() {
+        if (_toursFilter === 'all') return tours;
+        if (_toursFilter === 'open') return tours.filter(function (t) {
+          return t.status === 'requested' || t.status === 'scheduled' || t.status === 'toured';
+        });
+        return tours.filter(function (t) { return t.status === _toursFilter; });
+      }
+      function renderTable() {
+        var cols = TOURS_TABLE_COLS.slice();
+        cols.forEach(function (col) {
+          if (col.key === 'status') {
+            col.filter = {
+              options: [
+                { value: 'open',      label: 'Open (req/sched/toured)', count: openCount },
+                { value: 'all',       label: 'Any',       count: total },
+                { value: 'requested', label: 'Requested', count: counts.requested },
+                { value: 'scheduled', label: 'Scheduled', count: counts.scheduled },
+                { value: 'toured',    label: 'Toured',    count: counts.toured },
+                { value: 'joined',    label: 'Joined',    count: counts.joined },
+                { value: 'declined',  label: 'Declined',  count: counts.declined },
+                { value: 'ghosted',   label: 'Ghosted',   count: counts.ghosted }
+              ],
+              current: _toursFilter,
+              onChange: function (v) { _toursFilter = v; renderTable(); }
+            };
+          }
+        });
+        renderSortableTable(tableTarget, cols, rowsForFilter(), {
+          initialSort: { key: 'created_at', dir: 'desc' },
+          expandable: true,
+          renderDetail: renderTourRowDetail
+        });
+      }
+
+      function tourQuickAction(id, newStatus, confirmMsg) {
+        if (!confirm(confirmMsg)) return;
+        var c = localStorage.getItem('rw_google_credential');
+        fetch('/api/tour', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c },
+          body: JSON.stringify({ kind: 'tour-update', id: id, status: newStatus })
+        }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
+          .then(function (rres) {
+            if (!rres.ok) { alert('Update failed: ' + ((rres.data && rres.data.error) || 'unknown')); return; }
+            closeDetail();
+            showTourPipelineModal();
+          }).catch(function (err) {
+            alert('Network error: ' + ((err && err.message) || 'unknown'));
+          });
+      }
+
+      // Delegated click handler for action buttons + the in-expansion
+      // confirm UI for Schedule / Decline.
+      body.addEventListener('click', function (e) {
+        var schedBtn = e.target.closest('.ws-tour-schedule-btn');
+        if (schedBtn) {
+          var sId = parseInt(schedBtn.getAttribute('data-tour-id'), 10);
+          _toursPendingAction = { tourId: sId, type: 'schedule' };
+          var sRow = schedBtn.closest('tr');
+          var sIdx = sRow ? parseInt(sRow.getAttribute('data-row-idx'), 10) : -1;
+          if (tableTarget._expandRow && sIdx >= 0) tableTarget._expandRow(sIdx);
+          else renderTable();
+          return;
+        }
+        var declBtn = e.target.closest('.ws-tour-decline-btn');
+        if (declBtn) {
+          var dId = parseInt(declBtn.getAttribute('data-tour-id'), 10);
+          _toursPendingAction = { tourId: dId, type: 'decline' };
+          var dRow = declBtn.closest('tr');
+          var dIdx = dRow ? parseInt(dRow.getAttribute('data-row-idx'), 10) : -1;
+          if (tableTarget._expandRow && dIdx >= 0) tableTarget._expandRow(dIdx);
+          else renderTable();
+          return;
+        }
+        var touredBtn = e.target.closest('.ws-tour-toured-btn');
+        if (touredBtn) { tourQuickAction(parseInt(touredBtn.getAttribute('data-tour-id'), 10), 'toured', 'Mark this family as toured?'); return; }
+        var joinedBtn = e.target.closest('.ws-tour-joined-btn');
+        if (joinedBtn) { tourQuickAction(parseInt(joinedBtn.getAttribute('data-tour-id'), 10), 'joined', 'Mark this family as joined? They should now appear in the Membership Report once they register.'); return; }
+        var ghostBtn = e.target.closest('.ws-tour-ghost-btn');
+        if (ghostBtn) { tourQuickAction(parseInt(ghostBtn.getAttribute('data-tour-id'), 10), 'ghosted', 'Mark this family as ghosted (no response)?'); return; }
+
+        if (e.target.classList.contains('ws-tour-cancel-btn')) {
+          _toursPendingAction = null;
+          renderTable();
+          return;
+        }
+        if (e.target.classList.contains('ws-tour-schedule-confirm-btn')) {
+          var sCBtn = e.target;
+          var sCId = parseInt(sCBtn.getAttribute('data-tour-id'), 10);
+          var sCWrap = sCBtn.closest('.ws-tour-schedule-form');
+          var dateEl = sCWrap.querySelector('.ws-tour-sched-date');
+          var timeEl = sCWrap.querySelector('.ws-tour-sched-time');
+          var noteEl = sCWrap.querySelector('.ws-tour-sched-note');
+          var statusEl = sCWrap.querySelector('.ws-tour-sched-status');
+          if (!dateEl.value || !timeEl.value) {
+            statusEl.textContent = 'Pick both a date and a time before confirming.';
+            return;
+          }
+          statusEl.textContent = 'Scheduling…';
+          sCBtn.disabled = true;
+          var c = localStorage.getItem('rw_google_credential');
+          fetch('/api/tour', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c },
+            body: JSON.stringify({
+              kind: 'tour-update',
+              id: sCId,
+              status: 'scheduled',
+              scheduled_date: dateEl.value,
+              scheduled_time: timeEl.value,
+              note: noteEl ? noteEl.value : ''
+            })
+          }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
+            .then(function (rres) {
+              if (!rres.ok) {
+                statusEl.textContent = 'Error: ' + ((rres.data && rres.data.error) || 'unknown');
+                sCBtn.disabled = false;
+                return;
+              }
+              statusEl.textContent = 'Scheduled. Confirmation email sent to the family.';
+              _toursPendingAction = null;
+              setTimeout(function () { closeDetail(); showTourPipelineModal(); }, 700);
+            }).catch(function (err) {
+              statusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+              sCBtn.disabled = false;
+            });
+          return;
+        }
+        if (e.target.classList.contains('ws-tour-decline-confirm-btn')) {
+          var dCBtn = e.target;
+          var dCId = parseInt(dCBtn.getAttribute('data-tour-id'), 10);
+          var dCWrap = dCBtn.closest('.ws-tour-decline-form');
+          var reasonEl = dCWrap.querySelector('.ws-tour-decline-reason');
+          var statusEl2 = dCWrap.querySelector('.ws-tour-decline-status');
+          statusEl2.textContent = 'Saving…';
+          dCBtn.disabled = true;
+          var c2 = localStorage.getItem('rw_google_credential');
+          fetch('/api/tour', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c2 },
+            body: JSON.stringify({
+              kind: 'tour-update',
+              id: dCId,
+              status: 'declined',
+              decline_reason: reasonEl ? reasonEl.value : '',
+              note: reasonEl ? reasonEl.value : ''
+            })
+          }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
+            .then(function (rres) {
+              if (!rres.ok) {
+                statusEl2.textContent = 'Error: ' + ((rres.data && rres.data.error) || 'unknown');
+                dCBtn.disabled = false;
+                return;
+              }
+              _toursPendingAction = null;
+              setTimeout(function () { closeDetail(); showTourPipelineModal(); }, 400);
+            }).catch(function (err) {
+              statusEl2.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
+              dCBtn.disabled = false;
+            });
+          return;
+        }
+      });
+
+      renderTable();
+    }).catch(function (err) {
+      body.innerHTML = '<p class="ws-empty ws-wv-err">Network error: ' + ((err && err.message) || 'unknown') + '</p>';
+    });
+  }
+
+  // Expansion-row detail for a Tour Pipeline row. Shows the full
+  // request, status timeline, and (when an action is pending) the
+  // confirm UI for Schedule / Decline at the top of the panel.
+  function renderTourRowDetail(t) {
+    function fld(label, val) {
+      return '<div class="ws-reg-detail-field"><span class="ws-reg-detail-label">' + escapeHtmlWs(label) + '</span><span class="ws-reg-detail-val">' + (val || '<em>—</em>') + '</span></div>';
+    }
+    var h = '';
+
+    // Pending-action panel — Schedule / Reschedule form for
+    // requested/scheduled rows; Decline form for toured rows.
+    if (_toursPendingAction && _toursPendingAction.tourId === t.id) {
+      var pa = _toursPendingAction;
+      if (pa.type === 'schedule') {
+        var slots = _toursSlotsCache || { dates: [], times: [] };
+        // Pre-select the family's preferred slot if it's still in the
+        // upcoming-Wednesdays list, otherwise leave blank for the
+        // Membership Director to pick. Past sessions silently drop.
+        var prefDate = t.scheduled_date || t.preferred_date || '';
+        var prefTime = t.scheduled_time || t.preferred_time || '';
+        var dateOpts = '<option value="">Pick a Wednesday…</option>';
+        slots.dates.forEach(function (d) {
+          var sel = (d.date === prefDate) ? ' selected' : '';
+          dateOpts += '<option value="' + d.date + '"' + sel + '>' + escapeHtmlWs(d.label) + '</option>';
+        });
+        var timeOpts = '<option value="">Pick a time…</option>';
+        slots.times.forEach(function (tt) {
+          var sel = (tt.value === prefTime) ? ' selected' : '';
+          timeOpts += '<option value="' + tt.value + '"' + sel + '>' + escapeHtmlWs(tt.label) + '</option>';
+        });
+        var headline = (t.status === 'scheduled') ? 'Reschedule this tour' : 'Schedule this tour';
+        h += '<div class="ws-reg-detail-section ws-tour-schedule-form">';
+        h += '<p class="ws-reg-decline-hint"><strong>' + headline + '</strong> for ' + escapeHtmlWs(t.family_name || '') + '. The family gets a confirmation email with the date, time, and any note you add below.</p>';
+        h += '<div class="ws-tour-sched-row">';
+        h += '<label>Date<select class="rd-input ws-tour-sched-date">' + dateOpts + '</select></label>';
+        h += '<label>Time<select class="rd-input ws-tour-sched-time">' + timeOpts + '</select></label>';
+        h += '</div>';
+        h += '<label>Note for the family (optional)<textarea class="rd-textarea ws-tour-sched-note" rows="2" placeholder="What to expect, what to bring, parking tips&hellip;"></textarea></label>';
+        h += '<div class="rd-btn-row">';
+        h += '<button type="button" class="sc-btn ws-tour-schedule-confirm-btn" data-tour-id="' + t.id + '">Confirm — schedule</button>';
+        h += '<button type="button" class="sc-btn ws-tour-cancel-btn">Cancel</button>';
+        h += '</div>';
+        h += '<p class="ws-tour-sched-status" aria-live="polite" style="margin-top:8px;"></p>';
+        h += '</div>';
+      } else if (pa.type === 'decline') {
+        h += '<div class="ws-reg-detail-section ws-tour-decline-form">';
+        h += '<p class="ws-reg-decline-hint"><strong>Mark ' + escapeHtmlWs(t.family_name || '') + ' as declined?</strong> The note below is saved as the decline reason for our records (the family does not receive an automated email).</p>';
+        h += '<textarea class="rd-textarea ws-tour-decline-reason" rows="3" placeholder="Reason / context (optional)&hellip;"></textarea>';
+        h += '<div class="rd-btn-row">';
+        h += '<button type="button" class="sc-btn sc-btn-del ws-tour-decline-confirm-btn" data-tour-id="' + t.id + '">Confirm — declined</button>';
+        h += '<button type="button" class="sc-btn ws-tour-cancel-btn">Cancel</button>';
+        h += '</div>';
+        h += '<p class="ws-tour-decline-status" aria-live="polite" style="margin-top:8px;"></p>';
+        h += '</div>';
+      }
+    }
+
+    h += '<div class="ws-reg-detail-grid">';
+    h += fld('Family', escapeHtmlWs(t.family_name));
+    h += fld('Email', t.family_email ? '<a href="mailto:' + escapeHtmlWs(t.family_email) + '">' + escapeHtmlWs(t.family_email) + '</a>' : '');
+    h += fld('Phone', escapeHtmlWs(t.phone));
+    h += fld('Kids', (t.num_kids != null ? t.num_kids : '?') + (t.ages ? ' (' + escapeHtmlWs(t.ages) + ')' : ''));
+    h += fld('Preferred', t.preferred_date ? escapeHtmlWs(tourSlotLabel(t.preferred_date, t.preferred_time)) : '<em>no preference</em>');
+    h += fld('Scheduled', t.scheduled_date ? escapeHtmlWs(tourSlotLabel(t.scheduled_date, t.scheduled_time)) : '<em>not yet</em>');
+    h += fld('Requested', t.created_at ? escapeHtmlWs(new Date(t.created_at).toLocaleString()) : '');
+    h += fld('Last update', t.updated_at ? escapeHtmlWs(new Date(t.updated_at).toLocaleString() + (t.updated_by ? ' · ' + t.updated_by : '')) : '');
+    h += '</div>';
+
+    if (t.internal_notes) {
+      h += '<div class="ws-reg-detail-section"><h5>Internal notes</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(t.internal_notes) + '</div></div>';
+    }
+    if (t.decline_reason) {
+      h += '<div class="ws-reg-detail-section"><h5>Decline reason</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(t.decline_reason) + '</div></div>';
+    }
+
+    var hist = Array.isArray(t.status_history) ? t.status_history : [];
+    if (hist.length) {
+      h += '<div class="ws-reg-detail-section"><h5>Status history</h5><ul class="ws-reg-detail-kidlist">';
+      hist.forEach(function (e) {
+        var when = e.at ? new Date(e.at).toLocaleString() : '';
+        var line = '<strong>' + escapeHtmlWs(e.from || 'created') + ' → ' + escapeHtmlWs(e.to || '?') + '</strong>';
+        if (when) line += ' · <span class="ws-wv-stamp">' + escapeHtmlWs(when) + '</span>';
+        if (e.by) line += ' · ' + escapeHtmlWs(e.by);
+        if (e.note) line += '<br><em>' + escapeHtmlWs(e.note) + '</em>';
+        h += '<li>' + line + '</li>';
+      });
+      h += '</ul></div>';
+    }
+
+    return h;
+  }
+
+  function toursFilteredRows() {
+    if (!_toursCache) return [];
+    if (_toursFilter === 'all') return _toursCache;
+    if (_toursFilter === 'open') return _toursCache.filter(function (t) {
+      return t.status === 'requested' || t.status === 'scheduled' || t.status === 'toured';
+    });
+    return _toursCache.filter(function (t) { return t.status === _toursFilter; });
+  }
+
+  function exportToursCSV() {
+    var rows = toursFilteredRows();
+    var headers = ['Family', 'Email', 'Phone', 'Status', 'Preferred', 'Scheduled', 'Kids', 'Ages', 'Requested', 'Internal notes', 'Decline reason'];
+    function esc(v) {
+      var s = String(v == null ? '' : v);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+    var lines = [headers.join(',')];
+    rows.forEach(function (t) {
+      lines.push([
+        esc(t.family_name), esc(t.family_email), esc(t.phone), esc(t.status),
+        esc(tourSlotLabel(t.preferred_date, t.preferred_time)),
+        esc(tourSlotLabel(t.scheduled_date, t.scheduled_time)),
+        esc(t.num_kids != null ? t.num_kids : ''),
+        esc(t.ages || ''),
+        esc(t.created_at || ''),
+        esc(t.internal_notes || ''),
+        esc(t.decline_reason || '')
+      ].join(','));
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'tour-pipeline-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function printToursReport() {
+    var rows = toursFilteredRows();
+    var doc = '<!doctype html><html><head><meta charset="utf-8"><title>Tour Pipeline</title>';
+    doc += '<style>body{font:13px Georgia,serif;color:#222;padding:24px;}h1{font-size:18px;margin:0 0 4px;}p.meta{color:#666;margin:0 0 16px;font-size:12px;}table{border-collapse:collapse;width:100%;font-size:12px;}th,td{border-bottom:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;}th{background:#f5f0e8;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;}</style>';
+    doc += '</head><body>';
+    doc += '<h1>Tour Pipeline</h1>';
+    doc += '<p class="meta">' + rows.length + ' tour' + (rows.length === 1 ? '' : 's') + ' · printed ' + new Date().toLocaleDateString() + '</p>';
+    doc += '<table><thead><tr><th>Family</th><th>Status</th><th>Preferred</th><th>Scheduled</th><th>Kids</th><th>Requested</th></tr></thead><tbody>';
+    rows.forEach(function (t) {
+      doc += '<tr>';
+      doc += '<td>' + escapeHtml(t.family_name || '') + '<br><span style="color:#666;font-size:11px;">' + escapeHtml(t.family_email || '') + '</span></td>';
+      doc += '<td>' + String(t.status || '').toUpperCase() + '</td>';
+      doc += '<td>' + escapeHtml(tourSlotLabel(t.preferred_date, t.preferred_time) || '—') + '</td>';
+      doc += '<td>' + escapeHtml(tourSlotLabel(t.scheduled_date, t.scheduled_time) || '—') + '</td>';
+      doc += '<td>' + (t.num_kids != null ? t.num_kids : '?') + (t.ages ? ' (' + escapeHtml(t.ages) + ')' : '') + '</td>';
+      doc += '<td>' + escapeHtml(formatReportDate(t.created_at)) + '</td>';
       doc += '</tr>';
     });
     doc += '</tbody></table></body></html>';

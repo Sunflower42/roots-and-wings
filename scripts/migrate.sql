@@ -411,6 +411,40 @@ ALTER TABLE backup_coach_waivers ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMP
 ALTER TABLE one_off_waivers      ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;
 
 -- ──────────────────────────────────────────────
+-- Tours — prospective-family pipeline managed by the Membership Director.
+-- One row per request submitted via the public tour form. Status drives
+-- the lifecycle: requested → scheduled → toured → joined / declined /
+-- ghosted. preferred_* is what the family picked on the form;
+-- scheduled_* is what the Membership Director confirmed (may differ).
+-- Tours run on Wednesdays during active sessions only — the form's date
+-- picker enforces this client-side and api/tour.js validates server-side.
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tours (
+  id              SERIAL PRIMARY KEY,
+  family_name     TEXT NOT NULL,
+  family_email    TEXT NOT NULL,
+  phone           TEXT DEFAULT '',
+  num_kids        INTEGER,
+  ages            TEXT DEFAULT '',
+  preferred_date  DATE,
+  preferred_time  TIME,
+  scheduled_date  DATE,
+  scheduled_time  TIME,
+  status          TEXT NOT NULL DEFAULT 'requested',
+  internal_notes  TEXT DEFAULT '',
+  decline_reason  TEXT DEFAULT '',
+  -- Append-only audit trail — every status change pushes
+  -- { at, by, from, to, note? } onto the array.
+  status_history  JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by      TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS tours_status_idx     ON tours (status);
+CREATE INDEX IF NOT EXISTS tours_created_at_idx ON tours (created_at DESC);
+CREATE INDEX IF NOT EXISTS tours_email_idx      ON tours (family_email);
+
+-- ──────────────────────────────────────────────
 -- Member Profiles — editable overlay on top of the Directory sheet.
 -- One row per family, keyed by the derived portal login email
 -- (firstParentFirstName + familyLastInitial + @rootsandwingsindy.com).

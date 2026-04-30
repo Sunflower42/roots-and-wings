@@ -14,12 +14,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="preload" href="logo-combined.svg?v=20260430e" as="image">
-  <link rel="preload" href="logo-combined-mark.png?v=20260430e" as="image">
-  <link rel="stylesheet" href="styles.css?v=20260430e">
-  <link rel="icon" href="favicon-32.png?v=20260430e" type="image/png" sizes="32x32">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260430e">
-  <link rel="manifest" href="manifest-public.json?v=20260430e">
+  <link rel="preload" href="logo-combined.svg?v=20260430f" as="image">
+  <link rel="preload" href="logo-combined-mark.png?v=20260430f" as="image">
+  <link rel="stylesheet" href="styles.css?v=20260430f">
+  <link rel="icon" href="favicon-32.png?v=20260430f" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260430f">
+  <link rel="manifest" href="manifest-public.json?v=20260430f">
   <meta name="apple-mobile-web-app-title" content="Roots & Wings">
 </head>
 <body>
@@ -28,7 +28,7 @@
   <nav class="navbar" role="navigation" aria-label="Main navigation">
     <div class="container">
       <a href="index.html" class="nav-brand" aria-label="Roots & Wings Indy home">
-        <img src="logo-combined.svg?v=20260430e" alt="Roots & Wings Indianapolis" onerror="this.style.display='none'">
+        <img src="logo-combined.svg?v=20260430f" alt="Roots & Wings Indianapolis" onerror="this.style.display='none'">
         <div class="nav-brand-text">
           ROOTS & WINGS
           <span>Indianapolis</span>
@@ -65,7 +65,7 @@
 
     <!-- Large watermark logo -->
     <div class="hero-watermark" aria-hidden="true">
-      <img src="logo-mark.svg?v=20260430e" alt="">
+      <img src="logo-mark.svg?v=20260430f" alt="">
     </div>
 
     <div class="hero-content">
@@ -662,10 +662,60 @@
             <input type="text" id="tour-ages" name="ages" required placeholder="e.g. 4, 7, and 10">
           </div>
         </div>
+        <div class="tour-form-row">
+          <div class="tour-form-field">
+            <label for="tour-pref-date">Preferred Day</label>
+            <select id="tour-pref-date" name="preferred_date">
+              <option value="">Loading available dates…</option>
+            </select>
+            <p class="tour-form-hint">We host tours on Wednesdays during co-op so you can see it in action.</p>
+          </div>
+          <div class="tour-form-field">
+            <label for="tour-pref-time">Preferred Time</label>
+            <select id="tour-pref-time" name="preferred_time">
+              <option value="">Anytime / not sure</option>
+            </select>
+          </div>
+        </div>
         <div id="tour-modal-error" style="display:none; color: var(--color-error); text-align: center; font-weight: 600; margin-bottom: 8px;"></div>
         <button type="submit" id="tour-modal-btn" class="btn btn-primary tour-form-submit">Request a Tour</button>
       </form>
       <script>
+        // Populate the date + time pickers from /api/tour?config=1.
+        // Server is the source of truth for which Wednesdays are
+        // in-session, so the form doesn't have to duplicate
+        // SESSION_DATES on the client. Empty-state when there are no
+        // upcoming session Wednesdays (summer break, etc).
+        (function () {
+          var dateSel = document.getElementById('tour-pref-date');
+          var timeSel = document.getElementById('tour-pref-time');
+          fetch('/api/tour?config=1').then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (cfg) {
+              if (!cfg) throw new Error('config fetch failed');
+              var dates = Array.isArray(cfg.tourDates) ? cfg.tourDates : [];
+              var times = Array.isArray(cfg.tourTimes) ? cfg.tourTimes : [];
+              if (dates.length === 0) {
+                dateSel.innerHTML = '<option value="">No upcoming co-op Wednesdays — please email us</option>';
+                dateSel.disabled = true;
+                timeSel.disabled = true;
+                return;
+              }
+              var html = '<option value="">Pick a Wednesday…</option>';
+              dates.forEach(function (d) {
+                html += '<option value="' + d.date + '">' + d.label + '</option>';
+              });
+              dateSel.innerHTML = html;
+              var thtml = '<option value="">Anytime / not sure</option>';
+              times.forEach(function (t) {
+                thtml += '<option value="' + t.value + '">' + t.label + '</option>';
+              });
+              timeSel.innerHTML = thtml;
+            })
+            .catch(function () {
+              dateSel.innerHTML = '<option value="">Couldn\'t load dates — leave blank and we\'ll coordinate by email</option>';
+            });
+        })();
+
         document.getElementById('tour-modal-form').addEventListener('submit', async function(e) {
           e.preventDefault();
           var btn = document.getElementById('tour-modal-btn');
@@ -674,6 +724,11 @@
           btn.disabled = true;
           btn.textContent = 'Sending…';
           try {
+            var pickedDate = document.getElementById('tour-pref-date').value;
+            var pickedTime = document.getElementById('tour-pref-time').value;
+            // If the family picked a date but no time (or vice versa),
+            // treat it as "no preference" — easier than nagging them.
+            if (!pickedDate || !pickedTime) { pickedDate = ''; pickedTime = ''; }
             var res = await fetch('/api/tour', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -682,16 +737,24 @@
                 email: document.getElementById('tour-email').value,
                 phone: document.getElementById('tour-phone').value,
                 numKids: document.getElementById('tour-num-kids').value,
-                ages: document.getElementById('tour-ages').value
+                ages: document.getElementById('tour-ages').value,
+                preferred_date: pickedDate || null,
+                preferred_time: pickedTime || null
               })
             });
-            if (!res.ok) throw new Error();
+            if (!res.ok) {
+              var data = null;
+              try { data = await res.json(); } catch (e) {}
+              throw new Error((data && data.error) || 'request failed');
+            }
             var modal = document.querySelector('.tour-modal');
             modal.innerHTML = '<button class="tour-modal-close" aria-label="Close" onclick="document.getElementById(\'tour-modal\').classList.remove(\'active\');document.body.style.overflow=\'\';">&times;</button>'
               + '<h2 class="tour-modal-title">Thanks for reaching out!</h2>'
-              + '<p class="tour-modal-subtitle">We\'ve received your tour request and will be in touch soon to schedule a visit. We can\'t wait to meet your family!</p>';
+              + '<p class="tour-modal-subtitle">We\'ve received your tour request and will be in touch soon to confirm a time. We can\'t wait to meet your family!</p>';
           } catch (err) {
-            errEl.textContent = 'Something went wrong. Please email membership@rootsandwingsindy.com directly.';
+            errEl.textContent = (err && err.message)
+              ? ('We couldn\'t send your request: ' + err.message + '. Please email membership@rootsandwingsindy.com directly.')
+              : 'Something went wrong. Please email membership@rootsandwingsindy.com directly.';
             errEl.style.display = 'block';
             btn.disabled = false;
             btn.textContent = 'Request a Tour';
@@ -701,7 +764,7 @@
     </div>
   </div>
 
-  <script src="script.js?v=20260430e"></script>
+  <script src="script.js?v=20260430f"></script>
 
   <!-- Swap hardcoded board photos for real Workspace profile photos when
        available. The cache is populated every time a logged-in member hits

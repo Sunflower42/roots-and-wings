@@ -25,6 +25,82 @@ const REGISTRATION_FEE = 40;
 const DEFAULT_SEASON = '2026-2027';
 const VALID_TRACKS = ['Morning Only', 'Afternoon Only', 'Both', 'Other'];
 
+// Session calendar — mirror of SESSION_DATES in script.js. Used server-side
+// to compute available tour Wednesdays + validate the date the family
+// picks on the public tour form. Update both copies in lockstep when a
+// new school year rolls. (Future: refactor to a single shared source.)
+const SESSION_DATES = {
+  1: { name: 'Fall Session 1',   start: '2025-09-03', end: '2025-10-01' },
+  2: { name: 'Fall Session 2',   start: '2025-10-15', end: '2025-11-12' },
+  3: { name: 'Winter Session 3', start: '2026-01-14', end: '2026-02-11' },
+  4: { name: 'Spring Session 4', start: '2026-03-04', end: '2026-04-01' },
+  5: { name: 'Spring Session 5', start: '2026-04-15', end: '2026-05-13' }
+};
+
+// Tours run during co-op (Wednesdays only) so prospective families can
+// see the program in action. 30-minute start slots from 10:00 AM through
+// 2:30 PM keeps the visit window inside the 9:40-3:15 co-op day with
+// breathing room at both ends. Both lists share the same shape: value
+// is what the form posts, label is what the family sees.
+const TOUR_TIME_SLOTS = [
+  { value: '10:00:00', label: '10:00 AM' },
+  { value: '10:30:00', label: '10:30 AM' },
+  { value: '11:00:00', label: '11:00 AM' },
+  { value: '11:30:00', label: '11:30 AM' },
+  { value: '12:00:00', label: '12:00 PM' },
+  { value: '12:30:00', label: '12:30 PM' },
+  { value: '13:00:00', label: '1:00 PM' },
+  { value: '13:30:00', label: '1:30 PM' },
+  { value: '14:00:00', label: '2:00 PM' },
+  { value: '14:30:00', label: '2:30 PM' }
+];
+const TOUR_TIME_VALUES = TOUR_TIME_SLOTS.map(s => s.value);
+
+const VALID_TOUR_STATUSES = ['requested', 'scheduled', 'toured', 'joined', 'declined', 'ghosted'];
+
+// Compute every future Wednesday that falls inside an active session
+// range (inclusive). Returns chronological order. Today is excluded —
+// even if today is a Wednesday in-session, the form should only let
+// families pick a future date. Cap at end of last session.
+function getUpcomingTourDates() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dates = [];
+  Object.keys(SESSION_DATES).sort().forEach(k => {
+    const s = SESSION_DATES[k];
+    const start = new Date(s.start + 'T00:00:00');
+    const end = new Date(s.end + 'T00:00:00');
+    // Walk from start to end, picking out Wednesdays (getDay() === 3).
+    const cursor = new Date(start.getTime());
+    while (cursor.getTime() <= end.getTime()) {
+      if (cursor.getDay() === 3 && cursor.getTime() > today.getTime()) {
+        const yyyy = cursor.getFullYear();
+        const mm = String(cursor.getMonth() + 1).padStart(2, '0');
+        const dd = String(cursor.getDate()).padStart(2, '0');
+        dates.push({
+          date: `${yyyy}-${mm}-${dd}`,
+          sessionLabel: s.name,
+          label: cursor.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) + ' — ' + s.name
+        });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+  return dates;
+}
+
+// Validate a (date, time) pair posted from the form: must be one of the
+// computed upcoming Wednesdays AND a known time slot. Returns null on
+// success or a string error message on failure.
+function validateTourSlot(date, time) {
+  if (!date && !time) return null; // both optional — family may submit without picking
+  if (!date || !time) return 'Please pick both a date and a time, or leave both blank.';
+  const slots = getUpcomingTourDates();
+  if (!slots.some(s => s.date === date)) return 'That date is not an upcoming co-op Wednesday.';
+  if (TOUR_TIME_VALUES.indexOf(time) === -1) return 'That time slot is not available.';
+  return null;
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -58,9 +134,17 @@ function setCors(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 }
 
-// ── Tour request (legacy) ──
+// ── Tour request ──
+// Validates input, INSERTs into tours (persistent pipeline backing the
+// Membership Director's Tour Pipeline report), then emails Membership.
+// preferred_date/preferred_time are optional from the family's POV —
+// if they leave them blank, the row lands in the pipeline as
+// "requested" without a proposed slot, and Membership coordinates via
+// reply.
 async function handleTour(body, res) {
   const { name, email, phone, numKids, ages } = body;
+  const preferredDate = body.preferred_date ? String(body.preferred_date).trim() : null;
+  const preferredTime = body.preferred_time ? String(body.preferred_time).trim() : null;
 
   if (!name || !email || !phone || !numKids || !ages) {
     return res.status(400).json({ error: 'All fields are required.' });
@@ -72,12 +156,46 @@ async function handleTour(body, res) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: 'Invalid email format.' });
   }
+  const slotErr = validateTourSlot(preferredDate, preferredTime);
+  if (slotErr) return res.status(400).json({ error: slotErr });
 
   const safeName = escapeHtml(name);
   const safeEmail = escapeHtml(email);
   const safePhone = escapeHtml(phone);
   const safeNumKids = escapeHtml(numKids);
   const safeAges = escapeHtml(ages);
+  const numKidsInt = parseInt(numKids, 10);
+
+  // DB insert — best-effort, but log loudly if it fails so we know the
+  // pipeline is missing a row. The email path is the user-visible
+  // confirmation; if DB drops a row, Membership still gets the alert.
+  let tourId = null;
+  try {
+    const sql = getSql();
+    const inserted = await sql`
+      INSERT INTO tours (family_name, family_email, phone, num_kids, ages,
+                         preferred_date, preferred_time, status, status_history)
+      VALUES (${name}, ${email.toLowerCase()}, ${phone},
+              ${Number.isFinite(numKidsInt) ? numKidsInt : null},
+              ${ages}, ${preferredDate}, ${preferredTime}, 'requested',
+              ${JSON.stringify([{ at: new Date().toISOString(), by: 'public-form', from: null, to: 'requested' }])}::jsonb)
+      RETURNING id
+    `;
+    tourId = inserted[0] && inserted[0].id;
+  } catch (dbErr) {
+    console.error('Tour DB insert error (non-fatal — email still going):', dbErr);
+  }
+
+  // Friendly slot label for the email body. Family-supplied + validated
+  // already, so we can format without paranoia.
+  let slotRow = '';
+  if (preferredDate && preferredTime) {
+    const slot = TOUR_TIME_SLOTS.find(s => s.value === preferredTime);
+    const dateRow = getUpcomingTourDates().find(d => d.date === preferredDate);
+    if (dateRow && slot) {
+      slotRow = `<tr><td style="padding:8px 16px 8px 0;font-weight:bold;">Preferred slot</td><td style="padding:8px 0;">${escapeHtml(dateRow.label)} at ${escapeHtml(slot.label)}</td></tr>`;
+    }
+  }
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   try {
@@ -94,14 +212,16 @@ async function handleTour(body, res) {
           <tr><td style="padding:8px 16px 8px 0;font-weight:bold;">Phone</td><td style="padding:8px 0;">${safePhone}</td></tr>
           <tr><td style="padding:8px 16px 8px 0;font-weight:bold;">Number of Kids</td><td style="padding:8px 0;">${safeNumKids}</td></tr>
           <tr><td style="padding:8px 16px 8px 0;font-weight:bold;">Ages</td><td style="padding:8px 0;">${safeAges}</td></tr>
+          ${slotRow}
         </table>
+        <p style="color:#666;font-size:0.9rem;margin-top:16px;">Open the Tour Pipeline in My Workspace to schedule, follow up, or close out this request.</p>
       `,
     });
     if (error) {
       console.error('Tour email error:', error);
       return res.status(500).json({ error: 'Failed to send. Please try again.' });
     }
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ success: true, tourId });
   } catch (err) {
     console.error('Tour email error:', err);
     return res.status(500).json({ error: 'Failed to send. Please try again.' });
@@ -586,10 +706,14 @@ async function handleReconcileCron(req, res) {
   }
 }
 
-// ── Public config (no secrets — just the public Maps key) ──
+// ── Public config (no secrets — just the public Maps key + the
+// tour-form's available date/time slots so the form doesn't have to
+// duplicate SESSION_DATES on the client). ──
 function handleConfig(res) {
   return res.status(200).json({
-    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || null
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || null,
+    tourDates: getUpcomingTourDates(),
+    tourTimes: TOUR_TIME_SLOTS
   });
 }
 
@@ -1920,12 +2044,172 @@ async function handleProfilePhoto(body, req, res) {
   }
 }
 
+// ── Tour Pipeline: list (Membership Director) ──
+async function handleTourList(req, res) {
+  const user = await verifyWorkspaceAuth(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const isMembership = await canEditAsRole(user.email, 'Membership Director');
+  const isComms = !isMembership && await canEditAsRole(user.email, 'Communications Director');
+  if (!isMembership && !isComms) {
+    const expected = await getRoleHolderEmail('Membership Director');
+    return res.status(403).json({
+      error: 'Only the Membership Director can view the tour pipeline.',
+      youAre: user.email,
+      expected: expected || '(unknown — sheet lookup failed)'
+    });
+  }
+  try {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT id, family_name, family_email, phone, num_kids, ages,
+             preferred_date, preferred_time, scheduled_date, scheduled_time,
+             status, internal_notes, decline_reason, status_history,
+             created_at, updated_at, updated_by
+      FROM tours
+      ORDER BY
+        CASE status
+          WHEN 'requested' THEN 0
+          WHEN 'scheduled' THEN 1
+          WHEN 'toured'    THEN 2
+          WHEN 'joined'    THEN 3
+          WHEN 'declined'  THEN 4
+          WHEN 'ghosted'   THEN 5
+          ELSE 6
+        END,
+        created_at DESC
+    `;
+    return res.status(200).json({ tours: rows });
+  } catch (err) {
+    console.error('tour-list error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
+
+// ── Tour Pipeline: update status / scheduling / notes (Membership) ──
+async function handleTourUpdate(body, req, res) {
+  const user = await verifyWorkspaceAuth(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const isMembership = await canEditAsRole(user.email, 'Membership Director');
+  if (!isMembership) {
+    const expected = await getRoleHolderEmail('Membership Director');
+    return res.status(403).json({
+      error: 'Only the Membership Director can update tour records.',
+      youAre: user.email,
+      expected: expected || '(unknown — sheet lookup failed)'
+    });
+  }
+
+  const id = parseInt(body.id, 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Valid tour id is required.' });
+
+  const newStatus = body.status ? String(body.status).trim().toLowerCase() : null;
+  const scheduledDate = body.scheduled_date ? String(body.scheduled_date).trim() : undefined;
+  const scheduledTime = body.scheduled_time ? String(body.scheduled_time).trim() : undefined;
+  const internalNotes = body.internal_notes != null ? String(body.internal_notes).slice(0, 4000) : undefined;
+  const declineReason = body.decline_reason != null ? String(body.decline_reason).slice(0, 1000) : undefined;
+  const transitionNote = body.note != null ? String(body.note).slice(0, 500) : '';
+
+  if (newStatus && VALID_TOUR_STATUSES.indexOf(newStatus) === -1) {
+    return res.status(400).json({ error: 'Unknown tour status: ' + newStatus });
+  }
+
+  // If a scheduled slot is being set, validate it the same way as the
+  // public form — Wednesday in an active session, time in the 10-2:30
+  // grid. Both required (or both blank to clear).
+  if (scheduledDate !== undefined || scheduledTime !== undefined) {
+    const slotErr = validateTourSlot(scheduledDate || null, scheduledTime || null);
+    if (slotErr) return res.status(400).json({ error: slotErr });
+  }
+
+  try {
+    const sql = getSql();
+    const existingRows = await sql`SELECT * FROM tours WHERE id = ${id} LIMIT 1`;
+    const existing = existingRows[0];
+    if (!existing) return res.status(404).json({ error: 'Tour not found.' });
+
+    const targetStatus = newStatus || existing.status;
+    const targetScheduledDate = (scheduledDate !== undefined) ? (scheduledDate || null) : existing.scheduled_date;
+    const targetScheduledTime = (scheduledTime !== undefined) ? (scheduledTime || null) : existing.scheduled_time;
+    const targetInternalNotes = (internalNotes !== undefined) ? internalNotes : existing.internal_notes;
+    const targetDeclineReason = (declineReason !== undefined) ? declineReason : existing.decline_reason;
+
+    // Append a history entry only when status actually changes (note
+    // edits + scheduling tweaks within the same status don't need an
+    // audit row — they show via the updated_at stamp).
+    let history = Array.isArray(existing.status_history) ? existing.status_history.slice() : [];
+    if (newStatus && newStatus !== existing.status) {
+      history.push({
+        at: new Date().toISOString(),
+        by: user.email,
+        from: existing.status,
+        to: newStatus,
+        note: transitionNote || undefined
+      });
+    }
+
+    await sql`
+      UPDATE tours SET
+        status          = ${targetStatus},
+        scheduled_date  = ${targetScheduledDate},
+        scheduled_time  = ${targetScheduledTime},
+        internal_notes  = ${targetInternalNotes},
+        decline_reason  = ${targetDeclineReason},
+        status_history  = ${JSON.stringify(history)}::jsonb,
+        updated_at      = NOW(),
+        updated_by      = ${user.email}
+      WHERE id = ${id}
+    `;
+
+    // When a tour transitions into 'scheduled' AND has a confirmed
+    // slot, fire a confirmation email back to the family. Skip if the
+    // slot isn't filled in yet (the Membership Director may flip the
+    // status first and add the date in a follow-up edit).
+    if (newStatus === 'scheduled' && existing.status !== 'scheduled' && targetScheduledDate && targetScheduledTime) {
+      try {
+        const slot = TOUR_TIME_SLOTS.find(s => s.value === String(targetScheduledTime));
+        const dateRow = getUpcomingTourDates().find(d => d.date === String(targetScheduledDate));
+        const slotLabel = (dateRow && slot)
+          ? `${dateRow.label} at ${slot.label}`
+          : `${String(targetScheduledDate)} at ${String(targetScheduledTime)}`;
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+          to: existing.family_email,
+          replyTo: 'membership@rootsandwingsindy.com',
+          subject: `Your Roots & Wings tour is confirmed`,
+          html: `
+            <h2>Your tour is confirmed</h2>
+            <p>Hi ${escapeHtml(existing.family_name)},</p>
+            <p>We're looking forward to meeting you at Roots &amp; Wings Homeschool Co-op. Your tour is confirmed for:</p>
+            <p style="background:#f5f0f8;padding:12px 16px;border-left:3px solid #523A79;border-radius:4px;font-size:1.05rem;"><strong>${escapeHtml(slotLabel)}</strong></p>
+            <p>We meet at First Mennonite Church, 4601 Knollton Rd, Indianapolis IN 46228. Park in the lot off Knollton; the entrance is on the north side of the building.</p>
+            ${transitionNote ? `<p><em>A note from the Membership team:</em> ${escapeHtml(transitionNote)}</p>` : ''}
+            <p>Reply to this email if you need to reschedule or have questions before then.</p>
+            <p style="color:#666;font-size:0.9rem;margin-top:20px;">— The Roots &amp; Wings Membership team</p>
+          `,
+        });
+      } catch (mailErr) {
+        // Don't fail the update if the confirmation email hiccups —
+        // the status flip is already saved; Membership can re-send by
+        // toggling out + back into 'scheduled' if needed.
+        console.error('Tour confirmation email error (non-fatal):', mailErr);
+      }
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('tour-update error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
+
 module.exports = async function handler(req, res) {
   setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   if (req.method === 'GET') {
     if (req.query.list === 'registrations') return handleList(req, res);
+    if (req.query.list === 'tours') return handleTourList(req, res);
     if (req.query.config === '1' || req.query.config === 'true') return handleConfig(res);
     if (req.query.backup_waiver_token) return handleBackupWaiverInfo(req, res);
     if (req.query.waivers_report === '1') return handleWaiversReport(req, res);
@@ -1938,6 +2222,7 @@ module.exports = async function handler(req, res) {
     const body = req.body || {};
     const kind = String(body.kind || 'tour').toLowerCase();
     if (kind === 'tour') return handleTour(body, res);
+    if (kind === 'tour-update') return handleTourUpdate(body, req, res);
     if (kind === 'registration') return handleRegistration(body, req, res);
     if (kind === 'registration-decline') return handleRegistrationDecline(body, req, res);
     if (kind === 'registration-mark-paid') return handleRegistrationMarkPaid(body, req, res);
