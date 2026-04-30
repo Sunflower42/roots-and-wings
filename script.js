@@ -3363,15 +3363,25 @@
       html += '<div class="view-as-bar">';
       html += '<div class="view-as-banner">';
       html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-      // If the View As email resolves to a specific co-parent (e.g.
-      // jays@ for the Shewan family), label the banner with just that
-      // person — "Jay Shewan" — not the family's joined parents string
-      // ("Jessica & Jay Shewan"). Falls back to the family-level label
-      // for single-login families or when derivation can't infer.
+      // Label the banner as "First Last" for the specific person
+      // being impersonated. Last name comes from parentInfo when
+      // available so a co-parent who kept their own surname
+      // (Brian Richter in the Shewan family) renders correctly.
+      // Same name-resolution logic the impersonation dropdown uses.
       var viewAsFirst = deriveFirstNameFromLogin(viewAsEmail, fam.name);
-      var viewAsLabel = (Array.isArray(fam.loginEmails) && fam.loginEmails.length > 1 && viewAsFirst)
-        ? (viewAsFirst + ' ' + fam.name)
-        : (fam.parents + ' ' + fam.name);
+      var viewAsLast = '';
+      if (Array.isArray(fam.parentInfo)) {
+        var firstLc = String(viewAsFirst || '').toLowerCase();
+        for (var vp = 0; vp < fam.parentInfo.length; vp++) {
+          var pi = fam.parentInfo[vp];
+          var piFirst = String(pi.firstName || (pi.name || '').split(/\s+/)[0] || '').toLowerCase();
+          if (piFirst && piFirst === firstLc) { viewAsLast = pi.lastName || ''; break; }
+        }
+      }
+      if (!viewAsLast) viewAsLast = fam.displayName || fam.name || '';
+      var viewAsLabel = viewAsFirst
+        ? (viewAsFirst + ' ' + viewAsLast).trim()
+        : (fam.displayName || fam.name || '');
       html += ' Viewing as <strong>' + viewAsLabel + '</strong>';
       html += '<button class="view-as-reset" id="viewAsReset">Back to my view</button>';
       html += '</div>';
