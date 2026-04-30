@@ -3475,49 +3475,83 @@ p + p { margin-top: 1rem; }
 }
 .rd-supp-popover[hidden] { display: none; }
 
-/* Filter chip row — chips bake their count in via <em>. Selected chip
-   takes the deep-purple filled treatment; status semantics ride on a
-   small dot prefix so the chip body stays scannable. */
+/* Filter chip row — sits below the header chrome. Visually quieter
+   than the chrome buttons (no default fill, smaller text, slim
+   padding) so it reads as a "scope of data" control rather than as
+   another set of action buttons. The "Show" label gives intent. The
+   count rides in a small inset pill so it reads as data, not chrome. */
 .rd-filters {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 0 0 14px;
+  margin: 4px 0 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--color-primary-rgb), 0.08);
+}
+.rd-filters-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--color-text-light);
+  margin-right: 6px;
 }
 .rd-chip {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--color-border);
-  background: var(--color-white);
+  background: transparent;
   color: var(--color-text);
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 500;
   cursor: pointer;
-  line-height: 1.2;
+  line-height: 1.4;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.rd-chip:hover { border-color: rgba(var(--color-primary-rgb), 0.4); }
-.rd-chip em {
-  font-style: normal;
-  margin-left: 6px;
-  font-weight: 500;
-  opacity: 0.6;
+.rd-chip:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.45);
+  color: var(--color-primary);
+}
+.rd-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--color-text-light);
 }
 .rd-chip.is-active {
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: var(--color-white);
+  font-weight: 600;
 }
-.rd-chip.is-active em { color: var(--color-accent); opacity: 0.95; }
+.rd-chip.is-active .rd-chip-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--color-white);
+}
+.rd-chip.is-active:hover {
+  color: var(--color-white);
+  border-color: var(--color-primary);
+}
 .rd-chip-dot {
   display: inline-block;
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  margin-right: 7px;
+  margin-right: 4px;
   vertical-align: middle;
+  flex-shrink: 0;
 }
 .rd-dot-ok   { background: var(--color-leaf); }
 .rd-dot-warn { background: var(--color-accent-dark); }

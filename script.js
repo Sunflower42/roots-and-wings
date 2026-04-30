@@ -7290,15 +7290,17 @@
       metaEl.textContent = 'Season ' + season + ' · ' + members.length + ' members';
     }
 
-    // Filter chips with built-in counts + status dots. Selected chip
-    // gets the deep-purple filled treatment. Status colors live on a
-    // small dot prefix so the chip itself stays scannable.
+    // Filter chips with built-in counts + status dots. The "Show"
+    // label and the lighter chip styling distinguish these from the
+    // header chrome above (icon-buttons sit on a tinted fill; chips
+    // are outline-only at rest with a small count badge).
     function chip(filter, label, count, dotClass) {
       var dot = dotClass ? '<span class="rd-chip-dot ' + dotClass + '"></span>' : '';
       return '<button type="button" class="rd-chip" data-filter="' + filter + '">'
-        + dot + escapeHtmlWs(label) + ' <em>' + count + '</em></button>';
+        + dot + escapeHtmlWs(label) + '<span class="rd-chip-count">' + count + '</span></button>';
     }
     var filterHtml = '<div class="rd-filters">'
+      + '<span class="rd-filters-label">Show</span>'
       + chip('all',      'All',      members.length, '')
       + chip('on_track', 'On track', statusCounts.on_track, 'rd-dot-ok')
       + chip('near',     'Close',    statusCounts.near, 'rd-dot-warn')
