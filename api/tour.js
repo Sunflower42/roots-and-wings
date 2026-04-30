@@ -1469,7 +1469,11 @@ async function upsertProfileFromRegistration(sql, params) {
       photo_consent: !!params.mlcPhotoConsent,
       role: idx === 0 ? 'mlc' : 'parent',
       email: '',
-      personal_email: idx === 0 ? String(params.mlcEmail || '').toLowerCase() : '',
+      // Don't auto-write personal_email from the registration form's
+      // "Your email" field — for many people that's their workspace
+      // address, which would clobber a real personal email if they ever
+      // set one via Edit My Info. Let EMI own this field.
+      personal_email: '',
       phone: ''
     });
   });
@@ -1555,8 +1559,30 @@ async function upsertProfileFromRegistration(sql, params) {
   // duplicates; matching on first name correctly consolidates them.
   // The overlay in api/sheets.js (applyMemberProfileOverlay) uses the
   // same first-name key.
+  //
+  // CRITICAL: when multiple existing kids share a first name (the
+  // Phase-3 duplicate scenario where "Aiden" + "Aiden Bogan" both
+  // exist), aggregate non-empty fields across ALL matches before
+  // merging with the registration kid. A previous pass used
+  // `Array.find` which returned just the first hit — losing photos
+  // and other data that lived only on the second entry.
   function kidFirst(k) {
     return String((k && k.name) || '').trim().split(/\s+/)[0].toLowerCase();
+  }
+  function aggregateKidMatches(matches) {
+    const out = {};
+    matches.forEach(m => {
+      if (!m) return;
+      ['name', 'last_name', 'birth_date', 'pronouns', 'allergies',
+       'schedule', 'photo_url'].forEach(field => {
+        const v = m[field];
+        if ((out[field] == null || out[field] === '') && v) out[field] = v;
+      });
+      // photo_consent — if any match explicitly opted out, propagate.
+      if (m.photo_consent === false) out.photo_consent = false;
+      else if (out.photo_consent == null) out.photo_consent = (m.photo_consent !== false);
+    });
+    return out;
   }
   const mergedKids = [];
   const seenKids = new Set();
@@ -1564,7 +1590,7 @@ async function upsertProfileFromRegistration(sql, params) {
     const key = kidFirst(nk);
     if (!key) return;
     seenKids.add(key);
-    const ex = exKids.find(k => kidFirst(k) === key) || {};
+    const ex = aggregateKidMatches(exKids.filter(k => kidFirst(k) === key));
     mergedKids.push({
       name: nk.name,
       last_name: nk.last_name || ex.last_name || '',
