@@ -9330,6 +9330,70 @@ button.staff-role:hover {
   white-space: nowrap;
 }
 .ws-waivers-table tbody tr:last-child td { border-bottom: none; }
+
+/* Sticky first column — keeps the row identifier (Member name) visible
+   while the table scrolls horizontally. Two layouts to handle:
+     1. Expandable tables — first cell is the caret, second is the row
+        identifier. Both stick: caret at left:0, identifier at left:32px.
+     2. Non-expandable tables — :first-child IS the row identifier, so
+        we sticky that directly.
+   Sticky cells need an explicit background so scrolled content doesn't
+   show through. Hover state on the row also has to apply to the sticky
+   cells, otherwise they stay white while the rest of the row tints. */
+.ws-waivers-table th.ws-sort-caret-col,
+.ws-waivers-table td.ws-srt-caret {
+  width: 32px;
+  min-width: 32px;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+.ws-waivers-table th.ws-sort-caret-col + th,
+.ws-waivers-table td.ws-srt-caret + td {
+  position: sticky;
+  left: 32px;
+  z-index: 1;
+}
+.ws-waivers-table tbody td.ws-srt-caret,
+.ws-waivers-table tbody td.ws-srt-caret + td {
+  background: var(--color-white);
+}
+.ws-waivers-table tbody tr.ws-srt-row-expandable:hover td.ws-srt-caret,
+.ws-waivers-table tbody tr.ws-srt-row-expandable:hover td.ws-srt-caret + td {
+  background: rgba(var(--color-accent-light-rgb), 0.15);
+}
+/* Sticky thead corner — the caret + identifier headers must layer
+   above sticky body cells AND above the regular sticky-top thead row. */
+.ws-waivers-table thead th.ws-sort-caret-col,
+.ws-waivers-table thead th.ws-sort-caret-col + th {
+  z-index: 3;
+}
+
+/* Non-expandable tables: sticky :first-child as the row identifier. */
+.ws-waivers-table:not(:has(.ws-sort-caret-col)) th:first-child,
+.ws-waivers-table:not(:has(.ws-sort-caret-col)) td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+.ws-waivers-table:not(:has(.ws-sort-caret-col)) tbody td:first-child {
+  background: var(--color-white);
+}
+.ws-waivers-table:not(:has(.ws-sort-caret-col)) thead th:first-child {
+  z-index: 3;
+}
+
+/* Subtle right-edge shadow on the sticky identifier cell — mirrors
+   the convention from spreadsheets so users can tell at a glance the
+   table is scrolling underneath. */
+.ws-waivers-table td.ws-srt-caret + td,
+.ws-waivers-table:not(:has(.ws-sort-caret-col)) td:first-child {
+  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.08);
+}
+.ws-waivers-table th.ws-sort-caret-col + th,
+.ws-waivers-table:not(:has(.ws-sort-caret-col)) th:first-child {
+  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.08);
+}
 .ws-report-request-hint {
   margin: 12px 0 0 0;
   padding: 10px 12px;
