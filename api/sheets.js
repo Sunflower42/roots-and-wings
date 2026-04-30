@@ -1913,29 +1913,19 @@ async function handleParticipationAction(req, res, action, userEmail, authGivenN
     if (familyMembers.length === 0) {
       return res.status(200).json({ season: report.season, member: null });
     }
-    // Disambiguate which parent in the family is "you". Tries:
-    //   1. JWT given_name === stored first_name (works when the
-    //      Workspace account uses the same first name as member_profiles)
-    //   2. Email local part === firstname + family-initial (the way
-    //      Workspace addresses are derived). Catches the case where
-    //      given_name is missing or is a nickname ("Jess" vs "Jessica")
-    //      — without this, families sorted alphabetically by first name
-    //      meant Jessica's signed-in session was returning Jay's row.
+    // Disambiguate which parent in the family is "you". Tries in order:
+    //   1. Email local part === firstname + family-initial — derived
+    //      from targetEmail (which is the View-As target for super
+    //      users, or the signed-in user otherwise). Most reliable
+    //      because workspace addresses ARE firstname+lastInitial.
+    //   2. JWT given_name === stored first_name — only useful when the
+    //      signed-in user IS the parent we're looking up; skipped for
+    //      super-user View-As since the JWT carries comms@'s own
+    //      given_name, not the target's.
     //   3. Last resort — first parent in the family (alphabetic).
-    // Skipped for super-user View-As since we can't infer who they
-    // mean to act as from their own JWT.
     var mine = null;
-    var gn = String(authGivenName || '').toLowerCase();
-    if (gn && !canViewAny) {
-      for (var i = 0; i < familyMembers.length; i++) {
-        if (String(familyMembers[i].first || '').toLowerCase() === gn) {
-          mine = familyMembers[i];
-          break;
-        }
-      }
-    }
-    if (!mine && !canViewAny) {
-      var localPart = String(targetEmail.split('@')[0] || '').toLowerCase();
+    var localPart = String(targetEmail.split('@')[0] || '').toLowerCase();
+    if (localPart) {
       for (var j = 0; j < familyMembers.length; j++) {
         var first = String(familyMembers[j].first || '').toLowerCase().replace(/[^a-z]/g, '');
         var fam = String(familyMembers[j].family || '').toLowerCase();
@@ -1946,22 +1936,20 @@ async function handleParticipationAction(req, res, action, userEmail, authGivenN
         }
       }
     }
+    if (!mine && !canViewAny) {
+      var gn = String(authGivenName || '').toLowerCase();
+      if (gn) {
+        for (var i = 0; i < familyMembers.length; i++) {
+          if (String(familyMembers[i].first || '').toLowerCase() === gn) {
+            mine = familyMembers[i];
+            break;
+          }
+        }
+      }
+    }
     if (!mine) mine = familyMembers[0];
     mine.tier = participationTier(mine.status);
-    // Temporary debug — remove once participation disambiguation is
-    // confirmed working on prod. Surfaces what the server saw so we
-    // can tell whether the JWT given_name and the email-localpart
-    // fallback are matching as expected.
-    var _debug = {
-      userEmail: emailLc,
-      targetEmail: targetEmail,
-      authGivenName: authGivenName || '',
-      canonicalFamilyEmail: canonicalFamilyEmail,
-      familyMembersCount: familyMembers.length,
-      familyMemberFirsts: familyMembers.map(function (m) { return m.first; }),
-      matchedKey: mine && mine.key
-    };
-    return res.status(200).json({ season: report.season, member: mine, _debug: _debug });
+    return res.status(200).json({ season: report.season, member: mine });
   }
 
   var canRead = await participationCanRead(userEmail);
