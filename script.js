@@ -6226,7 +6226,14 @@
           h += '<th>' + escapeHtmlWs(col.label) + '</th>';
         }
       });
-      h += '</tr></thead><tbody>';
+      h += '</tr>';
+      // Optional filter row inside <thead>. Caller builds the
+      // <tr class="rd-filter-row"> with one <th> per column (matching
+      // the column-label row order; empty <th></th> for non-filterable
+      // columns; leading empty cell when opts.expandable adds a caret
+      // column). Stays sticky-top with the column-label row.
+      if (opts.filterRowHtml) h += opts.filterRowHtml;
+      h += '</thead><tbody>';
       var idxs = sortedIndexes();
       idxs.forEach(function (i) {
         var row = rows[i];
@@ -7330,37 +7337,18 @@
     });
 
     // Fill in the modal's meta line ("Season 25_26 · 46 members") now
-    // that the data is loaded. Stats counts merge into the filter chips
-    // below, so we drop the prior bullet-stats line entirely.
+    // that the data is loaded. Per-status counts ride inside the
+    // Status filter <select>'s option labels (e.g. "On track (26)")
+    // so users still see them on demand without a separate chip row.
     var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
     if (metaEl) {
       metaEl.textContent = 'Season ' + season + ' · ' + members.length + ' members';
     }
 
-    // Filter chips with built-in counts + status dots. The "Show"
-    // label and the lighter chip styling distinguish these from the
-    // header chrome above (icon-buttons sit on a tinted fill; chips
-    // are outline-only at rest with a small count badge).
-    function chip(filter, label, count, dotClass) {
-      var dot = dotClass ? '<span class="rd-chip-dot ' + dotClass + '"></span>' : '';
-      return '<button type="button" class="rd-chip" data-filter="' + filter + '">'
-        + dot + escapeHtmlWs(label) + '<span class="rd-chip-count">' + count + '</span></button>';
-    }
-    var filterHtml = '<div class="rd-filters">'
-      + '<span class="rd-filters-label">Show</span>'
-      + chip('all',      'All',      members.length, '')
-      + chip('on_track', 'On track', statusCounts.on_track, 'rd-dot-ok')
-      + chip('near',     'Close',    statusCounts.near, 'rd-dot-warn')
-      + chip('behind',   'Behind',   statusCounts.behind, 'rd-dot-bad')
-      + chip('new',      'New',      statusCounts['new'], '')
-      + chip('exempt',   'Exempt',   statusCounts.exempt, '')
-      + '</div>';
-
-    body.innerHTML = filterHtml + '<div id="ws-part-table-target"></div>';
+    body.innerHTML = '<div id="ws-part-table-target"></div>';
+    var tableTarget = body.querySelector('#ws-part-table-target');
 
     var currentFilter = 'all';
-    var firstChip = body.querySelector('.rd-chip[data-filter="all"]');
-    if (firstChip) firstChip.classList.add('is-active');
 
     function filteredRows() {
       if (currentFilter === 'all') return members;
@@ -7372,24 +7360,57 @@
       return members.filter(function (m) { return !m.exemption && m.status === currentFilter; });
     }
 
+    function buildStatusFilterRow() {
+      // Filter sits inside <thead> at the Status column position
+      // (column 2 — after Member, which is column 1; with the
+      // expandable caret, that's <th> #3 overall). One <th> per
+      // column to preserve alignment; empty cells for non-filterable.
+      var statusOptions = [
+        { value: 'all',      label: 'All',      count: members.length },
+        { value: 'on_track', label: 'On track', count: statusCounts.on_track },
+        { value: 'near',     label: 'Close',    count: statusCounts.near },
+        { value: 'behind',   label: 'Behind',   count: statusCounts.behind },
+        { value: 'new',      label: 'New',      count: statusCounts['new'] },
+        { value: 'exempt',   label: 'Exempt',   count: statusCounts.exempt }
+      ];
+      var sel = '<select class="rd-th-filter" data-filter="status" aria-label="Filter by status">';
+      statusOptions.forEach(function (opt) {
+        var s = currentFilter === opt.value ? ' selected' : '';
+        sel += '<option value="' + opt.value + '"' + s + '>' + opt.label + ' (' + opt.count + ')</option>';
+      });
+      sel += '</select>';
+
+      var cols = participationTableColumns();
+      var h = '<tr class="rd-filter-row">';
+      h += '<th></th>';  // expandable caret column
+      cols.forEach(function (col) {
+        if (col.key === 'status') {
+          h += '<th>' + sel + '</th>';
+        } else {
+          h += '<th></th>';
+        }
+      });
+      h += '</tr>';
+      return h;
+    }
+
     function renderTable() {
-      var tableTarget = body.querySelector('#ws-part-table-target');
       if (!tableTarget) return;
       renderSortableTable(tableTarget, participationTableColumns(), filteredRows(), {
         initialSort: { key: 'weightedTotal', dir: 'desc' },
         expandable: true,
-        renderDetail: renderParticipationTimeline
+        renderDetail: renderParticipationTimeline,
+        filterRowHtml: buildStatusFilterRow()
       });
+      // Filter <select> lives inside the table — re-wire each render.
+      var filterSel = tableTarget.querySelector('[data-filter="status"]');
+      if (filterSel) {
+        filterSel.addEventListener('change', function () {
+          currentFilter = this.value;
+          renderTable();
+        });
+      }
     }
-
-    body.querySelectorAll('.rd-chip').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        body.querySelectorAll('.rd-chip').forEach(function (b) { b.classList.remove('is-active'); });
-        this.classList.add('is-active');
-        currentFilter = this.getAttribute('data-filter');
-        renderTable();
-      });
-    });
     renderTable();
   }
 
@@ -12961,16 +12982,99 @@
     // Subtitle is the action hint (approve/decline) — useful here since
     // the row buttons aren't self-evident on first open. Filter row +
     // table get rendered into the body by renderPmSubmissionsReport.
+    var icons = [
+      { label: 'Print', icon: ICON_SVG.print, aria: 'Print the visible submissions',
+        action: function () { printPmSubmissionsReport(); } },
+      { label: 'Export CSV', icon: ICON_SVG.download, aria: 'Download the visible submissions as CSV',
+        action: function () { exportPmSubmissionsCSV(); } }
+    ];
     var body = renderReportModal({
       title: 'PM Class Submissions',
       subtitle: 'Approve to queue a submission for scheduling, or decline with a confirmation. The Schedule Builder still owns final session/hour placement.',
       meta: '',
-      icons: [],
+      icons: icons,
       bodyId: 'pmrep-body',
       bodyPlaceholder: '<p class="ws-empty">Loading submissions…</p>'
     });
     if (!body) return;
     loadPmSubmissionsReport();
+  }
+
+  function pmFilteredSubmissions() {
+    var f = _pmReportState.filters;
+    var all = _pmReportState.submissions || [];
+    return all.filter(function (s) {
+      if (f.status !== 'all' && s.status !== f.status) return false;
+      if (f.school_year !== 'all' && s.school_year !== f.school_year) return false;
+      if (f.session !== 'all') {
+        var prefs = s.session_preferences || [];
+        if (!prefs.some(function (p) { return String(p) === f.session; })) return false;
+      }
+      if (f.age !== 'all') {
+        var ages = (s.age_groups || []).map(function (a) { return String(a).toLowerCase(); });
+        if (ages.indexOf(f.age) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function exportPmSubmissionsCSV() {
+    var subs = pmFilteredSubmissions();
+    var year = _pmReportState.filters.school_year;
+    var headers = ['Class', 'Status', 'Submitter', 'Sessions', 'Hour', 'Ages', 'Max', 'Description'];
+    function esc(v) {
+      var s = String(v == null ? '' : v);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+    var lines = [headers.join(',')];
+    subs.forEach(function (s) {
+      lines.push([
+        esc(s.class_name),
+        esc(s.status),
+        esc(s.submitted_by_name || s.submitted_by_email),
+        esc(pmrepFormatSessions(s.session_preferences)),
+        esc(pmrepFormatHourPrefs(s.hour_preference)),
+        esc((s.age_groups || []).join('; ')),
+        esc(s.max_students || ''),
+        esc(s.description || '')
+      ].join(','));
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'pm-class-submissions-' + year + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function printPmSubmissionsReport() {
+    var subs = pmFilteredSubmissions();
+    var year = _pmReportState.filters.school_year;
+    var doc = '<!doctype html><html><head><meta charset="utf-8"><title>PM Class Submissions ' + escapeHtml(year) + '</title>';
+    doc += '<style>body{font:13px Georgia,serif;color:#222;padding:24px;}h1{font-size:18px;margin:0 0 4px;}p.meta{color:#666;margin:0 0 16px;font-size:12px;}table{border-collapse:collapse;width:100%;font-size:12px;}th,td{border-bottom:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;}th{background:#f5f0e8;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;}td.desc{color:#444;font-size:11px;}</style>';
+    doc += '</head><body>';
+    doc += '<h1>PM Class Submissions</h1>';
+    doc += '<p class="meta">Year ' + escapeHtml(year) + ' · ' + subs.length + ' submission' + (subs.length === 1 ? '' : 's') + '</p>';
+    doc += '<table><thead><tr><th>Class</th><th>Status</th><th>Submitter</th><th>Sessions</th><th>Hour</th><th>Ages</th><th>Max</th></tr></thead><tbody>';
+    subs.forEach(function (s) {
+      doc += '<tr><td><strong>' + escapeHtml(s.class_name) + '</strong>';
+      if (s.description) {
+        doc += '<div class="desc">' + escapeHtml(String(s.description).slice(0, 200)) + (String(s.description).length > 200 ? '…' : '') + '</div>';
+      }
+      doc += '</td>';
+      doc += '<td>' + escapeHtml((s.status || '').toUpperCase()) + '</td>';
+      doc += '<td>' + escapeHtml(s.submitted_by_name || s.submitted_by_email) + '</td>';
+      doc += '<td>' + escapeHtml(pmrepFormatSessions(s.session_preferences)) + '</td>';
+      doc += '<td>' + escapeHtml(pmrepFormatHourPrefs(s.hour_preference)) + '</td>';
+      doc += '<td>' + escapeHtml((s.age_groups || []).join(', ')) + '</td>';
+      doc += '<td>' + escapeHtml(String(s.max_students || '')) + '</td></tr>';
+    });
+    doc += '</tbody></table></body></html>';
+    openPrintIframe(doc);
   }
 
   // Lightweight count fetch used on workspace render to paint a "N pending"
@@ -13153,21 +13257,8 @@
     var body = document.getElementById('pmrep-body');
     if (!body) return;
 
-    var f = _pmReportState.filters;
     var all = _pmReportState.submissions;
-    var filtered = all.filter(function (s) {
-      if (f.status !== 'all' && s.status !== f.status) return false;
-      if (f.school_year !== 'all' && s.school_year !== f.school_year) return false;
-      if (f.session !== 'all') {
-        var prefs = s.session_preferences || [];
-        if (!prefs.some(function (p) { return String(p) === f.session; })) return false;
-      }
-      if (f.age !== 'all') {
-        var ages = (s.age_groups || []).map(function (a) { return String(a).toLowerCase(); });
-        if (ages.indexOf(f.age) === -1) return false;
-      }
-      return true;
-    });
+    var filtered = pmFilteredSubmissions();
 
     // Update the modal's meta line: count + a year scope-picker. The
     // year is the only filter that doesn't map to a single column, so

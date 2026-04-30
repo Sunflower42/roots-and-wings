@@ -5721,6 +5721,14 @@ button.staff-role:hover {
 .person-detail-card:has(.emi-modal) {
   max-width: 880px;
 }
+/* Tabular reports (Participation, PM Submissions, etc.) need extra
+   width — many columns, sticky-first-column scrolling means we want
+   to surface as much of the table as possible without horizontal
+   scroll on a typical laptop. Bumps the cap to ~1100px while still
+   capping at 96vw on smaller screens. */
+.person-detail-card:has(.rd-report-modal) {
+  max-width: min(1100px, 96vw);
+}
 .wv-modal {
   max-width: 860px;
   width: 100%;
