@@ -3475,34 +3475,85 @@ p + p { margin-top: 1rem; }
 }
 .rd-supp-popover[hidden] { display: none; }
 
-/* In-table-header filter row. Sits as a second <tr> inside <thead>
-   so each filter <select> aligns under its column label. Padding +
-   background distinguish it from the column-label row but keep the
-   same sticky-top behavior so the filters scroll with the labels. */
-.ws-waivers-table thead tr.rd-filter-row th {
-  padding: 4px 10px 6px;
-  background: rgba(var(--color-primary-rgb), 0.04);
-  border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.12);
-  position: sticky;
-  top: 1.85em;  /* sits below the column-label row, which is also sticky-top */
-  text-transform: none;
-  font-weight: normal;
-  letter-spacing: 0;
-  color: var(--color-text);
-  z-index: 2;
-}
-.rd-th-filter {
-  width: 100%;
-  padding: 3px 6px;
-  font-size: 0.78rem;
-  font-weight: 500;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-white);
-  color: var(--color-text);
+/* Per-column filter funnel + its popover. Replaces the prior
+   in-thead filter <tr> (which didn't dock cleanly under the column-
+   label row). Funnel sits inline next to the column label; click
+   opens a popover anchored to the funnel. Popover renders to body
+   so it isn't clipped by the modal's overflow. */
+.ws-th-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 5px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-light);
+  border-radius: 4px;
   cursor: pointer;
+  vertical-align: -3px;
 }
-.rd-th-filter:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.ws-th-filter-btn:hover {
+  background: rgba(var(--color-primary-rgb), 0.12);
+  color: var(--color-primary);
+}
+.ws-th-filter-btn.is-active {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-color: var(--color-primary);
+}
+.ws-th-filter-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.ws-th-filter-popover {
+  position: absolute;
+  z-index: 100;
+  min-width: 180px;
+  max-width: 280px;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  padding: 4px;
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+}
+.ws-th-filter-popover-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ws-th-filter-popover-row:hover { background: rgba(var(--color-primary-rgb), 0.08); }
+.ws-th-filter-popover-row.is-current {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+.ws-th-filter-popover-count {
+  margin-left: 16px;
+  opacity: 0.55;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.ws-th-filter-popover-row.is-current .ws-th-filter-popover-count {
+  color: var(--color-accent);
+  opacity: 0.95;
+}
 
 /* Inline meta-line select — used for filters that scope the whole
    table (year picker on PM Submissions). Lives in the modal's meta

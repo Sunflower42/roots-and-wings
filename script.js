@@ -6036,6 +6036,82 @@
   //    expandable rows get a toggle caret in the first column; clicking any
   //    cell (except the caret's row-dedupe) shows renderDetail(row) in a
   //    full-width row below.
+  // Filter funnel icon for column-header filters. Click → popover
+  // anchored below the funnel; active filter (anything other than the
+  // first/default option) flips the funnel into a primary-filled state
+  // so users can see at a glance which columns are scoped.
+  var FUNNEL_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>';
+
+  // Single shared popover instance — only one filter open at a time
+  // across the whole document. Click-outside / Escape closes.
+  var _filterPopover = null;
+  function closeFilterPopover() {
+    if (_filterPopover && _filterPopover.el && _filterPopover.el.parentNode) {
+      _filterPopover.el.parentNode.removeChild(_filterPopover.el);
+    }
+    if (_filterPopover && _filterPopover.docHandler) {
+      document.removeEventListener('click', _filterPopover.docHandler, true);
+      document.removeEventListener('keydown', _filterPopover.escHandler);
+    }
+    _filterPopover = null;
+  }
+  // anchorEl: the funnel button.
+  // options: [{ value, label, count? }]
+  // currentValue: which option is selected.
+  // onChange: function(value) — invoked when a row is clicked.
+  function openFilterPopover(anchorEl, options, currentValue, onChange) {
+    closeFilterPopover();
+    var pop = document.createElement('div');
+    pop.className = 'ws-th-filter-popover';
+    var hh = '';
+    options.forEach(function (opt) {
+      var cls = 'ws-th-filter-popover-row' + (opt.value === currentValue ? ' is-current' : '');
+      hh += '<button type="button" class="' + cls + '" data-value="' + escapeHtmlWs(String(opt.value)) + '">';
+      hh += '<span class="ws-th-filter-popover-label">' + escapeHtmlWs(opt.label) + '</span>';
+      if (opt.count != null) {
+        hh += '<span class="ws-th-filter-popover-count">' + opt.count + '</span>';
+      }
+      hh += '</button>';
+    });
+    pop.innerHTML = hh;
+    document.body.appendChild(pop);
+
+    // Position the popover below the anchor button, clamping to the
+    // viewport so it doesn't bleed off the right edge.
+    var rect = anchorEl.getBoundingClientRect();
+    var pw = pop.offsetWidth;
+    var left = rect.left + window.scrollX;
+    var maxLeft = window.scrollX + document.documentElement.clientWidth - pw - 8;
+    if (left > maxLeft) left = maxLeft;
+    if (left < 8) left = 8;
+    pop.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+    pop.style.left = left + 'px';
+
+    pop.querySelectorAll('[data-value]').forEach(function (row) {
+      row.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var v = this.getAttribute('data-value');
+        closeFilterPopover();
+        if (typeof onChange === 'function') onChange(v);
+      });
+    });
+
+    function docHandler(e) {
+      if (pop.contains(e.target)) return;
+      if (anchorEl.contains(e.target)) return;
+      closeFilterPopover();
+    }
+    function escHandler(e) {
+      if (e.key === 'Escape') closeFilterPopover();
+    }
+    setTimeout(function () {
+      document.addEventListener('click', docHandler, true);
+      document.addEventListener('keydown', escHandler);
+    }, 0);
+
+    _filterPopover = { el: pop, docHandler: docHandler, escHandler: escHandler };
+  }
+
   // Inline SVGs for renderReportModal chrome — keeps icon rendering
   // consistent across platforms (emoji rendering varies wildly on
   // Windows + Android). Stroke-only line icons match the deep-purple
@@ -6218,12 +6294,26 @@
         var sortable = col.sortable !== false;
         var isActive = sortable && col.key === state.sortKey;
         var arrow = isActive ? (state.sortDir === 'asc' ? '\u25B2' : '\u25BC') : '';
+        // Funnel button for columns with col.filter \u2014 sits next to
+        // the label inside the same <th>. Click \u2192 popover. Active
+        // (non-default) filter shows the funnel filled.
+        var funnel = '';
+        if (col.filter && Array.isArray(col.filter.options) && col.filter.options.length) {
+          var defaultVal = col.filter.options[0].value;
+          var filterActive = col.filter.current && col.filter.current !== defaultVal;
+          funnel = '<button type="button" class="ws-th-filter-btn'
+            + (filterActive ? ' is-active' : '') + '"'
+            + ' data-filter-col="' + escapeHtmlWs(col.key) + '"'
+            + ' aria-label="Filter ' + escapeHtmlWs(col.label) + '"'
+            + '>' + FUNNEL_SVG + '</button>';
+        }
         if (sortable) {
           h += '<th class="ws-sort" data-sort-key="' + escapeHtmlWs(col.key) + '">'
             + '<span class="ws-sort-label">' + escapeHtmlWs(col.label) + '</span>'
-            + '<span class="ws-sort-arrow">' + arrow + '</span></th>';
+            + '<span class="ws-sort-arrow">' + arrow + '</span>'
+            + funnel + '</th>';
         } else {
-          h += '<th>' + escapeHtmlWs(col.label) + '</th>';
+          h += '<th>' + escapeHtmlWs(col.label) + funnel + '</th>';
         }
       });
       h += '</tr>';
@@ -6252,6 +6342,22 @@
       });
       h += '</tbody></table></div>';
       containerEl.innerHTML = h;
+
+      // Funnel button → filter popover. Wired BEFORE the th-click sort
+      // handler with stopPropagation so clicking the funnel doesn't
+      // also flip sort direction.
+      containerEl.querySelectorAll('.ws-th-filter-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var key = this.getAttribute('data-filter-col');
+          var col = null;
+          for (var i = 0; i < columns.length; i++) {
+            if (columns[i].key === key) { col = columns[i]; break; }
+          }
+          if (!col || !col.filter) return;
+          openFilterPopover(this, col.filter.options, col.filter.current, col.filter.onChange);
+        });
+      });
 
       // Header click → sort toggle.
       containerEl.querySelectorAll('.ws-sort').forEach(function (th) {
@@ -7360,56 +7466,35 @@
       return members.filter(function (m) { return !m.exemption && m.status === currentFilter; });
     }
 
-    function buildStatusFilterRow() {
-      // Filter sits inside <thead> at the Status column position
-      // (column 2 — after Member, which is column 1; with the
-      // expandable caret, that's <th> #3 overall). One <th> per
-      // column to preserve alignment; empty cells for non-filterable.
-      var statusOptions = [
-        { value: 'all',      label: 'All',      count: members.length },
-        { value: 'on_track', label: 'On track', count: statusCounts.on_track },
-        { value: 'near',     label: 'Close',    count: statusCounts.near },
-        { value: 'behind',   label: 'Behind',   count: statusCounts.behind },
-        { value: 'new',      label: 'New',      count: statusCounts['new'] },
-        { value: 'exempt',   label: 'Exempt',   count: statusCounts.exempt }
-      ];
-      var sel = '<select class="rd-th-filter" data-filter="status" aria-label="Filter by status">';
-      statusOptions.forEach(function (opt) {
-        var s = currentFilter === opt.value ? ' selected' : '';
-        sel += '<option value="' + opt.value + '"' + s + '>' + opt.label + ' (' + opt.count + ')</option>';
-      });
-      sel += '</select>';
-
-      var cols = participationTableColumns();
-      var h = '<tr class="rd-filter-row">';
-      h += '<th></th>';  // expandable caret column
-      cols.forEach(function (col) {
-        if (col.key === 'status') {
-          h += '<th>' + sel + '</th>';
-        } else {
-          h += '<th></th>';
-        }
-      });
-      h += '</tr>';
-      return h;
-    }
+    var statusOptions = [
+      { value: 'all',      label: 'All',      count: members.length },
+      { value: 'on_track', label: 'On track', count: statusCounts.on_track },
+      { value: 'near',     label: 'Close',    count: statusCounts.near },
+      { value: 'behind',   label: 'Behind',   count: statusCounts.behind },
+      { value: 'new',      label: 'New',      count: statusCounts['new'] },
+      { value: 'exempt',   label: 'Exempt',   count: statusCounts.exempt }
+    ];
 
     function renderTable() {
       if (!tableTarget) return;
-      renderSortableTable(tableTarget, participationTableColumns(), filteredRows(), {
+      // Status column gets a filter funnel inside its header. Click →
+      // popover with the count-baked-in options. onChange flips
+      // currentFilter and re-renders.
+      var cols = participationTableColumns();
+      cols.forEach(function (col) {
+        if (col.key === 'status') {
+          col.filter = {
+            options: statusOptions,
+            current: currentFilter,
+            onChange: function (v) { currentFilter = v; renderTable(); }
+          };
+        }
+      });
+      renderSortableTable(tableTarget, cols, filteredRows(), {
         initialSort: { key: 'weightedTotal', dir: 'desc' },
         expandable: true,
-        renderDetail: renderParticipationTimeline,
-        filterRowHtml: buildStatusFilterRow()
+        renderDetail: renderParticipationTimeline
       });
-      // Filter <select> lives inside the table — re-wire each render.
-      var filterSel = tableTarget.querySelector('[data-filter="status"]');
-      if (filterSel) {
-        filterSel.addEventListener('change', function () {
-          currentFilter = this.value;
-          renderTable();
-        });
-      }
     }
     renderTable();
   }
@@ -13212,45 +13297,62 @@
     html += '</select>';
     return html;
   }
-  function renderPmHeaderFilterRow() {
+  // Build per-column funnel buttons + their popover configs for the
+  // PM Submissions header. Counts only ride on the Status options
+  // (single-valued, sums to total). Sessions / ages are multi-value
+  // arrays where counts wouldn't sum cleanly, so labels stand alone.
+  function pmFilterFunnel(key, label, currentValue, defaultValue) {
+    var isActive = currentValue && currentValue !== defaultValue;
+    return '<button type="button" class="ws-th-filter-btn'
+      + (isActive ? ' is-active' : '')
+      + '" data-pm-filter="' + key + '"'
+      + ' aria-label="Filter ' + label + '">' + FUNNEL_SVG + '</button>';
+  }
+  function pmFilterConfig(key) {
     var f = _pmReportState.filters;
-    var h = '<tr class="rd-filter-row">';
-    // Order matches the column header row (Class → Status → Submitter
-    // → Sessions → Hour → Ages → Max → Actions). One <th> per column;
-    // empty cells preserve column alignment for non-filterable columns.
-    // Class — no filter (free-text class names; not bucketable).
-    h += '<th></th>';
-    // Status
-    h += '<th><select class="pmrep-f rd-th-filter" data-filter="status" aria-label="Filter by status">';
-    ['submitted','drafted','scheduled','declined','withdrawn','all'].forEach(function (v) {
-      var lab = v === 'all' ? 'Any' : v.charAt(0).toUpperCase() + v.slice(1);
-      h += '<option value="' + v + '"' + (f.status === v ? ' selected' : '') + '>' + lab + '</option>';
-    });
-    h += '</select></th>';
-    // Submitter — no filter for now (could add a "by me / by anyone" later).
-    h += '<th></th>';
-    // Sessions
-    h += '<th><select class="pmrep-f rd-th-filter" data-filter="session" aria-label="Filter by session">';
-    h += '<option value="all"' + (f.session === 'all' ? ' selected' : '') + '>Any</option>';
-    h += '<option value="flexible"' + (f.session === 'flexible' ? ' selected' : '') + '>Flexible</option>';
-    for (var s = 1; s <= 5; s++) {
-      h += '<option value="' + s + '"' + (f.session === String(s) ? ' selected' : '') + '>S' + s + '</option>';
+    var all = _pmReportState.submissions || [];
+    if (key === 'status') {
+      var statuses = ['submitted','drafted','scheduled','declined','withdrawn'];
+      var counts = {};
+      all.forEach(function (s) {
+        if (s.school_year === f.school_year) counts[s.status] = (counts[s.status] || 0) + 1;
+      });
+      var opts = [{ value: 'all', label: 'Any', count: all.filter(function (s) { return s.school_year === f.school_year; }).length }];
+      statuses.forEach(function (v) {
+        opts.push({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1), count: counts[v] || 0 });
+      });
+      return {
+        options: opts,
+        current: f.status,
+        defaultValue: 'submitted',
+        onChange: function (v) { _pmReportState.filters.status = v; renderPmSubmissionsReport(); }
+      };
     }
-    h += '</select></th>';
-    // Hour — no filter (rare to scope; status + sessions usually narrow enough).
-    h += '<th></th>';
-    // Ages
-    h += '<th><select class="pmrep-f rd-th-filter" data-filter="age" aria-label="Filter by age group">';
-    [['all','Any'],['3-7','3–7'],['7-9','7–9'],['10-12','10–12'],['teens','Teens']].forEach(function (pair) {
-      h += '<option value="' + pair[0] + '"' + (f.age === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
-    });
-    h += '</select></th>';
-    // Max — numeric, no filter.
-    h += '<th></th>';
-    // Actions — no filter.
-    h += '<th></th>';
-    h += '</tr>';
-    return h;
+    if (key === 'session') {
+      var sopts = [{ value: 'all', label: 'Any' }, { value: 'flexible', label: 'Flexible' }];
+      for (var s = 1; s <= 5; s++) sopts.push({ value: String(s), label: 'Session ' + s });
+      return {
+        options: sopts,
+        current: f.session,
+        defaultValue: 'all',
+        onChange: function (v) { _pmReportState.filters.session = v; renderPmSubmissionsReport(); }
+      };
+    }
+    if (key === 'age') {
+      return {
+        options: [
+          { value: 'all',   label: 'Any' },
+          { value: '3-7',   label: '3–7' },
+          { value: '7-9',   label: '7–9' },
+          { value: '10-12', label: '10–12' },
+          { value: 'teens', label: 'Teens' }
+        ],
+        current: f.age,
+        defaultValue: 'all',
+        onChange: function (v) { _pmReportState.filters.age = v; renderPmSubmissionsReport(); }
+      };
+    }
+    return null;
   }
 
   function renderPmSubmissionsReport() {
@@ -13288,15 +13390,22 @@
     // each filter aligns with its column. The header (and its filters)
     // ALWAYS renders even on zero matches so the user can adjust the
     // filter that's hiding everything.
+    var f = _pmReportState.filters;
     var h = '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table">';
     h += '<thead><tr>';
     // Column convention: row identifier (Class) → Status pill →
     // everything else, with Actions trailing. Same shape Participation
-    // Tracker uses (Member → Status → counts) so reports read uniformly.
-    h += '<th>Class</th><th>Status</th><th>Submitter</th><th>Sessions</th><th>Hour</th><th>Ages</th><th>Max</th><th class="pmrep-actions-col">Actions</th>';
-    h += '</tr>';
-    h += renderPmHeaderFilterRow();
-    h += '</thead><tbody>';
+    // Tracker uses. Filterable columns get a funnel button next to
+    // their label — click opens a popover with options + counts.
+    h += '<th>Class</th>';
+    h += '<th>Status' + pmFilterFunnel('status', 'status', f.status, 'submitted') + '</th>';
+    h += '<th>Submitter</th>';
+    h += '<th>Sessions' + pmFilterFunnel('session', 'session', f.session, 'all') + '</th>';
+    h += '<th>Hour</th>';
+    h += '<th>Ages' + pmFilterFunnel('age', 'age', f.age, 'all') + '</th>';
+    h += '<th>Max</th>';
+    h += '<th class="pmrep-actions-col">Actions</th>';
+    h += '</tr></thead><tbody>';
     if (filtered.length === 0) {
       h += '<tr><td colspan="8" class="ws-empty" style="text-align:center;">No submissions match these filters.</td></tr>';
       h += '</tbody></table></div>';
@@ -13349,16 +13458,16 @@
     wirePmFilterChange(body);
   }
 
-  // Wire the filter dropdowns inside the PM Submissions body. Re-runs
-  // each render because the body innerHTML is replaced — handlers don't
-  // survive across renders.
+  // Wire the column-header funnel buttons in the PM Submissions body.
+  // Re-runs each render since the body innerHTML is replaced.
   function wirePmFilterChange(body) {
-    body.querySelectorAll('.pmrep-f').forEach(function (el) {
-      var key = el.getAttribute('data-filter');
-      if (!key) return;
-      el.addEventListener('change', function () {
-        _pmReportState.filters[this.getAttribute('data-filter')] = this.value;
-        renderPmSubmissionsReport();
+    body.querySelectorAll('[data-pm-filter]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var key = this.getAttribute('data-pm-filter');
+        var conf = pmFilterConfig(key);
+        if (!conf) return;
+        openFilterPopover(this, conf.options, conf.current, conf.onChange);
       });
     });
   }
