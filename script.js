@@ -7442,16 +7442,29 @@
       if (statusCounts[bucket] != null) statusCounts[bucket] += 1;
     });
 
-    // Fill in the modal's meta line ("Season 25_26 · 46 members") now
-    // that the data is loaded. Per-status counts ride inside the
-    // Status filter <select>'s option labels (e.g. "On track (26)")
-    // so users still see them on demand without a separate chip row.
+    // Fill in the modal's meta line ("Season 25_26 · 46 members").
     var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
     if (metaEl) {
       metaEl.textContent = 'Season ' + season + ' · ' + members.length + ' members';
     }
 
-    body.innerHTML = '<div id="ws-part-table-target"></div>';
+    // Always-visible status count strip — same pill shape + colors as
+    // the in-row Status badges so the summary visually maps onto the
+    // column it summarizes. Sits between meta and table; not clickable
+    // (filtering happens via the funnel popover on the Status header).
+    function statusCountPill(variant, count, label) {
+      return '<span class="ws-part-status ws-part-status-' + variant + '">'
+        + count + ' ' + escapeHtmlWs(label) + '</span>';
+    }
+    var countsHtml = '<div class="rd-counts">';
+    countsHtml += statusCountPill('on_track', statusCounts.on_track, 'On track');
+    countsHtml += statusCountPill('near',     statusCounts.near,     'Close');
+    countsHtml += statusCountPill('behind',   statusCounts.behind,   'Behind');
+    countsHtml += statusCountPill('new',      statusCounts['new'],   'New');
+    countsHtml += statusCountPill('exempt',   statusCounts.exempt,   'Exempt');
+    countsHtml += '</div>';
+
+    body.innerHTML = countsHtml + '<div id="ws-part-table-target"></div>';
     var tableTarget = body.querySelector('#ws-part-table-target');
 
     var currentFilter = 'all';
@@ -13391,7 +13404,30 @@
     // ALWAYS renders even on zero matches so the user can adjust the
     // filter that's hiding everything.
     var f = _pmReportState.filters;
-    var h = '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table">';
+
+    // Always-visible status count strip (year-scoped). Same pill shape
+    // and colors as the in-row Status badges so the summary maps onto
+    // the column it summarizes.
+    var allYear = all.filter(function (s) { return s.school_year === f.school_year; });
+    var pmStatusCounts = { submitted: 0, drafted: 0, scheduled: 0, declined: 0, withdrawn: 0 };
+    allYear.forEach(function (s) {
+      if (pmStatusCounts[s.status] != null) pmStatusCounts[s.status] += 1;
+    });
+    function pmCountPill(variant, label) {
+      var n = pmStatusCounts[variant] || 0;
+      return '<span class="pmrep-status pmrep-status-' + variant + '">'
+        + n + ' ' + escapeHtmlWs(label) + '</span>';
+    }
+    var countsHtml = '<div class="rd-counts">';
+    countsHtml += pmCountPill('submitted', 'Submitted');
+    countsHtml += pmCountPill('drafted',   'Drafted');
+    countsHtml += pmCountPill('scheduled', 'Scheduled');
+    countsHtml += pmCountPill('declined',  'Declined');
+    countsHtml += pmCountPill('withdrawn', 'Withdrawn');
+    countsHtml += '</div>';
+
+    var h = countsHtml;
+    h += '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table">';
     h += '<thead><tr>';
     // Column convention: row identifier (Class) → Status pill →
     // everything else, with Actions trailing. Same shape Participation

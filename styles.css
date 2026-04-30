@@ -3475,6 +3475,19 @@ p + p { margin-top: 1rem; }
 }
 .rd-supp-popover[hidden] { display: none; }
 
+/* Always-visible count strip — sits between the modal meta and the
+   table. Reuses the in-row Status pill shapes (.ws-part-status /
+   .pmrep-status) so the summary visually maps onto the column it
+   summarizes. Read-only data, not interactive — filtering happens via
+   the funnel popover on the column header. */
+.rd-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 14px;
+  align-items: center;
+}
+
 /* Per-column filter funnel + its popover. Replaces the prior
    in-thead filter <tr> (which didn't dock cleanly under the column-
    label row). Funnel sits inline next to the column label; click
