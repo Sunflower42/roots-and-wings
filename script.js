@@ -5989,6 +5989,96 @@
   //    expandable rows get a toggle caret in the first column; clicking any
   //    cell (except the caret's row-dedupe) shows renderDetail(row) in a
   //    full-width row below.
+  // Shared shell for tabular Workspace reports (Participation Tracker,
+  // Membership Report, Waivers Report, etc.). Builds the modal chrome
+  // — title + subtitle, header icon row (Print / View as Sheet / Export
+  // CSV), and an optional collapsible "Manage" section above the table
+  // for admin-only supplemental controls (Weights, Exemptions, Email
+  // templates, etc.). Returns the body element so the caller can paint
+  // headers, filter chips, and the table into it.
+  //
+  // opts: {
+  //   title:         string                       — H3 inside the modal
+  //   subtitle:      string                       — optional descriptor under the title
+  //   icons:         [{ label, icon, aria, href?, action? }]   — header chrome,
+  //                                                  href = link out (e.g. Google
+  //                                                  Sheet); action = onClick.
+  //   supplemental:  { title?, items: [{ label, icon, aria, action }] } — admin
+  //                                                  controls in a collapsible
+  //                                                  panel above the table. Pass
+  //                                                  null to omit.
+  //   bodyId:        string                       — id for the body container so
+  //                                                  the caller can re-target via
+  //                                                  document.getElementById.
+  //   bodyPlaceholder: string                     — initial HTML (e.g. "Loading…").
+  // }
+  function renderReportModal(opts) {
+    if (!personDetail || !personDetailCard) return null;
+    opts = opts || {};
+    var icons = Array.isArray(opts.icons) ? opts.icons : [];
+    var supp = opts.supplemental || null;
+
+    var html = '';
+    if (icons.length > 0) {
+      html += '<div class="detail-actions no-print">';
+      icons.forEach(function (ic, i) {
+        var aria = escapeHtmlWs(ic.aria || ic.label || '');
+        var label = (ic.icon || '') + ' ' + escapeHtmlWs(ic.label || '');
+        if (ic.href) {
+          html += '<a class="sc-btn" href="' + escapeHtmlWs(ic.href) + '" target="_blank" rel="noopener" aria-label="' + aria + '">' + label + '</a>';
+        } else {
+          html += '<button class="sc-btn" type="button" data-report-icon="' + i + '" aria-label="' + aria + '">' + label + '</button>';
+        }
+      });
+      html += '</div>';
+    }
+    html += '<button class="detail-close" aria-label="Close">&times;</button>';
+    html += '<div class="elective-detail rd-modal">';
+    html += '<h3 class="rd-title">' + escapeHtmlWs(opts.title || '') + '</h3>';
+    if (opts.subtitle) {
+      html += '<p class="rd-subtitle">' + escapeHtmlWs(opts.subtitle) + '</p>';
+    }
+    if (supp && Array.isArray(supp.items) && supp.items.length > 0) {
+      html += '<details class="rd-supplemental no-print">';
+      html += '<summary>' + escapeHtmlWs(supp.title || 'Manage') + '</summary>';
+      html += '<div class="rd-supplemental-row">';
+      supp.items.forEach(function (item, i) {
+        var aria = escapeHtmlWs(item.aria || item.label || '');
+        var label = (item.icon || '') + ' ' + escapeHtmlWs(item.label || '');
+        html += '<button class="sc-btn" type="button" data-report-supp="' + i + '" aria-label="' + aria + '">' + label + '</button>';
+      });
+      html += '</div></details>';
+    }
+    var bodyId = opts.bodyId || ('ws-report-body-' + Date.now());
+    html += '<div id="' + escapeHtmlWs(bodyId) + '">' + (opts.bodyPlaceholder || '') + '</div>';
+    html += '</div>';
+
+    personDetailCard.innerHTML = html;
+    personDetail.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
+    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+
+    personDetailCard.querySelectorAll('[data-report-icon]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var ic = icons[parseInt(el.getAttribute('data-report-icon'), 10)];
+        if (ic && typeof ic.action === 'function') ic.action();
+      });
+    });
+    if (supp && Array.isArray(supp.items)) {
+      personDetailCard.querySelectorAll('[data-report-supp]').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var item = supp.items[parseInt(el.getAttribute('data-report-supp'), 10)];
+          if (item && typeof item.action === 'function') item.action();
+        });
+      });
+    }
+
+    return personDetailCard.querySelector('#' + bodyId);
+  }
+
   function renderSortableTable(containerEl, columns, rows, opts) {
     if (!containerEl) return;
     opts = opts || {};
@@ -7085,39 +7175,30 @@
   }
 
   function showParticipationReportModal() {
-    if (!personDetail || !personDetailCard) return;
     var canWrite = participationCanWrite();
-    var html = '<div class="detail-actions no-print">';
-    if (canWrite) {
-      html += '<button class="sc-btn" type="button" data-part-action="weights" aria-label="Edit the weights used in the participation score">⚙️ Weights</button>';
-      html += '<button class="sc-btn" type="button" data-part-action="exemptions" aria-label="Add or edit health/family exemptions">🩺 Exemptions</button>';
-    }
-    html += '<button class="sc-btn" type="button" data-part-action="csv" aria-label="Download the full report as CSV">⬇️ Export CSV</button>';
-    html += '<button class="sc-btn" type="button" data-part-action="print" aria-label="Print the report">🖨️ Print</button>';
-    html += '</div>';
-    html += '<button class="detail-close" aria-label="Close">&times;</button>';
-    html += '<div class="elective-detail rd-modal">';
-    html += '<h3 class="rd-title">Member Participation Tracker</h3>';
-    html += '<p class="rd-subtitle">Session-slot counts for every member this school year. Click a row for the session-by-session breakdown.</p>';
-    html += '<div id="ws-participation-body"><p class="ws-empty">Loading participation data…</p></div>';
-    html += '</div>';
-    personDetailCard.innerHTML = html;
-    personDetail.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
-    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
-
-    personDetailCard.querySelectorAll('[data-part-action]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var a = this.getAttribute('data-part-action');
-        if (a === 'weights') showParticipationWeightsModal();
-        else if (a === 'exemptions') showParticipationExemptionsModal();
-        else if (a === 'csv') exportParticipationCSV();
-        else if (a === 'print') printParticipationReport();
-      });
+    var icons = [
+      { label: 'Print', icon: '🖨️', aria: 'Print the report', action: printParticipationReport },
+      { label: 'Export CSV', icon: '⬇️', aria: 'Download the full report as CSV', action: exportParticipationCSV }
+    ];
+    // Admin-only supplemental controls — kept out of the header chrome
+    // so the print/export icons stay focused on "consume the data" while
+    // weights/exemptions live in their own "Manage" panel for editing it.
+    var supplemental = canWrite ? {
+      title: 'Manage',
+      items: [
+        { label: 'Weights', icon: '⚙️', aria: 'Edit the weights used in the participation score', action: showParticipationWeightsModal },
+        { label: 'Exemptions', icon: '🩺', aria: 'Add or edit health/family exemptions', action: showParticipationExemptionsModal }
+      ]
+    } : null;
+    var body = renderReportModal({
+      title: 'Member Participation Tracker',
+      subtitle: 'Session-slot counts for every member this school year. Click a row for the session-by-session breakdown.',
+      icons: icons,
+      supplemental: supplemental,
+      bodyId: 'ws-participation-body',
+      bodyPlaceholder: '<p class="ws-empty">Loading participation data…</p>'
     });
-
+    if (!body) return;
     loadParticipationReport();
   }
 

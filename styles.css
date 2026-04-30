@@ -3377,6 +3377,44 @@ p + p { margin-top: 1rem; }
   padding-top: 22px;
 }
 
+/* Collapsible "Manage" panel that sits above the table on tabular
+   Workspace reports (Participation Tracker, Membership Report, etc.).
+   Holds admin-only supplemental controls — Weights, Exemptions, Email
+   Templates — so the header chrome stays focused on consume-the-data
+   icons (Print, Export, Sheet link). Built by the renderReportModal
+   helper in script.js. */
+.rd-supplemental {
+  margin: 8px 0 18px;
+  padding: 10px 14px;
+  background: rgba(var(--color-primary-rgb), 0.04);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.15);
+  border-radius: 8px;
+}
+.rd-supplemental > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--color-primary);
+  font-size: 0.92rem;
+  list-style: none;
+}
+.rd-supplemental > summary::-webkit-details-marker { display: none; }
+.rd-supplemental > summary::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.75em;
+  transition: transform 0.15s ease;
+}
+.rd-supplemental[open] > summary::before {
+  transform: rotate(90deg);
+}
+.rd-supplemental-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .detail-header {
   display: flex;
   gap: 18px;
