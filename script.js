@@ -6709,28 +6709,18 @@
     { key: 'created_at', label: 'Registered', type: 'date',
       render: function (r) { return formatReportDate(r.created_at); }
     },
-    // Actions column trailing — Treasurer's Mark Paid (pending rows
-    // only) and Membership Director's Decline. Click opens the row's
-    // expansion and renders the relevant confirm UI at the top of the
-    // detail panel via _membershipPendingAction.
+    // Actions column trailing — Membership Director's Decline only.
+    // Click opens the row's expansion and renders the confirm UI at
+    // the top of the detail panel via _membershipPendingAction.
     { key: '_actions', label: 'Actions', type: 'string', sortable: false,
       render: function (r) {
-        var btns = '';
-        var isPending = String(r.payment_status || '').toLowerCase() !== 'paid';
-        if (isPending && isTreasurer()) {
-          btns += '<button type="button" class="sc-btn ws-mark-paid-btn"'
-            + ' data-mark-paid-id="' + escapeHtmlWs(String(r.id)) + '"'
-            + ' data-mark-paid-name="' + escapeHtmlWs(r.main_learning_coach || '') + '"'
-            + ' data-mark-paid-email="' + escapeHtmlWs(r.email || '') + '">Mark Paid&hellip;</button>';
-        }
-        if (isMembershipDirector()) {
-          btns += '<button type="button" class="sc-btn sc-btn-del ws-decline-btn"'
-            + ' data-decline-id="' + escapeHtmlWs(String(r.id)) + '"'
-            + ' data-decline-name="' + escapeHtmlWs(r.main_learning_coach || '') + '"'
-            + ' data-decline-email="' + escapeHtmlWs(r.email || '') + '">Decline&hellip;</button>';
-        }
-        if (!btns) return '<span class="ws-srt-actions-empty">&mdash;</span>';
-        return '<div class="ws-srt-actions">' + btns + '</div>';
+        if (!isMembershipDirector()) return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        return '<div class="ws-srt-actions">'
+          + '<button type="button" class="sc-btn sc-btn-del ws-decline-btn"'
+          + ' data-decline-id="' + escapeHtmlWs(String(r.id)) + '"'
+          + ' data-decline-name="' + escapeHtmlWs(r.main_learning_coach || '') + '"'
+          + ' data-decline-email="' + escapeHtmlWs(r.email || '') + '">Decline&hellip;</button>'
+          + '</div>';
       }
     }
   ];
@@ -6844,61 +6834,12 @@
         });
       }
 
-      // Delegated click handler for the Decline flow + Treasurer's Mark
-      // Paid flow. Action buttons live in the far-right Actions column;
-      // clicking one stamps _membershipPendingAction + expands the row,
-      // and renderMembershipRegDetail renders the confirm UI at the top
+      // Delegated click handler for the Decline flow. Action buttons
+      // live in the far-right Actions column; clicking Decline stamps
+      // _membershipPendingAction + expands the row, and
+      // renderMembershipRegDetail renders the confirm UI at the top
       // of the expansion panel for that row.
       body.addEventListener('click', function (e) {
-        var markPaidBtn = e.target.closest('.ws-mark-paid-btn');
-        if (markPaidBtn) {
-          var mpId = parseInt(markPaidBtn.getAttribute('data-mark-paid-id'), 10);
-          _membershipPendingAction = { regId: mpId, type: 'mark-paid' };
-          var mpRow = markPaidBtn.closest('tr');
-          var mpIdx = mpRow ? parseInt(mpRow.getAttribute('data-row-idx'), 10) : -1;
-          if (tableTarget._expandRow && mpIdx >= 0) tableTarget._expandRow(mpIdx);
-          else renderTable();
-          return;
-        }
-        if (e.target.classList.contains('ws-mark-paid-cancel-btn')) {
-          _membershipPendingAction = null;
-          renderTable();
-          return;
-        }
-        if (e.target.classList.contains('ws-mark-paid-confirm-btn')) {
-          var mpcBtn = e.target;
-          var markId = mpcBtn.getAttribute('data-mark-paid-id');
-          var mpcWrap = mpcBtn.closest('.ws-reg-mark-paid');
-          var mpcNoteEl = mpcWrap.querySelector('.ws-mark-paid-note');
-          var mpcStatusEl = mpcWrap.querySelector('.ws-mark-paid-status');
-          mpcStatusEl.textContent = 'Recording…';
-          mpcBtn.disabled = true;
-          var cred = localStorage.getItem('rw_google_credential');
-          fetch('/api/tour', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cred },
-            body: JSON.stringify({ kind: 'registration-mark-paid', id: parseInt(markId, 10), note: mpcNoteEl ? mpcNoteEl.value : '' })
-          }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
-            .then(function (rres) {
-              if (!rres.ok) {
-                var msg = (rres.data && rres.data.error) || 'unknown';
-                if (rres.data && rres.data.youAre) msg += ' (logged in as ' + rres.data.youAre + ', expected ' + rres.data.expected + ')';
-                mpcStatusEl.textContent = 'Error: ' + msg;
-                mpcBtn.disabled = false;
-                return;
-              }
-              mpcStatusEl.textContent = 'Marked Paid. Confirmation email sent.';
-              _membershipPendingAction = null;
-              setTimeout(function () {
-                closeDetail();
-                showMembershipReportModal();
-              }, 700);
-            }).catch(function (err) {
-              mpcStatusEl.textContent = 'Network error: ' + ((err && err.message) || 'unknown');
-              mpcBtn.disabled = false;
-            });
-          return;
-        }
         var declineBtn = e.target.closest('.ws-decline-btn');
         if (declineBtn) {
           var dId = parseInt(declineBtn.getAttribute('data-decline-id'), 10);
@@ -7444,33 +7385,19 @@
     var h = '';
 
     // Pending-action confirm panel — rendered at the top of the
-    // expansion when the row's Mark Paid / Decline button has been
-    // clicked. Action buttons themselves live in the trailing Actions
-    // column on the row; this panel hosts the textarea + confirm/cancel
-    // flow that was previously inlined below the detail grid.
-    if (_membershipPendingAction && _membershipPendingAction.regId === r.id) {
-      var pa = _membershipPendingAction;
-      if (pa.type === 'mark-paid') {
-        h += '<div class="ws-reg-detail-section ws-reg-mark-paid">' +
-          '<p class="ws-reg-decline-hint"><strong>Mark ' + escapeHtmlWs(r.main_learning_coach || '') + ' as Paid?</strong> The family\'s My Family billing card will flip to Paid and a payment-received email goes out.</p>' +
-          '<textarea class="rd-textarea ws-mark-paid-note" rows="2" placeholder="Optional note for the email (e.g. check #1234 received)&hellip;"></textarea>' +
-          '<div class="rd-btn-row">' +
-            '<button type="button" class="sc-btn ws-mark-paid-confirm-btn" data-mark-paid-id="' + escapeHtmlWs(String(r.id)) + '">Confirm — mark Paid</button>' +
-            '<button type="button" class="sc-btn ws-mark-paid-cancel-btn">Cancel</button>' +
-          '</div>' +
-          '<p class="ws-mark-paid-status" aria-live="polite" style="margin-top:8px;"></p>' +
-          '</div>';
-      } else if (pa.type === 'decline') {
-        h += '<div class="ws-reg-detail-section ws-reg-decline">' +
-          '<p class="ws-reg-decline-hint"><strong>Decline ' + escapeHtmlWs(r.main_learning_coach || '') + ' (' + escapeHtmlWs(r.email || '') + ')?</strong> An email goes to the family, Treasurer, Membership, and Communications. The registration row and any derived member_profiles row are deleted. Treasurer will issue the refund manually.</p>' +
-          '<textarea class="rd-textarea ws-decline-note" rows="3" placeholder="Optional note to include in the decline email&hellip;"></textarea>' +
-          '<div class="rd-btn-row ws-decline-btn-row">' +
-            '<button type="button" class="sc-btn sc-btn-del ws-decline-confirm-btn" data-decline-id="' + escapeHtmlWs(String(r.id)) + '">Confirm decline</button>' +
-            '<button type="button" class="sc-btn ws-decline-cancel-btn">Cancel</button>' +
-          '</div>' +
-          '<p class="ws-decline-status" aria-live="polite" style="margin-top:8px;"></p>' +
-          '</div>';
-      }
+    // expansion when the row's Decline button has been clicked. The
+    // action button itself lives in the trailing Actions column; this
+    // panel hosts the textarea + confirm/cancel flow.
+    if (_membershipPendingAction && _membershipPendingAction.regId === r.id && _membershipPendingAction.type === 'decline') {
+      h += '<div class="ws-reg-detail-section ws-reg-decline">' +
+        '<p class="ws-reg-decline-hint"><strong>Decline ' + escapeHtmlWs(r.main_learning_coach || '') + ' (' + escapeHtmlWs(r.email || '') + ')?</strong> An email goes to the family, Treasurer, Membership, and Communications. The registration row and any derived member_profiles row are deleted. Treasurer will issue the refund manually.</p>' +
+        '<textarea class="rd-textarea ws-decline-note" rows="3" placeholder="Optional note to include in the decline email&hellip;"></textarea>' +
+        '<div class="rd-btn-row ws-decline-btn-row">' +
+          '<button type="button" class="sc-btn sc-btn-del ws-decline-confirm-btn" data-decline-id="' + escapeHtmlWs(String(r.id)) + '">Confirm decline</button>' +
+          '<button type="button" class="sc-btn ws-decline-cancel-btn">Cancel</button>' +
+        '</div>' +
+        '<p class="ws-decline-status" aria-live="polite" style="margin-top:8px;"></p>' +
+        '</div>';
     }
 
     h += '<div class="ws-reg-detail-grid">';
@@ -7502,9 +7429,9 @@
       h += '<div class="ws-reg-detail-section"><h5>Placement notes</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(r.placement_notes) + '</div></div>';
     }
 
-    // Mark Paid / Decline action buttons live in the Actions column on
-    // the row; clicking one stamps _membershipPendingAction and renders
-    // the confirm UI at the top of this panel (see top of function).
+    // Decline action button lives in the Actions column on the row;
+    // clicking it stamps _membershipPendingAction and renders the
+    // confirm UI at the top of this panel (see top of function).
     return h;
   }
 
