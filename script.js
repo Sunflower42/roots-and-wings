@@ -2038,9 +2038,15 @@
         var displayName = person.type === 'kid' && person.lastName && person.lastName !== person.family
           ? person.name + ' ' + person.lastName
           : person.name;
+        // Adult subtitle uses the MLC/BLC role label so the Directory
+        // grid card matches the family-detail card (and Edit My Info).
+        // 'parent' / unknown roles fall back to "Parent" — that label
+        // covers third+ adults like grandparents or legal guardians who
+        // aren't tagged MLC/BLC.
+        var ROLE_LABELS_DIR = { mlc: 'Main Learning Coach', blc: 'Back Up Learning Coach', parent: 'Parent' };
         var subtitle = person.type === 'kid'
           ? (person.age ? 'Age ' + person.age + ' &middot; ' : '') + groupWithAge(person.group)
-          : 'Parent';
+          : (ROLE_LABELS_DIR[person.role] || 'Parent');
         var bgStyle = faceColor(person.name);
 
         var pronounTag = person.pronouns ? '<div class="yb-pronouns">' + person.pronouns + '</div>' : '';
@@ -2397,8 +2403,20 @@
     html += '<div class="detail-family">';
     html += '<h4>' + (fam.displayName || fam.name) + ' Family</h4>';
     html += '<div class="detail-family-grid">';
-    // Parents
-    fam.parents.split(' & ').forEach(function(pName) {
+    // Parents — roleByFirst maps the first name (lowercase) to its
+    // MLC/BLC/parent tag from member_profiles so the family-list
+    // entries show the same role labels the detail card + EMI use.
+    var ROLE_LABELS_FAM = { mlc: 'Main Learning Coach', blc: 'Back Up Learning Coach', parent: 'Parent' };
+    var roleByFirst = {};
+    (fam.parentInfo || []).forEach(function (pi, idx) {
+      var first = String(pi.firstName || (pi.name || '').split(/\s+/)[0] || '').toLowerCase();
+      if (!first) return;
+      roleByFirst[first] = pi.role || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent'));
+    });
+    fam.parents.split(' & ').forEach(function(pName, idx) {
+      var firstLc = pName.trim().split(/\s+/)[0].toLowerCase();
+      var role = roleByFirst[firstLc] || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent'));
+      var roleLabel = ROLE_LABELS_FAM[role] || 'Parent';
       var pPhoto = getPhotoUrl(pName.trim(), fam.email, fam.name);
       html += '<div class="detail-member' + (pName.trim() === person.name ? ' detail-member-current' : '') + '">';
       if (pPhoto) {
@@ -2407,7 +2425,7 @@
       } else {
         html += '<div class="detail-member-dot" style="background:' + faceColor(pName.trim()) + '"><span>' + pName.trim().charAt(0) + '</span></div>';
       }
-      html += '<span>' + pName.trim() + '</span><small>Parent</small></div>';
+      html += '<span>' + pName.trim() + '</span><small>' + roleLabel + '</small></div>';
     });
     // Kids
     fam.kids.forEach(function(kid) {
