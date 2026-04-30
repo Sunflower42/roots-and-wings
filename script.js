@@ -6305,7 +6305,8 @@
     download: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
     gear: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
     sheet: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>',
-    close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+    close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+    add: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'
   };
 
   // Shared shell for tabular Workspace reports (Participation Tracker,
@@ -12822,32 +12823,36 @@
   }
 
   function showRolesManagerModal() {
-    if (!personDetail || !personDetailCard) return;
-    var h = '<div class="detail-actions no-print">';
-    h += '<button class="sc-btn" type="button" id="roles-add-btn">+ Add Role</button>';
-    h += '</div>';
-    h += '<button class="detail-close" aria-label="Close">&times;</button>';
-    h += '<div class="elective-detail rd-modal roles-mgr-modal">';
-    h += '<h3 class="rd-title">Roles &amp; Committees</h3>';
-    h += '<p class="rd-subtitle">Every job description, term, and hierarchy in one place. Edits are stamped with who and when.</p>';
-    h += '<div class="roles-mgr-toolbar">';
-    h += '<label class="roles-mgr-yearpick">School year ';
-    h += '<select id="roles-school-year">';
+    var icons = [
+      { label: 'Add Role',   icon: ICON_SVG.add,      aria: 'Add a new role',                       action: function () { showRoleEditModal(null); } },
+      { label: 'Export CSV', icon: ICON_SVG.download, aria: 'Download role holders for this year as CSV', action: function () { exportRoleHoldersCSV(); } }
+    ];
+    var body = renderReportModal({
+      title: 'Roles & Committees',
+      subtitle: 'Every job description, term, and hierarchy in one place. Edits are stamped with who and when.',
+      meta: '',
+      icons: icons,
+      bodyId: 'roles-mgr-body',
+      bodyPlaceholder: '<p class="ws-empty">Loading roles…</p>'
+    });
+    if (!body) return;
+    // Tree-shaped report — keeps its body toolbar (school-year picker
+    // + show-archived toggle) just under the modal subtitle. Toolbar
+    // is wired here once; loadRolesManagerTree paints into the
+    // separate #roles-mgr-tree target so the toolbar isn't re-created
+    // on every reload.
+    var toolbar = '<div class="roles-mgr-toolbar">';
+    toolbar += '<label class="roles-mgr-yearpick">School year ';
+    toolbar += '<select id="roles-school-year">';
     ROLES_MGR_YEARS.forEach(function (yr) {
       var sel = yr === _rolesMgrState.schoolYear ? ' selected' : '';
-      h += '<option value="' + yr + '"' + sel + '>' + yr + '</option>';
+      toolbar += '<option value="' + yr + '"' + sel + '>' + yr + '</option>';
     });
-    h += '</select>';
-    h += '</label>';
-    h += '<label class="roles-mgr-toggle"><input type="checkbox" id="roles-show-archived"' + (_rolesMgrState.showArchived ? ' checked' : '') + ' /> Show archived</label>';
-    h += '</div>';
-    h += '<div id="roles-mgr-body"><p class="ws-empty">Loading roles…</p></div>';
-    h += '</div>';
-    personDetailCard.innerHTML = h;
-    personDetail.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
-    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+    toolbar += '</select>';
+    toolbar += '</label>';
+    toolbar += '<label class="roles-mgr-toggle"><input type="checkbox" id="roles-show-archived"' + (_rolesMgrState.showArchived ? ' checked' : '') + ' /> Show archived</label>';
+    toolbar += '</div>';
+    body.innerHTML = toolbar + '<div id="roles-mgr-tree"><p class="ws-empty">Loading roles…</p></div>';
 
     document.getElementById('roles-show-archived').addEventListener('change', function () {
       _rolesMgrState.showArchived = this.checked;
@@ -12857,14 +12862,47 @@
       _rolesMgrState.schoolYear = this.value;
       loadRolesManagerTree();
     });
-    document.getElementById('roles-add-btn').addEventListener('click', function () {
-      showRoleEditModal(null);
-    });
     loadRolesManagerTree();
   }
 
+  // Export current-year role holders as a CSV. One row per holder; roles
+  // with no holder still emit a row with the holder columns blank so the
+  // President can see "Roles still open for 2026-27" at a glance.
+  function exportRoleHoldersCSV() {
+    var roles = _rolesMgrState.roles || [];
+    var holdersByRoleId = _rolesMgrState.holdersByRoleId || {};
+    var year = _rolesMgrState.schoolYear;
+    var headers = ['Role', 'Category', 'Term', 'Status', 'School year', 'Holder name', 'Holder email'];
+    function esc(v) {
+      var s = String(v == null ? '' : v);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+    var lines = [headers.join(',')];
+    roles.forEach(function (r) {
+      var category = String(r.category || '').replace(/_/g, ' ');
+      var held = holdersByRoleId[r.id] || [];
+      if (held.length === 0) {
+        lines.push([esc(r.title), esc(category), esc(r.job_length || ''), esc(r.status), esc(year), '', ''].join(','));
+      } else {
+        held.forEach(function (h) {
+          lines.push([esc(r.title), esc(category), esc(r.job_length || ''), esc(r.status), esc(year), esc(h.person_name || ''), esc(h.email || '')].join(','));
+        });
+      }
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'role-holders-' + year + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   function loadRolesManagerTree() {
-    var body = document.getElementById('roles-mgr-body');
+    var body = document.getElementById('roles-mgr-tree');
     if (!body) return;
     var cred = localStorage.getItem('rw_google_credential');
     if (!cred) { body.innerHTML = '<p class="ws-empty">Sign-in required.</p>'; return; }
@@ -12906,11 +12944,18 @@
   }
 
   function renderRolesManagerTree() {
-    var body = document.getElementById('roles-mgr-body');
+    var body = document.getElementById('roles-mgr-tree');
     if (!body) return;
     var roles = _rolesMgrState.roles || [];
     var show = _rolesMgrState.showArchived;
     var visible = roles.filter(function (r) { return show || r.status !== 'archived'; });
+
+    // Modal meta line — count of visible roles (post archived filter).
+    var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
+    if (metaEl) {
+      var activeCount = roles.filter(function (r) { return r.status === 'active'; }).length;
+      metaEl.textContent = activeCount + ' active role' + (activeCount === 1 ? '' : 's');
+    }
 
     // Group: board → children (by parent_role_id).
     var byId = {};
