@@ -12911,47 +12911,18 @@
   }
 
   function showPmSubmissionsModal() {
-    if (!personDetail || !personDetailCard) return;
-    var h = '<button class="detail-close" aria-label="Close">&times;</button>';
-    h += '<div class="elective-detail rd-modal pmrep-modal">';
-    h += '<div class="pmrep-head">';
-    h += '<h3 class="rd-title" style="margin:0;">PM Class Submissions</h3>';
-    h += '<span class="pmrep-count" id="pmrep-count">—</span>';
-    h += '</div>';
-    h += '<p class="rd-subtitle">Approve to queue a submission for scheduling, or decline with a confirmation. The Schedule Builder still owns final session/hour placement.</p>';
-    h += '<div class="pmrep-filters">';
-    h += '<label>Status <select class="pmrep-f" data-filter="status">';
-    h += '<option value="submitted">Submitted</option>';
-    h += '<option value="drafted">Drafted</option>';
-    h += '<option value="scheduled">Scheduled</option>';
-    h += '<option value="declined">Declined</option>';
-    h += '<option value="withdrawn">Withdrawn</option>';
-    h += '<option value="all">All</option>';
-    h += '</select></label>';
-    h += '<label>Session <select class="pmrep-f" data-filter="session">';
-    h += '<option value="all">Any</option>';
-    h += '<option value="flexible">Flexible</option>';
-    for (var s = 1; s <= 5; s++) h += '<option value="' + s + '">S' + s + '</option>';
-    h += '</select></label>';
-    h += '<label>Age <select class="pmrep-f" data-filter="age">';
-    h += '<option value="all">Any</option>';
-    h += '<option value="3-7">3–7</option>';
-    h += '<option value="7-9">7–9</option>';
-    h += '<option value="10-12">10–12</option>';
-    h += '<option value="teens">Teens</option>';
-    h += '</select></label>';
-    h += '<label>Year <select class="pmrep-f" data-filter="school_year">';
-    h += '<option value="2026-2027">2026–2027</option>';
-    h += '<option value="2027-2028">2027–2028</option>';
-    h += '</select></label>';
-    h += '</div>';
-    h += '<div id="pmrep-body"><p class="ws-empty">Loading submissions…</p></div>';
-    h += '</div>';
-    personDetailCard.innerHTML = h;
-    personDetail.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
-    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
+    // Subtitle is the action hint (approve/decline) — useful here since
+    // the row buttons aren't self-evident on first open. Filter row +
+    // table get rendered into the body by renderPmSubmissionsReport.
+    var body = renderReportModal({
+      title: 'PM Class Submissions',
+      subtitle: 'Approve to queue a submission for scheduling, or decline with a confirmation. The Schedule Builder still owns final session/hour placement.',
+      meta: '',
+      icons: [],
+      bodyId: 'pmrep-body',
+      bodyPlaceholder: '<p class="ws-empty">Loading submissions…</p>'
+    });
+    if (!body) return;
     loadPmSubmissionsReport();
   }
 
@@ -13032,19 +13003,9 @@
   function loadPmSubmissionsReport(forceRefetch) {
     var cred = localStorage.getItem('rw_google_credential');
     if (!cred) return;
-    // Re-bind filter change handlers each render (elements get re-created).
-    document.querySelectorAll('.pmrep-f').forEach(function (el) {
-      var key = el.getAttribute('data-filter');
-      if (!key) return;
-      if (_pmReportState.filters[key] != null) el.value = _pmReportState.filters[key];
-      if (el._pmrepWired) return;
-      el._pmrepWired = true;
-      el.addEventListener('change', function () {
-        var k = this.getAttribute('data-filter');
-        _pmReportState.filters[k] = this.value;
-        renderPmSubmissionsReport();
-      });
-    });
+    // Filter handlers are wired inside the body now (see
+    // wirePmFilterChange) since the dropdowns live in the body slot,
+    // not the modal shell. Each render re-creates them.
     if (_pmReportState.loaded && !forceRefetch) {
       renderPmSubmissionsReport();
       return;
@@ -13086,9 +13047,42 @@
     }).join(', ');
   }
 
+  // Builds the filter-dropdown row for the PM Submissions report. Lives
+  // inside the body slot (not the shell) so re-renders preserve the
+  // dropdown values via _pmReportState.filters.
+  function renderPmSubmissionsFilters() {
+    var f = _pmReportState.filters;
+    var h = '<div class="rd-filters pmrep-filters">';
+    h += '<span class="rd-filters-label">Show</span>';
+    h += '<label class="pmrep-flabel">Status <select class="pmrep-f" data-filter="status">';
+    ['submitted','drafted','scheduled','declined','withdrawn','all'].forEach(function (v) {
+      var lab = v === 'all' ? 'All' : v.charAt(0).toUpperCase() + v.slice(1);
+      h += '<option value="' + v + '"' + (f.status === v ? ' selected' : '') + '>' + lab + '</option>';
+    });
+    h += '</select></label>';
+    h += '<label class="pmrep-flabel">Session <select class="pmrep-f" data-filter="session">';
+    h += '<option value="all"' + (f.session === 'all' ? ' selected' : '') + '>Any</option>';
+    h += '<option value="flexible"' + (f.session === 'flexible' ? ' selected' : '') + '>Flexible</option>';
+    for (var s = 1; s <= 5; s++) {
+      h += '<option value="' + s + '"' + (f.session === String(s) ? ' selected' : '') + '>S' + s + '</option>';
+    }
+    h += '</select></label>';
+    h += '<label class="pmrep-flabel">Age <select class="pmrep-f" data-filter="age">';
+    [['all','Any'],['3-7','3–7'],['7-9','7–9'],['10-12','10–12'],['teens','Teens']].forEach(function (pair) {
+      h += '<option value="' + pair[0] + '"' + (f.age === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
+    });
+    h += '</select></label>';
+    h += '<label class="pmrep-flabel">Year <select class="pmrep-f" data-filter="school_year">';
+    ['2026-2027','2027-2028'].forEach(function (yr) {
+      h += '<option value="' + yr + '"' + (f.school_year === yr ? ' selected' : '') + '>' + yr.replace('-','–') + '</option>';
+    });
+    h += '</select></label>';
+    h += '</div>';
+    return h;
+  }
+
   function renderPmSubmissionsReport() {
     var body = document.getElementById('pmrep-body');
-    var countEl = document.getElementById('pmrep-count');
     if (!body) return;
 
     var f = _pmReportState.filters;
@@ -13107,18 +13101,26 @@
       return true;
     });
 
-    if (countEl) {
-      countEl.textContent = filtered.length === all.length
+    // Update the modal's meta line ("Show: 8 submissions" or "8 of 25").
+    var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
+    if (metaEl) {
+      metaEl.textContent = filtered.length === all.length
         ? filtered.length + ' submission' + (filtered.length === 1 ? '' : 's')
         : filtered.length + ' of ' + all.length;
     }
 
+    var filtersHtml = renderPmSubmissionsFilters();
     if (filtered.length === 0) {
-      body.innerHTML = '<p class="ws-empty">No submissions match these filters.</p>';
+      body.innerHTML = filtersHtml + '<p class="ws-empty">No submissions match these filters.</p>';
+      wirePmFilterChange(body);
       return;
     }
 
-    var h = '<div class="pmrep-tbl-scroll"><table class="pmrep-tbl">';
+    // Use the shared ws-waivers-table classes so PM Submissions inherits
+    // the standard sticky header + sticky-first-column treatment used by
+    // every tabular Workspace report.
+    var h = filtersHtml;
+    h += '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table">';
     h += '<thead><tr>';
     h += '<th>Class</th><th>Submitter</th><th>Sessions</th><th>Hour</th><th>Ages</th><th>Max</th><th>Status</th><th class="pmrep-actions-col">Actions</th>';
     h += '</tr></thead><tbody>';
@@ -13163,6 +13165,21 @@
     });
     body.querySelectorAll('.pmrep-requeue-btn').forEach(function (btn) {
       btn.addEventListener('click', function () { pmReportAction(this.getAttribute('data-sub-id'), 'submitted', 're-queue'); });
+    });
+    wirePmFilterChange(body);
+  }
+
+  // Wire the filter dropdowns inside the PM Submissions body. Re-runs
+  // each render because the body innerHTML is replaced — handlers don't
+  // survive across renders.
+  function wirePmFilterChange(body) {
+    body.querySelectorAll('.pmrep-f').forEach(function (el) {
+      var key = el.getAttribute('data-filter');
+      if (!key) return;
+      el.addEventListener('change', function () {
+        _pmReportState.filters[this.getAttribute('data-filter')] = this.value;
+        renderPmSubmissionsReport();
+      });
     });
   }
 
