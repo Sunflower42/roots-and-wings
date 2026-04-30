@@ -324,26 +324,37 @@
         if (!f || !f.email) return;
         // Phase 3: emit one option per login email so the comms super user can
         // impersonate a specific co-parent (e.g. Jay vs Jessica Shewan), not
-        // just "the family". Each option's parent name is derived from the
-        // login email (firstname+lastinitial convention) so a multi-login
-        // family disambiguates cleanly.
+        // just "the family". Each option's parent name comes from
+        // parentInfo (first + last name on the same person) — falls back
+        // to the email-derived first name + family last name when the
+        // family hasn't been backfilled with parentInfo yet.
         var emails = Array.isArray(f.loginEmails) && f.loginEmails.length > 0
           ? f.loginEmails
           : [f.email];
         // Use the DB-corrected family name when present (e.g. "O'Connor
-        // Gading" instead of the sheet-parsed last word "Gading"). f.parents
-        // is already overlay-corrected, so typo fixes flow through too.
+        // Gading" instead of the sheet-parsed last word "Gading").
         var familyDisplay = f.displayName || f.name || '';
-        var parentsStr = f.parents || '';
         emails.forEach(function (em) {
           if (!em) return;
           var emLc = String(em).toLowerCase();
           var who = deriveFirstNameFromLogin(emLc, f.name);
-          // Single-login families keep the legacy "(parents-string)" label
-          // (e.g. "Shewan (Jessica & Jay)") so nothing changes for them.
-          var label = (emails.length > 1 && who) ? (familyDisplay + ' (' + who + ')') : (familyDisplay + ' (' + parentsStr + ')');
+          // Match this email's parent to its parentInfo entry so we can
+          // surface their actual last name (e.g. "Brian Richter" married
+          // into the Shewan family — keeps Richter, not Shewan).
+          var pInfo = null;
+          if (Array.isArray(f.parentInfo)) {
+            var whoLc = String(who || '').toLowerCase();
+            for (var i = 0; i < f.parentInfo.length; i++) {
+              var pi = f.parentInfo[i];
+              var piFirst = String(pi.firstName || (pi.name || '').split(/\s+/)[0] || '').toLowerCase();
+              if (piFirst && piFirst === whoLc) { pInfo = pi; break; }
+            }
+          }
+          var firstName = (pInfo && pInfo.firstName) || who || '';
+          var lastName = (pInfo && pInfo.lastName) || familyDisplay || '';
+          var label = firstName ? (firstName + ' ' + lastName).trim() : (familyDisplay || emLc);
           var selected = viewAsEmail === emLc ? ' selected' : '';
-          html += '<option value="' + emLc + '"' + selected + '>' + label + '</option>';
+          html += '<option value="' + emLc + '"' + selected + '>' + escapeHtml(label) + '</option>';
         });
       });
     } catch (err) {
