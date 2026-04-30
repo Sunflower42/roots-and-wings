@@ -5916,8 +5916,56 @@
   }
 
   // Async loader for the Waivers Report widget body.
-  function loadWaiversReport() {
-    var body = document.getElementById('ws-waivers-report-body');
+  // Cached merged waivers + active filter \u2014 preserved across the
+  // close/reopen cycle that follows a successful Resend so the user
+  // returns to the same view they were just on.
+  var _waiversCache = null;
+  var _waiversFilter = 'all';
+
+  // Column spec for the Waivers Report. Standard order: row identifier
+  // (Name) \u2192 Status pill \u2192 domain columns (Source, Email, Sent) \u2192
+  // Actions trailing. The Actions column shows a Resend button only
+  // for Pending Backup Coach + One-off rows; Registration signers are
+  // always signed by definition (form requires signature inline).
+  var WAIVERS_TABLE_COLS = [
+    { key: 'name', label: 'Name', type: 'string',
+      render: function (w) { return escapeHtmlWs(w.name); }
+    },
+    { key: 'status', label: 'Status', type: 'string',
+      sortValue: function (w) { return w.signed ? 'z' : 'a'; },
+      render: function (w) {
+        return renderStatusPill(w.signed ? 'signed' : 'pending', w.signed_at);
+      }
+    },
+    { key: 'source', label: 'Source', type: 'string',
+      render: function (w) {
+        var s = escapeHtmlWs(w.source);
+        return w.context ? s + '<br><span class="ws-wv-context">' + escapeHtmlWs(w.context) + '</span>' : s;
+      }
+    },
+    { key: 'email', label: 'Email', type: 'string',
+      render: function (w) { return escapeHtmlWs(w.email); }
+    },
+    { key: 'sent_at', label: 'Sent', type: 'date',
+      render: function (w) { return formatReportDate(w.sent_at); }
+    },
+    { key: '_actions', label: 'Actions', type: 'string', sortable: false,
+      render: function (w) {
+        var resendable = !w.signed && (w.source === 'Backup Coach' || w.source === 'One-off');
+        if (!resendable) return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        var src = (w.source === 'Backup Coach') ? 'backup' : 'one_off';
+        return '<div class="ws-srt-actions">'
+          + '<button type="button" class="sc-btn ws-wv-resend-btn"'
+          + ' data-resend-source="' + src + '"'
+          + ' data-resend-id="' + escapeHtmlWs(String(w.rowId)) + '"'
+          + ' data-resend-name="' + escapeHtmlWs(w.name || '') + '">Resend</button>'
+          + '</div>';
+      }
+    }
+  ];
+
+  function loadWaiversReport(body) {
+    if (!body) body = document.getElementById('ws-waivers-report-body');
     if (!body) return;
     var cred = localStorage.getItem('rw_google_credential');
     fetch('/api/tour?waivers_report=1', {
@@ -5936,61 +5984,187 @@
       var backup = res.data.backup || [];
       var oneOff = res.data.oneOff || [];
       var registration = res.data.registration || [];
-      // Merge \u2014 source label fixed (was incorrectly tagged "Registration"
-      // for backup coaches; now correctly "Backup Coach"). Adds a new
-      // "Registration" source for Main LC + adult-student signers from
-      // the registrations table.
+      // Merge into one shape with a `rowId` column so the Resend action
+      // can post (source, id) back to the API. Source labels: "Backup
+      // Coach" for registration backups, "One-off" for ad-hoc Comms
+      // sends, "Registration" for Main LC + adult-student signers
+      // (always signed by definition \u2014 form requires signature inline).
       var merged = [];
       backup.forEach(function (b) {
-        merged.push({ source: 'Backup Coach', name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '' });
+        merged.push({ source: 'Backup Coach', rowId: b.id, name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '' });
       });
       oneOff.forEach(function (o) {
-        merged.push({ source: 'One-off', name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, context: o.sent_by ? 'by ' + o.sent_by : '' });
+        merged.push({ source: 'One-off', rowId: o.id, name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, note: o.note || '', context: o.sent_by ? 'by ' + o.sent_by : '' });
       });
       registration.forEach(function (r) {
-        merged.push({ source: 'Registration', name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '' });
+        merged.push({ source: 'Registration', rowId: r.id, name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '' });
       });
-      // Default sort: pending first, then by sent date desc within each
-      // group. The user can re-sort via column headers; this is just the
-      // initial view that surfaces action items at the top.
-      merged.sort(function (a, b) {
-        if (a.signed !== b.signed) return a.signed ? 1 : -1;
-        return (b.sent_at || '').localeCompare(a.sent_at || '');
-      });
+      _waiversCache = merged;
 
-      var total = merged.length;
-      var unsigned = merged.filter(function (w) { return !w.signed; }).length;
-      var headerHtml = '<p class="ws-body-hint"><strong>' + total + '</strong> total waivers \u00b7 <strong class="' + (unsigned > 0 ? 'ws-wv-pending' : 'ws-wv-ok') + '">' + unsigned + ' pending</strong> \u00b7 pending stay on top</p>';
+      var total   = merged.length;
+      var signed  = merged.filter(function (w) { return  w.signed; }).length;
+      var pending = total - signed;
+
+      // Modal meta line \u2014 total waivers count.
+      var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
+      if (metaEl) metaEl.textContent = total + ' waiver' + (total === 1 ? '' : 's');
+
+      // Always-visible counts strip \u2014 same pill shape as the in-row
+      // Status badges so the summary maps onto the column.
+      var countsHtml = '<div class="rd-counts">';
+      countsHtml += '<span class="ws-wv-pending">' + pending + ' Pending</span>';
+      countsHtml += '<span class="ws-wv-ok">' + signed + ' Signed</span>';
+      countsHtml += '</div>';
+
       if (merged.length === 0) {
-        body.innerHTML = headerHtml + '<p class="ws-empty">No waivers sent yet.</p>';
+        body.innerHTML = countsHtml + '<p class="ws-empty">No waivers sent yet.</p>';
         return;
       }
-      body.innerHTML = headerHtml + '<div id="ws-waivers-table-target"></div>';
+      body.innerHTML = countsHtml + '<div id="ws-waivers-table-target"></div>';
       var tableTarget = body.querySelector('#ws-waivers-table-target');
-      renderSortableTable(tableTarget, [
-        { key: 'name', label: 'Name', type: 'string', render: function (w) { return escapeHtmlWs(w.name); } },
-        { key: 'email', label: 'Email', type: 'string', render: function (w) { return escapeHtmlWs(w.email); } },
-        { key: 'source', label: 'Source', type: 'string',
-          render: function (w) {
-            var s = escapeHtmlWs(w.source);
-            return w.context ? s + '<br><span class="ws-wv-context">' + escapeHtmlWs(w.context) + '</span>' : s;
+
+      function rowsForFilter() {
+        if (_waiversFilter === 'pending') return merged.filter(function (w) { return !w.signed; });
+        if (_waiversFilter === 'signed')  return merged.filter(function (w) { return  w.signed; });
+        return merged;
+      }
+      function renderTable() {
+        var cols = WAIVERS_TABLE_COLS.slice();
+        cols.forEach(function (col) {
+          if (col.key === 'status') {
+            col.filter = {
+              options: [
+                { value: 'all',     label: 'Any',     count: total   },
+                { value: 'pending', label: 'Pending', count: pending },
+                { value: 'signed',  label: 'Signed',  count: signed  }
+              ],
+              current: _waiversFilter,
+              onChange: function (v) { _waiversFilter = v; renderTable(); }
+            };
           }
-        },
-        { key: 'status', label: 'Status', type: 'string',
-          // Pending sorts BEFORE signed by default. Letting the user
-          // toggle ascending puts signed first.
-          sortValue: function (w) { return w.signed ? 'z' : 'a'; },
-          render: function (w) {
-            return renderStatusPill(w.signed ? 'signed' : 'pending', w.signed_at);
-          }
-        },
-        { key: 'sent_at', label: 'Sent', type: 'date',
-          render: function (w) { return formatReportDate(w.sent_at); }
-        }
-      ], merged, { initialSort: { key: 'status', dir: 'asc' } });
+        });
+        // Default sort: pending stay on top via the Status column's
+        // ascending-sort sortValue ('a' for pending, 'z' for signed).
+        renderSortableTable(tableTarget, cols, rowsForFilter(), {
+          initialSort: { key: 'status', dir: 'asc' },
+          expandable: true,
+          renderDetail: renderWaiverRowDetail
+        });
+      }
+
+      // Delegated Resend handler \u2014 confirm, POST waiver-resend, then
+      // close + reopen so the refreshed sent_at surfaces.
+      body.addEventListener('click', function (e) {
+        var rb = e.target.closest('.ws-wv-resend-btn');
+        if (!rb) return;
+        var src = rb.getAttribute('data-resend-source');
+        var rId = parseInt(rb.getAttribute('data-resend-id'), 10);
+        var rName = rb.getAttribute('data-resend-name') || '';
+        if (!confirm('Resend the waiver email to ' + rName + '?')) return;
+        var orig = rb.textContent;
+        rb.disabled = true;
+        rb.textContent = 'Sending\u2026';
+        var cred2 = localStorage.getItem('rw_google_credential');
+        fetch('/api/tour', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cred2 },
+          body: JSON.stringify({ kind: 'waiver-resend', source: src, id: rId })
+        }).then(function (rr) { return rr.json().then(function (d) { return { ok: rr.ok, data: d }; }); })
+          .then(function (rres) {
+            if (!rres.ok) {
+              alert('Resend failed: ' + ((rres.data && rres.data.error) || 'unknown'));
+              rb.disabled = false;
+              rb.textContent = orig;
+              return;
+            }
+            closeDetail();
+            showWaiversReportModal();
+          }).catch(function (err) {
+            alert('Resend network error: ' + ((err && err.message) || 'unknown'));
+            rb.disabled = false;
+            rb.textContent = orig;
+          });
+      });
+
+      renderTable();
     }).catch(function (err) {
       body.innerHTML = '<p class="ws-empty ws-wv-err">Network error loading waivers: ' + ((err && err.message) || 'unknown') + '</p>';
     });
+  }
+
+  // Expansion-row detail for a Waivers Report row \u2014 full sender/context
+  // breakdown (especially the one-off note Comms attached at send time).
+  function renderWaiverRowDetail(w) {
+    function fld(label, val) {
+      return '<div class="ws-reg-detail-field"><span class="ws-reg-detail-label">' + escapeHtmlWs(label) + '</span><span class="ws-reg-detail-val">' + (val || '<em>\u2014</em>') + '</span></div>';
+    }
+    var h = '<div class="ws-reg-detail-grid">';
+    h += fld('Recipient', escapeHtmlWs(w.name));
+    h += fld('Email', '<a href="mailto:' + escapeHtmlWs(w.email) + '">' + escapeHtmlWs(w.email) + '</a>');
+    h += fld('Source', escapeHtmlWs(w.source));
+    h += fld('Context', w.context ? escapeHtmlWs(w.context) : '');
+    h += fld('Sent', w.sent_at ? escapeHtmlWs(new Date(w.sent_at).toLocaleString()) : '');
+    h += fld('Signed', w.signed_at ? escapeHtmlWs(new Date(w.signed_at).toLocaleString()) : '<em>not yet</em>');
+    h += '</div>';
+    if (w.note) {
+      h += '<div class="ws-reg-detail-section"><h5>Note included in the email</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(w.note) + '</div></div>';
+    }
+    return h;
+  }
+
+  function waiversFilteredRows() {
+    if (!_waiversCache) return [];
+    if (_waiversFilter === 'pending') return _waiversCache.filter(function (w) { return !w.signed; });
+    if (_waiversFilter === 'signed')  return _waiversCache.filter(function (w) { return  w.signed; });
+    return _waiversCache;
+  }
+
+  function exportWaiversCSV() {
+    var rows = waiversFilteredRows();
+    var headers = ['Name', 'Email', 'Source', 'Context', 'Status', 'Sent', 'Signed'];
+    function esc(v) {
+      var s = String(v == null ? '' : v);
+      if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+    var lines = [headers.join(',')];
+    rows.forEach(function (w) {
+      lines.push([
+        esc(w.name), esc(w.email), esc(w.source), esc(w.context || ''),
+        esc(w.signed ? 'Signed' : 'Pending'),
+        esc(w.sent_at || ''), esc(w.signed_at || '')
+      ].join(','));
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'waivers-report-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function printWaiversReport() {
+    var rows = waiversFilteredRows();
+    var doc = '<!doctype html><html><head><meta charset="utf-8"><title>Waivers Report</title>';
+    doc += '<style>body{font:13px Georgia,serif;color:#222;padding:24px;}h1{font-size:18px;margin:0 0 4px;}p.meta{color:#666;margin:0 0 16px;font-size:12px;}table{border-collapse:collapse;width:100%;font-size:12px;}th,td{border-bottom:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;}th{background:#f5f0e8;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;}</style>';
+    doc += '</head><body>';
+    doc += '<h1>Waivers Report</h1>';
+    doc += '<p class="meta">' + rows.length + ' waiver' + (rows.length === 1 ? '' : 's') + ' \u00b7 printed ' + new Date().toLocaleDateString() + '</p>';
+    doc += '<table><thead><tr><th>Name</th><th>Status</th><th>Source</th><th>Email</th><th>Sent</th></tr></thead><tbody>';
+    rows.forEach(function (w) {
+      doc += '<tr>';
+      doc += '<td><strong>' + escapeHtml(w.name || '') + '</strong></td>';
+      doc += '<td>' + (w.signed ? 'SIGNED' : 'PENDING') + '</td>';
+      doc += '<td>' + escapeHtml(w.source) + (w.context ? ' <span style="color:#666;font-size:11px;">(' + escapeHtml(w.context) + ')</span>' : '') + '</td>';
+      doc += '<td>' + escapeHtml(w.email || '') + '</td>';
+      doc += '<td>' + escapeHtml(formatReportDate(w.sent_at)) + '</td>';
+      doc += '</tr>';
+    });
+    doc += '</tbody></table></body></html>';
+    openPrintIframe(doc);
   }
 
   function escapeHtmlWs(s) {
@@ -6383,10 +6557,16 @@
         });
       });
 
-      // Row click → toggle expansion (expandable mode).
+      // Row click → toggle expansion (expandable mode). Clicks that
+      // originate on a button, link, or inside an Actions cell are
+      // ignored so per-row action buttons (Mark Paid, Decline, Resend,
+      // …) don't accidentally toggle the row open. Honors the standard
+      // hybrid pattern: Actions column on the far right + expansion
+      // for richer context.
       if (opts.expandable) {
         containerEl.querySelectorAll('.ws-srt-row-expandable').forEach(function (tr) {
-          tr.addEventListener('click', function () {
+          tr.addEventListener('click', function (e) {
+            if (e.target.closest('button, a, input, label, select, textarea, .ws-srt-actions')) return;
             var idx = this.getAttribute('data-row-idx');
             state.expanded[idx] = !state.expanded[idx];
             render();
@@ -6394,6 +6574,17 @@
         });
       }
     }
+
+    // Public hooks so action buttons (e.g., Mark Paid, Decline, Resend)
+    // can open a row's detail panel from outside the table — the row
+    // expands and the confirm UI lives in the expansion. Idx matches
+    // the original row index in `rows`.
+    containerEl._expandRow = function (idx) {
+      if (!opts.expandable) return;
+      state.expanded[idx] = true;
+      render();
+    };
+    containerEl._reRender = render;
 
     render();
   }
@@ -6406,19 +6597,20 @@
   // look & feel matches Job Description / Playbook / Waiver modals.
 
   function showWaiversReportModal() {
-    if (!personDetail || !personDetailCard) return;
-    var html = '<button class="detail-close" aria-label="Close">&times;</button>';
-    html += '<div class="elective-detail rd-modal">';
-    html += '<h3 class="rd-title">Waivers Report</h3>';
-    html += '<p class="rd-subtitle">Everyone who has been sent a waiver — registration backups + one-off sends.</p>';
-    html += '<div id="ws-waivers-report-body"><p class="ws-empty">Loading waivers\u2026</p></div>';
-    html += '</div>';
-    personDetailCard.innerHTML = html;
-    personDetail.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-    personDetailCard.querySelector('.detail-close').addEventListener('click', closeDetail);
-    personDetail.addEventListener('click', function (e) { if (e.target === personDetail) closeDetail(); });
-    loadWaiversReport();
+    var icons = [
+      { label: 'Print',      icon: ICON_SVG.print,    aria: 'Print the visible waivers',           action: function () { printWaiversReport(); } },
+      { label: 'Export CSV', icon: ICON_SVG.download, aria: 'Download the visible waivers as CSV', action: function () { exportWaiversCSV(); } }
+    ];
+    var body = renderReportModal({
+      title: 'Waivers Report',
+      subtitle: 'Everyone who has been sent a waiver — registration backups + one-off sends.',
+      meta: '',
+      icons: icons,
+      bodyId: 'ws-waivers-report-body',
+      bodyPlaceholder: '<p class="ws-empty">Loading waivers…</p>'
+    });
+    if (!body) return;
+    loadWaiversReport(body);
   }
 
   function showSendWaiverModal() {
@@ -6480,7 +6672,7 @@
   // can re-use it without duplicating the schema.
   // Column order matches the standard report convention: row identifier
   // (Main Learning Coach) → status pills (Paid, Waiver) → domain
-  // columns (Track, Kids, Email, Registered).
+  // columns (Track, Kids, Email, Registered) → Actions trailing.
   var MEMBERSHIP_TABLE_COLS = [
     { key: 'main_learning_coach', label: 'Main Learning Coach', type: 'string',
       render: function (r) { return escapeHtmlWs(r.main_learning_coach); }
@@ -6516,6 +6708,30 @@
     },
     { key: 'created_at', label: 'Registered', type: 'date',
       render: function (r) { return formatReportDate(r.created_at); }
+    },
+    // Actions column trailing — Treasurer's Mark Paid (pending rows
+    // only) and Membership Director's Decline. Click opens the row's
+    // expansion and renders the relevant confirm UI at the top of the
+    // detail panel via _membershipPendingAction.
+    { key: '_actions', label: 'Actions', type: 'string', sortable: false,
+      render: function (r) {
+        var btns = '';
+        var isPending = String(r.payment_status || '').toLowerCase() !== 'paid';
+        if (isPending && isTreasurer()) {
+          btns += '<button type="button" class="sc-btn ws-mark-paid-btn"'
+            + ' data-mark-paid-id="' + escapeHtmlWs(String(r.id)) + '"'
+            + ' data-mark-paid-name="' + escapeHtmlWs(r.main_learning_coach || '') + '"'
+            + ' data-mark-paid-email="' + escapeHtmlWs(r.email || '') + '">Mark Paid&hellip;</button>';
+        }
+        if (isMembershipDirector()) {
+          btns += '<button type="button" class="sc-btn sc-btn-del ws-decline-btn"'
+            + ' data-decline-id="' + escapeHtmlWs(String(r.id)) + '"'
+            + ' data-decline-name="' + escapeHtmlWs(r.main_learning_coach || '') + '"'
+            + ' data-decline-email="' + escapeHtmlWs(r.email || '') + '">Decline&hellip;</button>';
+        }
+        if (!btns) return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        return '<div class="ws-srt-actions">' + btns + '</div>';
+      }
     }
   ];
 
@@ -6523,6 +6739,10 @@
   // post-mark-paid reload) don't re-fetch and don't lose user scroll.
   var _membershipRegs = null;
   var _membershipFilter = 'all';
+  // Pending row-action state — set when the Treasurer/Membership clicks
+  // a row's Actions button, cleared on confirm/cancel. Drives the
+  // confirm UI at the top of the expansion panel for that row.
+  var _membershipPendingAction = null; // { regId, type: 'mark-paid' | 'decline' }
 
   function showMembershipReportModal(opts) {
     // Preserve the user's filter across closes/reopens unless the
@@ -6625,27 +6845,24 @@
       }
 
       // Delegated click handler for the Decline flow + Treasurer's Mark
-      // Paid flow. Both swap the button for a note textarea + confirm/
-      // cancel, post on confirm, reload on success.
+      // Paid flow. Action buttons live in the far-right Actions column;
+      // clicking one stamps _membershipPendingAction + expands the row,
+      // and renderMembershipRegDetail renders the confirm UI at the top
+      // of the expansion panel for that row.
       body.addEventListener('click', function (e) {
         var markPaidBtn = e.target.closest('.ws-mark-paid-btn');
         if (markPaidBtn) {
-          var mpId = markPaidBtn.getAttribute('data-mark-paid-id');
-          var mpName = markPaidBtn.getAttribute('data-mark-paid-name');
-          var mpWrap = markPaidBtn.closest('.ws-reg-mark-paid');
-          mpWrap.innerHTML =
-            '<p class="ws-reg-decline-hint"><strong>Mark ' + escapeHtmlWs(mpName) + ' as Paid?</strong> The family\'s My Family billing card will flip to Paid and a payment-received email goes out.</p>' +
-            '<textarea class="rd-textarea ws-mark-paid-note" rows="2" placeholder="Optional note for the email (e.g. check #1234 received)&hellip;"></textarea>' +
-            '<div class="rd-btn-row">' +
-              '<button type="button" class="sc-btn ws-mark-paid-confirm-btn" data-mark-paid-id="' + escapeHtmlWs(mpId) + '">Confirm — mark Paid</button>' +
-              '<button type="button" class="sc-btn ws-mark-paid-cancel-btn">Cancel</button>' +
-            '</div>' +
-            '<p class="ws-mark-paid-status" aria-live="polite" style="margin-top:8px;"></p>';
+          var mpId = parseInt(markPaidBtn.getAttribute('data-mark-paid-id'), 10);
+          _membershipPendingAction = { regId: mpId, type: 'mark-paid' };
+          var mpRow = markPaidBtn.closest('tr');
+          var mpIdx = mpRow ? parseInt(mpRow.getAttribute('data-row-idx'), 10) : -1;
+          if (tableTarget._expandRow && mpIdx >= 0) tableTarget._expandRow(mpIdx);
+          else renderTable();
           return;
         }
         if (e.target.classList.contains('ws-mark-paid-cancel-btn')) {
-          closeDetail();
-          showMembershipReportModal();
+          _membershipPendingAction = null;
+          renderTable();
           return;
         }
         if (e.target.classList.contains('ws-mark-paid-confirm-btn')) {
@@ -6671,6 +6888,7 @@
                 return;
               }
               mpcStatusEl.textContent = 'Marked Paid. Confirmation email sent.';
+              _membershipPendingAction = null;
               setTimeout(function () {
                 closeDetail();
                 showMembershipReportModal();
@@ -6683,24 +6901,17 @@
         }
         var declineBtn = e.target.closest('.ws-decline-btn');
         if (declineBtn) {
-          var id = declineBtn.getAttribute('data-decline-id');
-          var name = declineBtn.getAttribute('data-decline-name');
-          var email = declineBtn.getAttribute('data-decline-email');
-          var wrap = declineBtn.closest('.ws-reg-decline');
-          wrap.innerHTML =
-            '<p class="ws-reg-decline-hint"><strong>Decline ' + escapeHtmlWs(name) + ' (' + escapeHtmlWs(email) + ')?</strong> An email goes to the family, Treasurer, Membership, and Communications. The registration row and any derived member_profiles row are deleted. Treasurer will issue the refund manually.</p>' +
-            '<textarea class="rd-textarea ws-decline-note" rows="3" placeholder="Optional note to include in the decline email&hellip;"></textarea>' +
-            '<div class="rd-btn-row ws-decline-btn-row">' +
-              '<button type="button" class="sc-btn sc-btn-del ws-decline-confirm-btn" data-decline-id="' + escapeHtmlWs(id) + '">Confirm decline</button>' +
-              '<button type="button" class="sc-btn ws-decline-cancel-btn">Cancel</button>' +
-            '</div>' +
-            '<p class="ws-decline-status" aria-live="polite" style="margin-top:8px;"></p>';
+          var dId = parseInt(declineBtn.getAttribute('data-decline-id'), 10);
+          _membershipPendingAction = { regId: dId, type: 'decline' };
+          var dRow = declineBtn.closest('tr');
+          var dIdx = dRow ? parseInt(dRow.getAttribute('data-row-idx'), 10) : -1;
+          if (tableTarget._expandRow && dIdx >= 0) tableTarget._expandRow(dIdx);
+          else renderTable();
           return;
         }
         if (e.target.classList.contains('ws-decline-cancel-btn')) {
-          // Simplest revert: close and reopen the report modal.
-          closeDetail();
-          showMembershipReportModal();
+          _membershipPendingAction = null;
+          renderTable();
           return;
         }
         if (e.target.classList.contains('ws-decline-confirm-btn')) {
@@ -6725,6 +6936,7 @@
                 return;
               }
               statusEl.textContent = 'Declined. Decline email sent.';
+              _membershipPendingAction = null;
               setTimeout(function () {
                 closeDetail();
                 showMembershipReportModal();
@@ -7229,7 +7441,39 @@
     var track = r.track || '';
     if (r.track === 'Other' && r.track_other) track = 'Other: ' + r.track_other;
 
-    var h = '<div class="ws-reg-detail-grid">';
+    var h = '';
+
+    // Pending-action confirm panel — rendered at the top of the
+    // expansion when the row's Mark Paid / Decline button has been
+    // clicked. Action buttons themselves live in the trailing Actions
+    // column on the row; this panel hosts the textarea + confirm/cancel
+    // flow that was previously inlined below the detail grid.
+    if (_membershipPendingAction && _membershipPendingAction.regId === r.id) {
+      var pa = _membershipPendingAction;
+      if (pa.type === 'mark-paid') {
+        h += '<div class="ws-reg-detail-section ws-reg-mark-paid">' +
+          '<p class="ws-reg-decline-hint"><strong>Mark ' + escapeHtmlWs(r.main_learning_coach || '') + ' as Paid?</strong> The family\'s My Family billing card will flip to Paid and a payment-received email goes out.</p>' +
+          '<textarea class="rd-textarea ws-mark-paid-note" rows="2" placeholder="Optional note for the email (e.g. check #1234 received)&hellip;"></textarea>' +
+          '<div class="rd-btn-row">' +
+            '<button type="button" class="sc-btn ws-mark-paid-confirm-btn" data-mark-paid-id="' + escapeHtmlWs(String(r.id)) + '">Confirm — mark Paid</button>' +
+            '<button type="button" class="sc-btn ws-mark-paid-cancel-btn">Cancel</button>' +
+          '</div>' +
+          '<p class="ws-mark-paid-status" aria-live="polite" style="margin-top:8px;"></p>' +
+          '</div>';
+      } else if (pa.type === 'decline') {
+        h += '<div class="ws-reg-detail-section ws-reg-decline">' +
+          '<p class="ws-reg-decline-hint"><strong>Decline ' + escapeHtmlWs(r.main_learning_coach || '') + ' (' + escapeHtmlWs(r.email || '') + ')?</strong> An email goes to the family, Treasurer, Membership, and Communications. The registration row and any derived member_profiles row are deleted. Treasurer will issue the refund manually.</p>' +
+          '<textarea class="rd-textarea ws-decline-note" rows="3" placeholder="Optional note to include in the decline email&hellip;"></textarea>' +
+          '<div class="rd-btn-row ws-decline-btn-row">' +
+            '<button type="button" class="sc-btn sc-btn-del ws-decline-confirm-btn" data-decline-id="' + escapeHtmlWs(String(r.id)) + '">Confirm decline</button>' +
+            '<button type="button" class="sc-btn ws-decline-cancel-btn">Cancel</button>' +
+          '</div>' +
+          '<p class="ws-decline-status" aria-live="polite" style="margin-top:8px;"></p>' +
+          '</div>';
+      }
+    }
+
+    h += '<div class="ws-reg-detail-grid">';
     h += fld('Season', escapeHtmlWs(r.season));
     h += fld('Registered', r.created_at ? escapeHtmlWs(new Date(r.created_at).toLocaleString()) : '');
     h += fld('Returning family', r.existing_family_name ? escapeHtmlWs(r.existing_family_name) : '<em>(new)</em>');
@@ -7258,29 +7502,9 @@
       h += '<div class="ws-reg-detail-section"><h5>Placement notes</h5><div class="ws-reg-detail-notes">' + escapeHtmlWs(r.placement_notes) + '</div></div>';
     }
 
-    // Treasurer-only action: mark a pending cash/check registration as paid.
-    // Server enforces the role gate (Treasurer or super user). Client gate
-    // checks isTreasurer() — which respects View-As, so communications@
-    // sees the button after View-As'ing into the Treasurer (matches
-    // Erin's "Comms gets read-only Membership Report" intent).
-    var isPending = String(r.payment_status || '').toLowerCase() !== 'paid';
-    if (isPending && isTreasurer()) {
-      h += '<div class="ws-reg-detail-section ws-reg-mark-paid">';
-      h += '<button type="button" class="sc-btn ws-mark-paid-btn" data-mark-paid-id="' + escapeHtmlWs(String(r.id)) + '" data-mark-paid-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-mark-paid-email="' + escapeHtmlWs(r.email || '') + '">Mark payment received&hellip;</button>';
-      h += '<p class="ws-reg-decline-hint">Records the cash/check payment, flips the family\'s My Family billing card to Paid, and emails the family + Membership + Communications a payment-received confirmation.</p>';
-      h += '</div>';
-    }
-
-    // Membership-only action. Renders here so it sits at the bottom of the
-    // expanded detail, away from casual clicks. Wired via delegated listener
-    // below (see ws-membership-report-body click handler). Hidden from
-    // Treasurer / Comms now that they also see the report.
-    if (isMembershipDirector()) {
-      h += '<div class="ws-reg-detail-section ws-reg-decline">';
-      h += '<button type="button" class="sc-btn sc-btn-del ws-decline-btn" data-decline-id="' + escapeHtmlWs(String(r.id)) + '" data-decline-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-decline-email="' + escapeHtmlWs(r.email || '') + '">Decline registration…</button>';
-      h += '<p class="ws-reg-decline-hint">Deletes the registration, emails the family + Treasurer + Membership + Communications, and frees up the refund for the Treasurer to process.</p>';
-      h += '</div>';
-    }
+    // Mark Paid / Decline action buttons live in the Actions column on
+    // the row; clicking one stamps _membershipPendingAction and renders
+    // the confirm UI at the top of this panel (see top of function).
     return h;
   }
 

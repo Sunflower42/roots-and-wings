@@ -92,23 +92,16 @@ Phased so the auth path doesn't all change at once.
 
 ## Convert remaining Workspace reports to the standard modal pattern
 
-- **Status:** Three reports migrated 2026-04-29 (Participation Tracker, PM Class Submissions, Membership Report). Two reports still use the old hand-rolled modals.
-- **Goal:** every tabular report in My Workspace uses `renderReportModal` + the column-header funnel filter pattern + the all-caps status pills, so they read as one cohesive admin tool. See `feedback_rw_report_modal_standard.md` (auto-memory) for the full convention.
-- **Reports left to migrate:**
-  - **Waivers Report** (`showWaiversReportModal`) — tracks every waiver sent (registration backups + one-off sends). Status column is signed/pending. Should be a quick migration: ~similar shape to Membership Report, no inline row actions other than a resend link.
+- **Status:** Four reports migrated as of 2026-04-30 (Participation Tracker, PM Class Submissions, Membership Report, Waivers Report). One report still uses a hand-rolled modal.
+- **Goal:** every tabular report in My Workspace uses `renderReportModal` + the column-header funnel filter pattern + the all-caps status pills + the standard hybrid action layout (Actions column on the far right, expansion row for context). See `feedback_rw_report_modal_standard.md` (auto-memory) for the full convention.
+- **Report left to migrate:**
   - **Roles Manager** (`showRolesManagerModal`) — board + committee roles with assigned holders, hierarchy tree, edit-in-place, archive/restore. More complex than the others (tree-style nesting, inline edit forms, multiple per-row actions). Will need design thought about how to fit a hierarchy into the standard tabular shape — a separate "manager" pattern might be more appropriate than forcing it into a flat table.
 - **What to do:**
-  1. Waivers Report: straight conversion. Move the existing filter (`<select>` for sent/signed) into a column-header funnel. Add a count strip (signed / pending). Add Print + Export CSV chrome icons.
-  2. Roles Manager: decide pattern first (tabular or kept as a tree-modal). If tabular: same shape as the others. If tree: at minimum adopt `renderReportModal`'s shell + chrome icons (export CSV of role holders by school year) without forcing the column convention.
-- **Priority:** low — the migrated three were the high-traffic ones. Waivers is rarely opened; Roles Manager is President-only and her current view works. Revisit when touching either for another reason.
+  1. Roles Manager: decide pattern first (tabular or kept as a tree-modal). If tabular: same shape as the others. If tree: at minimum adopt `renderReportModal`'s shell + chrome icons (export CSV of role holders by school year) without forcing the column convention.
+- **Priority:** low — the migrated four are the high-traffic ones. Roles Manager is President-only and her current view works. Revisit when touching it for another reason.
 
-### Open design question: where do row actions live?
-The migrated reports are now inconsistent on this:
-- **PM Class Submissions** puts actions as an inline table column (Approve / Decline / Re-queue buttons in a per-row Actions cell).
-- **Membership Report** puts actions inside the expanded row detail panel (Mark Paid, Decline, Send Welcome Email — all live in `renderMembershipRegDetail` below an expanded row).
-- **Participation Tracker** has no per-row actions today, so it doesn't surface the question.
-
-Tradeoffs: an inline column is faster (one click to act) but crowds the table when there are many actions or long labels; an expanded panel is roomier for context (kid list, waiver state, onboarding checklist) but takes a click to reach. Pick one or define when each applies — e.g. inline for ≤2 binary actions per row; expanded panel when actions need supporting context. Once chosen, the existing reports may need to converge. Decide before migrating Waivers (which has its own resend-link action).
+### Resolved 2026-04-30: row actions live in a far-right Actions column + the row stays expandable
+The standard pattern is now: per-row action buttons always sit in a trailing **Actions** column (so they're visible without clicking through), and the row also expands into a detail panel for richer context (kid list, signature state, sender note, etc.). Confirm UI for actions that need a note/textarea (Mark Paid, Decline) renders at the **top** of the expansion when the user clicks the action — the click programmatically expands the row via `containerEl._expandRow(idx)` exposed by `renderSortableTable`. Action button clicks themselves are excluded from the row-expand handler via the `e.target.closest('button, a, input, label, select, textarea, .ws-srt-actions')` guard. PM Class Submissions retains the same Actions column (Approve / Decline / Re-queue) without expansion, since its rows have no extra context worth a panel.
 
 ## BLC Workspace account flow (on-request provisioning)
 

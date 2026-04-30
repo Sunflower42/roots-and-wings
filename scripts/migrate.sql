@@ -403,6 +403,13 @@ CREATE INDEX IF NOT EXISTS one_off_waivers_token_idx ON one_off_waivers (token);
 CREATE INDEX IF NOT EXISTS one_off_waivers_email_idx ON one_off_waivers (email);
 ALTER TABLE one_off_waivers ADD COLUMN IF NOT EXISTS photo_consent BOOLEAN NOT NULL DEFAULT TRUE;
 
+-- "Last resend" timestamp for both waiver tables. Set when Comms hits
+-- the Resend action on a pending row in the Waivers Report; the
+-- waivers-report GET reads COALESCE(last_sent_at, original) so the
+-- report shows the most recent send date for prioritization.
+ALTER TABLE backup_coach_waivers ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;
+ALTER TABLE one_off_waivers      ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;
+
 -- ──────────────────────────────────────────────
 -- Member Profiles — editable overlay on top of the Directory sheet.
 -- One row per family, keyed by the derived portal login email

@@ -10613,6 +10613,20 @@ button.staff-role:hover {
   font-style: italic;
 }
 
+/* Standard Actions cell wrapper for renderSortableTable reports
+   (Membership, Waivers). Mirrors the .pmrep-actions look so all three
+   reports read as one tool. Buttons inside auto-flow inline; rows with
+   no applicable actions show a muted em-dash via .ws-srt-actions-empty. */
+.ws-srt-actions { white-space: nowrap; display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.ws-srt-actions .sc-btn {
+  margin: 0;
+  font-size: 0.78rem;
+}
+.ws-srt-actions-empty {
+  color: var(--color-text-light);
+  font-size: 0.85rem;
+}
+
 /* ---------- Roles Manager (President workspace widget → modal) ---------- */
 .roles-mgr-modal { width: min(820px, 96vw); }
 /* Toolbar row sits under the modal subtitle (the "+ Add Role" button

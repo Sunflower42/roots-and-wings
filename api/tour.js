@@ -1096,18 +1096,23 @@ async function handleWaiversReport(req, res) {
   }
   try {
     const sql = getSql();
+    // sent_at uses COALESCE(last_sent_at, created_at) so the Resend
+    // action surfaces the latest send timestamp instead of the original
+    // insert date — matters when Comms is prioritizing pending waivers.
     const backup = await sql`
       SELECT 'backup' AS source, b.id, b.name, b.email, b.signed_at,
-             b.created_at AS sent_at, r.main_learning_coach AS sent_by, r.season
+             COALESCE(b.last_sent_at, b.created_at) AS sent_at,
+             r.main_learning_coach AS sent_by, r.season
       FROM backup_coach_waivers b
       JOIN registrations r ON r.id = b.registration_id
-      ORDER BY b.created_at DESC
+      ORDER BY COALESCE(b.last_sent_at, b.created_at) DESC
     `;
     const oneOff = await sql`
-      SELECT 'one_off' AS source, id, name, email, signed_at, sent_at,
+      SELECT 'one_off' AS source, id, name, email, signed_at,
+             COALESCE(last_sent_at, sent_at) AS sent_at,
              sent_by_email AS sent_by, note
       FROM one_off_waivers
-      ORDER BY sent_at DESC
+      ORDER BY COALESCE(last_sent_at, sent_at) DESC
     `;
     // Registration signers — Main LC for every registration, plus any
     // 18+ adult students whose signatures were captured on the form.
@@ -1226,6 +1231,102 @@ async function handleWaiverSend(body, req, res) {
     return res.status(200).json({ success: true, emailed, link });
   } catch (err) {
     console.error('waiver-send error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
+
+// ── Comms Workspace: resend a pending waiver from the Waivers Report ──
+// Re-emails the same token (so the recipient's existing /waiver.html?token=…
+// link still works) and stamps last_sent_at so the report's Sent column
+// shows the latest send timestamp. Refuses signed waivers.
+async function handleWaiverResend(body, req, res) {
+  const user = await verifyWorkspaceAuth(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!(await canEditAsRole(user.email, 'Communications Director'))) {
+    const expected = await getRoleHolderEmail('Communications Director');
+    return res.status(403).json({
+      error: 'Only the Communications Director can resend waivers.',
+      youAre: user.email,
+      expected: expected || '(unknown — sheet lookup failed)'
+    });
+  }
+
+  const source = String(body.source || '').trim();
+  const id = parseInt(body.id, 10);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Valid waiver id is required.' });
+  if (source !== 'backup' && source !== 'one_off') return res.status(400).json({ error: 'source must be "backup" or "one_off".' });
+
+  try {
+    const sql = getSql();
+    let row, sentBy;
+    if (source === 'backup') {
+      const rows = await sql`
+        SELECT b.id, b.name, b.email, b.token, b.signed_at,
+               r.main_learning_coach AS sent_by
+        FROM backup_coach_waivers b
+        JOIN registrations r ON r.id = b.registration_id
+        WHERE b.id = ${id}
+        LIMIT 1
+      `;
+      row = rows[0];
+      sentBy = row && row.sent_by;
+    } else {
+      const rows = await sql`
+        SELECT id, name, email, token, signed_at, note
+        FROM one_off_waivers
+        WHERE id = ${id}
+        LIMIT 1
+      `;
+      row = rows[0];
+      sentBy = null;
+    }
+    if (!row) return res.status(404).json({ error: 'Waiver not found.' });
+    if (row.signed_at) return res.status(409).json({ error: 'Already signed — nothing to resend.' });
+
+    const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
+      ? `${req.headers['x-forwarded-proto']}://${req.headers.host}`
+      : 'https://roots-and-wings-topaz.vercel.app';
+    const link = `${baseUrl}/waiver.html?token=${encodeURIComponent(row.token)}`;
+    const note = source === 'one_off' ? String(row.note || '').trim() : '';
+
+    let emailed = false;
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const subject = source === 'backup'
+        ? `Reminder: Roots & Wings Co-op backup Learning Coach waiver`
+        : `Reminder: Roots & Wings Co-op waiver`;
+      const intro = source === 'backup'
+        ? `<p>This is a reminder to sign the Roots &amp; Wings Homeschool Co-op waiver. ${escapeHtml(sentBy || 'The Main Learning Coach')} listed you as a backup Learning Coach; the waiver needs to be on file before you sub or cover at co-op.</p>`
+        : `<p>This is a reminder to review and sign the Roots &amp; Wings Homeschool Co-op waiver before joining us at co-op.</p>`;
+      await resend.emails.send({
+        from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+        to: row.email,
+        replyTo: 'membership@rootsandwingsindy.com',
+        subject: subject,
+        html: `
+          <h2>Roots &amp; Wings Co-op waiver — reminder</h2>
+          <p>Hi ${escapeHtml(row.name)},</p>
+          ${intro}
+          ${note ? `<p style="background:#f5f0f8;padding:10px 14px;border-left:3px solid #523A79;border-radius:4px;"><em>${escapeHtml(note)}</em></p>` : ''}
+          <p><a href="${escapeHtml(link)}" style="display:inline-block;background:#523A79;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Review &amp; sign the waiver</a></p>
+          <p style="color:#666;font-size:0.9rem;">Or copy this link into your browser:<br><span style="word-break:break-all;">${escapeHtml(link)}</span></p>
+          <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+        `,
+      });
+      emailed = true;
+    } catch (mailErr) {
+      console.error('Waiver resend email error (non-fatal):', mailErr);
+    }
+
+    if (source === 'backup') {
+      await sql`UPDATE backup_coach_waivers SET last_sent_at = NOW() WHERE id = ${id}`;
+    } else {
+      await sql`UPDATE one_off_waivers SET last_sent_at = NOW() WHERE id = ${id}`;
+    }
+
+    return res.status(200).json({ success: true, emailed, link });
+  } catch (err) {
+    console.error('waiver-resend error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 }
@@ -1844,6 +1945,7 @@ module.exports = async function handler(req, res) {
     if (kind === 'send-welcome-email') return handleSendWelcomeEmail(body, req, res);
     if (kind === 'backup-waiver-sign') return handleBackupWaiverSign(body, req, res);
     if (kind === 'waiver-send') return handleWaiverSend(body, req, res);
+    if (kind === 'waiver-resend') return handleWaiverResend(body, req, res);
     if (kind === 'registration-invite') return handleRegistrationInvite(body, req, res);
     if (kind === 'profile-update') return handleProfileUpdate(body, req, res);
     if (kind === 'profile-photo') return handleProfilePhoto(body, req, res);
