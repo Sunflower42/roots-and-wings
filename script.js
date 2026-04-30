@@ -13111,8 +13111,18 @@
   function renderPmHeaderFilterRow() {
     var f = _pmReportState.filters;
     var h = '<tr class="rd-filter-row">';
+    // Order matches the column header row (Class → Status → Submitter
+    // → Sessions → Hour → Ages → Max → Actions). One <th> per column;
+    // empty cells preserve column alignment for non-filterable columns.
     // Class — no filter (free-text class names; not bucketable).
     h += '<th></th>';
+    // Status
+    h += '<th><select class="pmrep-f rd-th-filter" data-filter="status" aria-label="Filter by status">';
+    ['submitted','drafted','scheduled','declined','withdrawn','all'].forEach(function (v) {
+      var lab = v === 'all' ? 'Any' : v.charAt(0).toUpperCase() + v.slice(1);
+      h += '<option value="' + v + '"' + (f.status === v ? ' selected' : '') + '>' + lab + '</option>';
+    });
+    h += '</select></th>';
     // Submitter — no filter for now (could add a "by me / by anyone" later).
     h += '<th></th>';
     // Sessions
@@ -13133,13 +13143,6 @@
     h += '</select></th>';
     // Max — numeric, no filter.
     h += '<th></th>';
-    // Status
-    h += '<th><select class="pmrep-f rd-th-filter" data-filter="status" aria-label="Filter by status">';
-    ['submitted','drafted','scheduled','declined','withdrawn','all'].forEach(function (v) {
-      var lab = v === 'all' ? 'Any' : v.charAt(0).toUpperCase() + v.slice(1);
-      h += '<option value="' + v + '"' + (f.status === v ? ' selected' : '') + '>' + lab + '</option>';
-    });
-    h += '</select></th>';
     // Actions — no filter.
     h += '<th></th>';
     h += '</tr>';
@@ -13196,7 +13199,10 @@
     // filter that's hiding everything.
     var h = '<div class="ws-waivers-table-wrap"><table class="ws-waivers-table">';
     h += '<thead><tr>';
-    h += '<th>Class</th><th>Submitter</th><th>Sessions</th><th>Hour</th><th>Ages</th><th>Max</th><th>Status</th><th class="pmrep-actions-col">Actions</th>';
+    // Column convention: row identifier (Class) → Status pill →
+    // everything else, with Actions trailing. Same shape Participation
+    // Tracker uses (Member → Status → counts) so reports read uniformly.
+    h += '<th>Class</th><th>Status</th><th>Submitter</th><th>Sessions</th><th>Hour</th><th>Ages</th><th>Max</th><th class="pmrep-actions-col">Actions</th>';
     h += '</tr>';
     h += renderPmHeaderFilterRow();
     h += '</thead><tbody>';
@@ -13215,12 +13221,12 @@
         h += '<div class="pmrep-class-desc">' + escapeHtml(snippet) + (String(s.description).length > 120 ? '…' : '') + '</div>';
       }
       h += '</td>';
+      h += '<td><span class="pmrep-status pmrep-status-' + s.status + '">' + s.status + '</span></td>';
       h += '<td>' + escapeHtml(s.submitted_by_name || s.submitted_by_email) + '</td>';
       h += '<td>' + escapeHtml(pmrepFormatSessions(s.session_preferences)) + '</td>';
       h += '<td>' + escapeHtml(pmrepFormatHourPrefs(s.hour_preference)) + '</td>';
       h += '<td>' + (s.age_groups || []).map(escapeHtml).join(', ') + '</td>';
       h += '<td>' + (s.max_students || '—') + '</td>';
-      h += '<td><span class="pmrep-status pmrep-status-' + s.status + '">' + s.status + '</span></td>';
       h += '<td class="pmrep-actions">';
       if (s.status === 'submitted') {
         h += '<button class="sc-btn pmrep-btn pmrep-approve-btn" data-sub-id="' + s.id + '" title="Queue for scheduling (status → drafted)">✓ Approve</button>';

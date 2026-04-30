@@ -10131,12 +10131,22 @@ button.staff-role:hover {
 .ws-part-badge-new    { background: #fff4e0; color: #a85b00; }
 .ws-part-badge-exempt { background: #f3e8fd; color: #5e2c8a; }
 .ws-part-zero { color: var(--color-text-light); }
-.ws-part-status {
+/* Status pill — shared shape for every report's Status column.
+   Convention: ALL CAPS + tracking + bold + pill rounding. Semantic
+   color comes from the .ws-part-status-*  / .pmrep-status-* variant
+   class that gets concatenated in the rendering code. Both reports
+   resolve to the same visual treatment so users get a consistent
+   "this is a status badge" cue across the Workspace. */
+.ws-part-status,
+.pmrep-status {
   display: inline-block;
-  padding: 2px 8px;
-  font-size: 0.72rem;
+  padding: 2px 9px;
+  font-size: 0.7rem;
   font-weight: 700;
-  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 .ws-part-status-on_track { background: #e5f5e9; color: #1f6c3a; }
 .ws-part-status-near     { background: #fff4d9; color: #8a6400; }
@@ -10506,15 +10516,9 @@ button.staff-role:hover {
   line-height: 1.3;
   max-width: 340px;
 }
-.pmrep-status {
-  display: inline-block;
-  padding: 2px 8px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-radius: 999px;
-}
+/* .pmrep-status base shape now lives alongside .ws-part-status above
+   (shared between Participation Tracker + PM Submissions). Variant
+   classes below keep PM-specific color mappings. */
 .pmrep-status-submitted { background: #e5f5e9;                                     color: #1f6c3a; }
 .pmrep-status-drafted   { background: rgba(var(--color-accent-light-rgb), 0.35);   color: var(--color-accent-dark); }
 .pmrep-status-scheduled { background: rgba(var(--color-chartreuse-rgb), 0.22);     color: var(--color-leaf); }
