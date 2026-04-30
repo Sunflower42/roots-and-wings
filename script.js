@@ -7794,7 +7794,7 @@
           if (r.isBoard) badges += ' <span class="ws-part-badge ws-part-badge-board">Board</span>';
           if (r.isNewMember) badges += ' <span class="ws-part-badge ws-part-badge-new">New</span>';
           if (r.exemption) badges += ' <span class="ws-part-badge ws-part-badge-exempt">Exempt</span>';
-          return '<strong>' + escapeHtmlWs(r.displayName) + '</strong>' + badges;
+          return escapeHtmlWs(r.displayName) + badges;
         }
       },
       { key: 'status', label: 'Status', type: 'string',
@@ -13711,7 +13711,7 @@
     }
     filtered.forEach(function (s) {
       h += '<tr data-sub-id="' + s.id + '">';
-      h += '<td class="pmrep-class-cell"><strong>' + escapeHtml(s.class_name) + '</strong>';
+      h += '<td class="pmrep-class-cell">' + escapeHtml(s.class_name);
       if (s.description) {
         var snippet = String(s.description).slice(0, 120);
         h += '<div class="pmrep-class-desc">' + escapeHtml(snippet) + (String(s.description).length > 120 ? '…' : '') + '</div>';

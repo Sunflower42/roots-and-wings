@@ -9459,7 +9459,14 @@ button.staff-role:hover {
   /* Long member / role names need to wrap; headers stay on one line. */
   word-break: break-word;
   overflow-wrap: anywhere;
+  /* Convention across every report: row-identifier and other body
+     cells render in regular weight — Status pills + Actions buttons
+     carry the visual emphasis. Don't wrap first-column content in
+     <strong> in new reports; the rule below also defangs any stray
+     <strong> wrappers in existing markup so the look stays uniform. */
+  font-weight: 400;
 }
+.ws-waivers-table tbody td strong { font-weight: inherit; }
 .ws-waivers-table thead th {
   position: sticky;
   top: 0;
