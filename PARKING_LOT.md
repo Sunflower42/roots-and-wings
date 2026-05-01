@@ -138,3 +138,25 @@ End-state goal: align the portal's family data model with the vocabulary already
 - The Directory sheet still drives some name parsing — does the MLC concept eventually replace the Directory sheet entirely (Phase 2 read-path flip), or stay layered on top?
 
 **Estimated:** 4–8 hours focused work post-Phase 3 merge.
+
+## Drop legacy waiver tables + columns
+
+End-state: remove `backup_coach_waivers`, `one_off_waivers`, and the `registrations.signature_*` / `waiver_*` / `student_signature` columns now that everything reads/writes through `waiver_signatures` (shipped 2026-05-01).
+
+**Soak first.** Before dropping anything, confirm in prod that:
+- `waiver_signatures` has rows with `waiver_version = '2026-05-01'` (proves new code path is being exercised).
+- No recent Vercel error logs reference `backup_coach_waivers` or `one_off_waivers`.
+- A few real signings have flowed through cleanly (registration MLC, backup-coach token sign, Comms one-off send + sign).
+
+**Phase A — safe to drop after 2-week soak (~2026-05-15):**
+- `DROP TABLE IF EXISTS backup_coach_waivers;`
+- `DROP TABLE IF EXISTS one_off_waivers;`
+- These are no longer written to by any code path (verified at ship time). Backfilled rows are duplicated in `waiver_signatures`.
+
+**Phase B — needs prep work first:**
+- `registrations.signature_name`, `signature_date`, `waiver_member_agreement`, `waiver_photo_consent`, `waiver_liability`, `student_signature` are still being written by `api/tour.js` registration insert (they're NOT NULL).
+- Adult-student signatures live ONLY in `student_signature` — they don't have their own `waiver_signatures` rows yet. The Waivers Report parses them out of that column at read time (api/tour.js `regsForStudents`).
+- Before dropping, either: (1) migrate adult-student rows into `waiver_signatures` with a new role like `'adult_student'`, OR (2) accept losing them and update the Waivers Report.
+- Then drop the columns and remove the writes from the registration insert path.
+
+**Estimated:** Phase A is 15 min (2-line migration + run). Phase B is 1–2 hours.

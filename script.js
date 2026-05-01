@@ -292,12 +292,30 @@
     return localStorage.getItem('rw_user_email');
   }
 
+  // True when the host is a dev environment (localhost or a Vercel
+  // preview deploy). In dev, every signed-in tester gets the View As
+  // picker + super-user affordances so they can impersonate any role-
+  // holder family from the seed and exercise role-gated flows. Prod
+  // detection is by exclusion — anything that isn't the prod hostname
+  // (or the future custom domain) is treated as dev. Permissions on
+  // the API side are still enforced by Google ID token verification;
+  // this only relaxes the *client-side* gate on the picker UI.
+  function isDevHost() {
+    var h = (window.location && window.location.hostname || '').toLowerCase();
+    if (h === 'localhost' || h === '127.0.0.1') return true;
+    if (h === 'roots-and-wings-topaz.vercel.app') return false;
+    if (h === 'rootsandwingsindy.com' || h === 'www.rootsandwingsindy.com') return false;
+    if (h.endsWith('.vercel.app')) return true; // preview deploys
+    return false;
+  }
+
   // True if the *real* signed-in user is one of the app-wide super users
   // (communications@ / vicepresident@). Function name predates the VP
   // addition — kept to avoid touching every caller, but it gates super-
   // user UI in general (View As picker, edit-anything affordances), not
   // just communications@.
   function isCommsUser() {
+    if (isDevHost()) return true;
     return isSuperUserEmail(localStorage.getItem('rw_user_email'));
   }
 

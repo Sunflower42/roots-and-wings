@@ -1,59 +1,64 @@
-// Seed the dev branch with minimal fake data so every UI surface renders.
-// Idempotent: run as many times as you want; uses ON CONFLICT to skip rows
-// that already exist by their natural key.
+// Seed the dev branch with role-named fake families so dev testers can
+// impersonate any role by picking the obviously-named family from the
+// View As dropdown (e.g. "President", "Treasurer", "Membership Director").
+// Each family's email = <role>@rootsandwingsindy.com so it's clear at a
+// glance which role you're acting as.
 //
-// All data here is FAKE — invented names, email addresses, kids. Safe to
-// share publicly. No real R&W members are referenced.
+// All data here is FAKE — invented names, kids, addresses. Safe to share
+// publicly. No real R&W members are referenced.
 //
-// Usage: node --env-file=.env.local.dev scripts/seed-dev-data.js
+// Idempotent: ON CONFLICT clauses skip rows already present. Re-run any time.
+//
+// Prereqs (run once against the dev branch first):
+//   node --env-file=.env.local.dev scripts/run-migration.js
+//   node --env-file=.env.local.dev scripts/seed-role-descriptions.js
+//
+// Usage:
+//   node --env-file=.env.local.dev scripts/seed-dev-data.js
 
 const { neon } = require('@neondatabase/serverless');
 const crypto = require('crypto');
 
 const SEASON = '2026-2027';
+const SCHOOL_YEAR = '2026-2027';
 const OLD_VERSION = '2026-04-27';
 
-const FAKE_FAMILIES = [
-  {
-    family_email: 'sarahd@rootsandwingsindy.com',
-    family_name: 'Demo',
-    phone: '3175550101',
-    address: '100 Demo Lane, Indianapolis, IN 46220',
-    parents: [
-      { firstName: 'Sarah', lastName: 'Demo', email: 'sarahd@rootsandwingsindy.com', role: 'mlc' },
-      { firstName: 'Mark',  lastName: 'Demo', email: 'markd+dev@example.com',         role: 'parent' }
-    ],
-    kids: [
-      { name: 'Lily', birth_date: '2017-04-12', photo_consent: true },
-      { name: 'Theo', birth_date: '2019-09-30', photo_consent: true }
-    ]
-  },
-  {
-    family_email: 'jenexample@rootsandwingsindy.com',
-    family_name: 'Example',
-    phone: '3175550202',
-    address: '200 Example Ave, Indianapolis, IN 46220',
-    parents: [
-      { firstName: 'Jen',   lastName: 'Example', email: 'jenexample@rootsandwingsindy.com', role: 'mlc' },
-      { firstName: 'Robin', lastName: 'Example', email: 'robine+dev@example.com',           role: 'blc' }
-    ],
-    kids: [
-      { name: 'Casey', birth_date: '2016-08-05', photo_consent: true }
-    ]
-  },
-  {
-    family_email: 'commsdev@rootsandwingsindy.com',
-    family_name: 'CommsTest',
-    phone: '3175550303',
-    address: '300 Test Rd, Indianapolis, IN 46220',
-    parents: [
-      { firstName: 'Comms', lastName: 'Test', email: 'commsdev@rootsandwingsindy.com', role: 'mlc' }
-    ],
-    kids: [
-      { name: 'Sample', birth_date: '2018-01-15', photo_consent: true }
-    ]
-  }
+// One family per major role. Email matches the role for easy ID in the
+// View As dropdown. The communications@ family also doubles as a
+// super-user account (matches SUPER_USER_EMAILS in script.js).
+const ROLE_FAMILIES = [
+  { roleKey: 'president',                familyEmail: 'president@rootsandwingsindy.com',         displayName: 'President',                    firstName: 'Pat'    },
+  { roleKey: 'vice_president',           familyEmail: 'vicepresident@rootsandwingsindy.com',     displayName: 'Vice President',               firstName: 'Vee'    },
+  { roleKey: 'communications_director',  familyEmail: 'communications@rootsandwingsindy.com',    displayName: 'Communications Director',      firstName: 'Cam'    },
+  { roleKey: 'membership_director',      familyEmail: 'membership@rootsandwingsindy.com',        displayName: 'Membership Director',          firstName: 'Mel'    },
+  { roleKey: 'treasurer',                familyEmail: 'treasurer@rootsandwingsindy.com',         displayName: 'Treasurer',                    firstName: 'Tess'   },
+  { roleKey: 'secretary',                familyEmail: 'secretary@rootsandwingsindy.com',         displayName: 'Secretary',                    firstName: 'Sam'    },
+  { roleKey: 'afternoon_class_liaison',  familyEmail: 'afternoon@rootsandwingsindy.com',         displayName: 'Afternoon Class Liaison',      firstName: 'Avery'  },
+  { roleKey: 'morning_class_liaison',    familyEmail: 'morning@rootsandwingsindy.com',           displayName: 'Morning Class Liaison',        firstName: 'Morgan' }
 ];
+
+// One regular member family with no role — for testing the "what does a
+// rank-and-file member see?" perspective.
+const REGULAR_FAMILY = {
+  familyEmail: 'regularmember@rootsandwingsindy.com',
+  displayName: 'Regular Member',
+  firstName: 'Robin'
+};
+
+function buildFamilyRecord(f) {
+  return {
+    family_email: f.familyEmail,
+    family_name: f.displayName,
+    phone: '3175550000',
+    address: '100 Dev Lane, Indianapolis, IN 46220',
+    parents: [
+      { firstName: f.firstName, lastName: f.displayName, email: f.familyEmail, role: 'mlc' }
+    ],
+    kids: [
+      { name: 'Test Kid', birth_date: '2018-01-15', photo_consent: true }
+    ]
+  };
+}
 
 (async () => {
   if (!process.env.DATABASE_URL) {
@@ -62,16 +67,21 @@ const FAKE_FAMILIES = [
   }
   const sql = neon(process.env.DATABASE_URL);
 
-  // Refuse to run if any real-looking data exists. Heuristic: if registrations
-  // count > 50, this is probably prod — abort. Free dev branch should be near-empty.
-  const [count] = await sql`SELECT COUNT(*)::int AS n FROM registrations`;
-  if (count.n > 50) {
-    console.error(`registrations has ${count.n} rows — this looks like prod, not dev. Aborting.`);
+  // Refuse to run against prod. Heuristic: if registrations.email shows
+  // any *.gmail.com / personal-domain entries (real members), abort.
+  const realLooking = await sql`
+    SELECT COUNT(*)::int AS n FROM registrations
+    WHERE email NOT LIKE '%@rootsandwingsindy.com' AND email NOT LIKE '%@example.com'
+  `;
+  if (realLooking[0].n > 0) {
+    console.error(`registrations contains ${realLooking[0].n} non-rootsandwings/example email(s) — looks like prod, aborting.`);
     process.exit(1);
   }
 
+  const allFamilies = ROLE_FAMILIES.map(buildFamilyRecord).concat([buildFamilyRecord(REGULAR_FAMILY)]);
+
   console.log('--- Seeding member_profiles ---');
-  for (const f of FAKE_FAMILIES) {
+  for (const f of allFamilies) {
     await sql`
       INSERT INTO member_profiles (family_email, family_name, phone, address, parents, kids)
       VALUES (${f.family_email}, ${f.family_name}, ${f.phone}, ${f.address},
@@ -87,7 +97,7 @@ const FAKE_FAMILIES = [
   }
 
   console.log('--- Seeding registrations + waiver_signatures (MLC) ---');
-  for (const f of FAKE_FAMILIES) {
+  for (const f of allFamilies) {
     const mlc = f.parents[0];
     const mlcFullName = mlc.firstName + ' ' + mlc.lastName;
     const seedTxnId = 'SEED-' + f.family_email;
@@ -124,37 +134,52 @@ const FAKE_FAMILIES = [
     console.log('  ✓', f.family_email, 'reg id', regId);
   }
 
-  // ── Backup coaches ──
-  // First family: one signed BC + one pending BC.
-  const [reg1] = await sql`SELECT id FROM registrations WHERE email = ${FAKE_FAMILIES[0].family_email} AND season = ${SEASON} LIMIT 1`;
-  if (reg1) {
+  console.log('--- Seeding role_holders ---');
+  for (const rf of ROLE_FAMILIES) {
+    const r = await sql`SELECT id FROM role_descriptions WHERE role_key = ${rf.roleKey} LIMIT 1`;
+    if (r.length === 0) {
+      console.log('  ! skip', rf.roleKey, '(no role_descriptions row — run seed-role-descriptions.js first)');
+      continue;
+    }
+    const personName = rf.firstName + ' ' + rf.displayName;
+    await sql`
+      INSERT INTO role_holders (role_id, email, person_name, family_name, school_year, updated_by)
+      VALUES (${r[0].id}, ${rf.familyEmail}, ${personName}, ${rf.displayName}, ${SCHOOL_YEAR}, 'seed-dev-data.js')
+      ON CONFLICT (role_id, LOWER(email), school_year) DO NOTHING
+    `;
+    console.log('  ✓', rf.roleKey.padEnd(28), '→', rf.familyEmail);
+  }
+
+  // ── A pending backup-coach + signed backup-coach + one-off, hung off
+  //    the President family so the Waivers Report has variety to render.
+  const [presReg] = await sql`SELECT id FROM registrations WHERE email = ${ROLE_FAMILIES[0].familyEmail} AND season = ${SEASON} LIMIT 1`;
+  if (presReg) {
     await sql`
       INSERT INTO waiver_signatures (
         season, waiver_version, role, person_name, person_email, family_email,
         registration_id, signed_at, signature_name, signature_date, photo_consent,
         pending_token, sent_at
       ) VALUES
-        (${SEASON}, ${OLD_VERSION}, 'backup_coach', 'Mark Demo', 'markd+dev@example.com',
-         ${FAKE_FAMILIES[0].family_email}, ${reg1.id},
-         NOW(), 'Mark Demo', '2026-04-28', true,
+        (${SEASON}, ${OLD_VERSION}, 'backup_coach', 'Backup Pat', 'backup-pat+dev@example.com',
+         ${ROLE_FAMILIES[0].familyEmail}, ${presReg.id},
+         NOW(), 'Backup Pat', '2026-04-28', true,
          ${crypto.randomUUID().replace(/-/g, '')}, NOW()),
-        (${SEASON}, NULL, 'backup_coach', 'Grandma Demo', 'grandma+dev@example.com',
-         ${FAKE_FAMILIES[0].family_email}, ${reg1.id},
+        (${SEASON}, NULL, 'backup_coach', 'Pending Coach', 'pending-coach+dev@example.com',
+         ${ROLE_FAMILIES[0].familyEmail}, ${presReg.id},
          NULL, '', NULL, true,
          ${crypto.randomUUID().replace(/-/g, '')}, NOW())
       ON CONFLICT DO NOTHING
     `;
-    console.log('  ✓ Demo family backup coaches (1 signed, 1 pending)');
+    console.log('  ✓ President family backup coaches (1 signed, 1 pending)');
   }
 
-  // ── One pending one-off ──
   await sql`
     INSERT INTO waiver_signatures (
       season, role, person_name, person_email,
       pending_token, sent_at, sent_by_email, note
     ) VALUES (
-      ${SEASON}, 'one_off', 'Fake Visiting Helper', 'visitor+dev@example.com',
-      ${crypto.randomUUID().replace(/-/g, '')}, NOW(), 'commsdev@rootsandwingsindy.com',
+      ${SEASON}, 'one_off', 'Visiting Helper', 'visitor+dev@example.com',
+      ${crypto.randomUUID().replace(/-/g, '')}, NOW(), 'communications@rootsandwingsindy.com',
       'Visiting helper for spring co-op day — needs waiver on file.'
     )
     ON CONFLICT DO NOTHING
@@ -165,10 +190,12 @@ const FAKE_FAMILIES = [
   const [profiles] = await sql`SELECT COUNT(*)::int AS n FROM member_profiles`;
   const [regs] = await sql`SELECT COUNT(*)::int AS n FROM registrations`;
   const [waivers] = await sql`SELECT COUNT(*)::int AS n FROM waiver_signatures`;
+  const [holders] = await sql`SELECT COUNT(*)::int AS n FROM role_holders`;
   console.log('  member_profiles:    ', profiles.n);
   console.log('  registrations:      ', regs.n);
   console.log('  waiver_signatures:  ', waivers.n);
-  console.log('\n✓ Seed complete. Dev branch is ready.');
+  console.log('  role_holders:       ', holders.n);
+  console.log('\n✓ Seed complete. Sign in to dev with any @rootsandwingsindy.com Google account; the View As dropdown lets you impersonate any role.');
 })().catch(err => {
   console.error('Seed failed:', err.message);
   console.error(err.stack);
