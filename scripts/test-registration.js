@@ -121,11 +121,20 @@ function basePayload(overrides) {
   console.log('   →', withBc.status, withBc.data);
   if (withBc.status !== 201) throw new Error('Expected 201');
   const bcRegId = withBc.data.id;
-  const bcRows = await sql`SELECT id, name, email, token, signed_at FROM backup_coach_waivers WHERE registration_id = ${bcRegId} ORDER BY id`;
+  // Backup coaches now live in waiver_signatures (consolidated). Same shape
+  // — pending_token replaces the old `token` column.
+  const bcRows = await sql`
+    SELECT id, person_name AS name, person_email AS email,
+           pending_token AS token, signed_at, waiver_version
+    FROM waiver_signatures
+    WHERE registration_id = ${bcRegId} AND role = 'backup_coach'
+    ORDER BY id
+  `;
   console.log('   → backup rows:', bcRows.length);
   if (bcRows.length !== 2) throw new Error('Expected 2 backup coach rows');
   if (!bcRows[0].token || bcRows[0].token.length < 16) throw new Error('Expected token to be set');
   if (bcRows[0].signed_at) throw new Error('Expected not yet signed');
+  if (bcRows[0].waiver_version) throw new Error('Expected waiver_version to be NULL until signed');
 
   console.log('9. GET ?backup_waiver_token lookup works…');
   const bcInfo = await get({ backup_waiver_token: bcRows[0].token });
@@ -134,7 +143,7 @@ function basePayload(overrides) {
   if (bcInfo.data.name !== 'Grandma Jo') throw new Error('Expected name Grandma Jo');
   if (bcInfo.data.signed !== false) throw new Error('Expected signed=false');
 
-  console.log('10. POST backup-waiver-sign records signature…');
+  console.log('10. POST backup-waiver-sign records signature + stamps version…');
   const bcSign = await post({
     kind: 'backup-waiver-sign',
     token: bcRows[0].token,
@@ -143,9 +152,13 @@ function basePayload(overrides) {
   });
   console.log('   →', bcSign.status, bcSign.data);
   if (bcSign.status !== 200) throw new Error('Expected 200');
-  const signedCheck = await sql`SELECT signed_at, signature_name FROM backup_coach_waivers WHERE id = ${bcRows[0].id}`;
+  const signedCheck = await sql`
+    SELECT signed_at, signature_name, waiver_version
+    FROM waiver_signatures WHERE id = ${bcRows[0].id}
+  `;
   if (!signedCheck[0].signed_at) throw new Error('Expected signed_at to be set');
   if (signedCheck[0].signature_name !== 'Grandma Josephine Actual') throw new Error('Signature name mismatch');
+  if (!signedCheck[0].waiver_version) throw new Error('Expected waiver_version stamped on sign');
 
   console.log('11. Double-signing the same token returns 409…');
   const bcDoubleSign = await post({

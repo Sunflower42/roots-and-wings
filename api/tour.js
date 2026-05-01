@@ -13,7 +13,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { google } = require('googleapis');
 const { put } = require('@vercel/blob');
 const { waitUntil } = require('@vercel/functions');
-const { ALLOWED_ORIGINS, emailSubject } = require('./_config');
+const { ALLOWED_ORIGINS, emailSubject, WAIVER_VERSION } = require('./_config');
 const { canEditAsRole, getRoleHolderEmail, isSuperUser } = require('./_permissions');
 const { canActAs } = require('./_family');
 const { fetchSheet, getAuth, parseBillingSheet } = require('./sheets');
@@ -430,6 +430,29 @@ async function handleRegistration(body, req, res) {
       console.error('Registration → member_profiles upsert error (non-fatal):', profileErr);
     }
 
+    // Stamp the MLC's signature into waiver_signatures (consolidated, versioned
+    // waiver record). The registrations row keeps the inline signature columns
+    // for now; this row is the source of truth for the unified Waivers Report.
+    // Conflict on (LOWER(person_email), season) shouldn't happen — the
+    // registration insert above would have failed first via its own unique
+    // index — but if it does (e.g. prior backfill), DO NOTHING keeps us safe.
+    try {
+      await sql`
+        INSERT INTO waiver_signatures (
+          season, waiver_version, role,
+          person_name, person_email, family_email, registration_id,
+          signed_at, signature_name, signature_date, photo_consent
+        ) VALUES (
+          ${season}, ${WAIVER_VERSION}, 'main_lc',
+          ${main_learning_coach}, ${email}, ${email}, ${id},
+          NOW(), ${signature_name}, ${signature_date}, ${waiver_photo_consent === 'yes'}
+        )
+        ON CONFLICT DO NOTHING
+      `;
+    } catch (wsErr) {
+      console.error('waiver_signatures (MLC) insert error (non-fatal):', wsErr);
+    }
+
     // Create a unique signing token per backup Learning Coach and email each one.
     const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
       ? `${req.headers['x-forwarded-proto']}://${req.headers.host}`
@@ -438,13 +461,23 @@ async function handleRegistration(body, req, res) {
     for (const bc of backup_coaches) {
       const token = crypto.randomUUID().replace(/-/g, '');
       try {
+        // pending_token + sent_at populated; waiver_version + signed_at stay
+        // NULL until the coach clicks the link and signs.
         await sql`
-          INSERT INTO backup_coach_waivers (registration_id, name, email, token)
-          VALUES (${id}, ${bc.name}, ${bc.email}, ${token})
+          INSERT INTO waiver_signatures (
+            season, role,
+            person_name, person_email, family_email, registration_id,
+            pending_token, sent_at
+          ) VALUES (
+            ${season}, 'backup_coach',
+            ${bc.name}, ${bc.email}, ${email}, ${id},
+            ${token}, NOW()
+          )
+          ON CONFLICT DO NOTHING
         `;
         backupCoachRows.push({ name: bc.name, email: bc.email, token });
       } catch (bcErr) {
-        console.error('Backup coach insert error (non-fatal):', bcErr);
+        console.error('Backup coach (waiver_signatures) insert error (non-fatal):', bcErr);
       }
     }
 
@@ -528,7 +561,7 @@ async function handleRegistration(body, req, res) {
         : `Roots & Wings ${season} Registration Confirmed — ${main_learning_coach} family`;
       const heading = isCashCheck ? 'Registration Received — Payment Pending' : 'Registration Confirmed &amp; Paid';
       const lead = isCashCheck
-        ? `<p>Thanks for registering with Roots &amp; Wings Homeschool Co-op! Your spot is held. Please bring <strong>$${escapeHtml(String(payment_amount))} cash or a check payable to <em>Roots and Wings Homeschool, Inc.</em></strong> to Jessica Shewan (Treasurer) on your tour day or your first co-op day. You'll receive a separate confirmation email once the Treasurer records your payment.</p>`
+        ? `<p>Thanks for registering with Roots &amp; Wings Homeschool Co-op! Your spot is held. Please contact <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a> to arrange payment of the <strong>$${escapeHtml(String(payment_amount))} registration fee</strong> by cash or check (payable to <em>Roots and Wings Homeschool, Inc.</em>). You'll receive a separate confirmation email once the Treasurer records your payment.</p>`
         : `<p>Thanks for registering with Roots &amp; Wings Homeschool Co-op! Your ${escapeHtml(season)} Membership Fee has been received. The Membership Director, Treasurer, and Communications Director have been copied on this email.</p>`;
       const paymentRow = isCashCheck
         ? `<tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Payment</td><td>$${escapeHtml(String(payment_amount))} cash or check &mdash; pending</td></tr>`
@@ -614,15 +647,16 @@ async function handleList(req, res) {
              r.created_at, r.updated_at,
              (
                SELECT COALESCE(json_agg(json_build_object(
-                 'name', b.name,
-                 'email', b.email,
-                 'sent_at', b.created_at,
-                 'signed_at', b.signed_at,
-                 'signature_name', b.signature_name,
-                 'signature_date', b.signature_date
-               ) ORDER BY b.created_at), '[]'::json)
-               FROM backup_coach_waivers b
-               WHERE b.registration_id = r.id
+                 'name', ws.person_name,
+                 'email', ws.person_email,
+                 'sent_at', ws.sent_at,
+                 'signed_at', ws.signed_at,
+                 'signature_name', ws.signature_name,
+                 'signature_date', ws.signature_date,
+                 'waiver_version', ws.waiver_version
+               ) ORDER BY ws.sent_at), '[]'::json)
+               FROM waiver_signatures ws
+               WHERE ws.registration_id = r.id AND ws.role = 'backup_coach'
              ) AS backup_coaches
       FROM registrations r
       WHERE r.season = ${season}
@@ -750,59 +784,41 @@ function handleConfig(res) {
   });
 }
 
-// ── Backup Learning Coach waiver: look up by token ──
-// Falls back to the one_off_waivers table if the token isn't found in
-// backup_coach_waivers, so a single /waiver.html?token=… link works for
-// both the registration-backed backup-coach flow and the Comms Director's
-// one-off sends from the Workspace.
+// ── Backup Learning Coach / one-off waiver: look up by token ──
+// Single query against waiver_signatures (consolidated). The role column
+// distinguishes backup-coach (registration-backed) from one-off (Comms
+// Director ad-hoc send), so the /waiver.html?token=… UI can branch on it.
 async function handleBackupWaiverInfo(req, res) {
   const token = String(req.query.backup_waiver_token || '').trim();
   if (!token || !/^[a-f0-9]{8,64}$/i.test(token)) return res.status(400).json({ error: 'Invalid token.' });
   const sql = getSql();
   try {
     const rows = await sql`
-      SELECT b.name, b.email, b.signed_at, b.signature_name, b.signature_date,
-             r.main_learning_coach, r.existing_family_name, r.season
-      FROM backup_coach_waivers b
-      JOIN registrations r ON r.id = b.registration_id
-      WHERE b.token = ${token}
+      SELECT ws.role, ws.person_name, ws.person_email, ws.season,
+             ws.signed_at, ws.signature_name, ws.signature_date, ws.waiver_version,
+             r.main_learning_coach, r.existing_family_name
+      FROM waiver_signatures ws
+      LEFT JOIN registrations r ON r.id = ws.registration_id
+      WHERE ws.pending_token = ${token}
       LIMIT 1
     `;
-    if (rows.length > 0) {
-      const row = rows[0];
-      return res.status(200).json({
-        source: 'backup',
-        name: row.name,
-        email: row.email,
-        main_learning_coach: row.main_learning_coach,
-        family_name: row.existing_family_name || row.main_learning_coach,
-        season: row.season,
-        signed: !!row.signed_at,
-        signed_at: row.signed_at || null,
-        signature_name: row.signature_name || '',
-        signature_date: row.signature_date || null
-      });
-    }
-    // One-off waiver fallback (Comms Director sends).
-    const oneOff = await sql`
-      SELECT name, email, signed_at, signature_name, signature_date
-      FROM one_off_waivers
-      WHERE token = ${token}
-      LIMIT 1
-    `;
-    if (oneOff.length === 0) return res.status(404).json({ error: 'Waiver link not found. Please contact membership@rootsandwingsindy.com.' });
-    const oo = oneOff[0];
+    if (rows.length === 0) return res.status(404).json({ error: 'Waiver link not found. Please contact membership@rootsandwingsindy.com.' });
+    const row = rows[0];
+    const isOneOff = row.role === 'one_off';
     return res.status(200).json({
-      source: 'one_off',
-      name: oo.name,
-      email: oo.email,
-      main_learning_coach: '',
-      family_name: oo.name,
-      season: '',
-      signed: !!oo.signed_at,
-      signed_at: oo.signed_at || null,
-      signature_name: oo.signature_name || '',
-      signature_date: oo.signature_date || null
+      // Keep the legacy 'source' field shape so the existing waiver.html
+      // client-side branch ("if isOneOff…") keeps working unmodified.
+      source: isOneOff ? 'one_off' : 'backup',
+      name: row.person_name,
+      email: row.person_email,
+      main_learning_coach: row.main_learning_coach || '',
+      family_name: row.existing_family_name || row.main_learning_coach || row.person_name,
+      season: row.season || '',
+      signed: !!row.signed_at,
+      signed_at: row.signed_at || null,
+      signature_name: row.signature_name || '',
+      signature_date: row.signature_date || null,
+      waiver_version: row.waiver_version || null
     });
   } catch (err) {
     console.error('Backup waiver info error:', err);
@@ -824,57 +840,65 @@ async function handleBackupWaiverSign(body, req, res) {
 
   const sql = getSql();
   try {
-    // Try backup-coach waivers first; fall back to one-off waivers so the
-    // same /waiver.html sign form works for Comms Director sends.
+    // Find the pending row in the consolidated waiver_signatures table.
+    // role distinguishes backup-coach vs one-off; sent_by_email is non-empty
+    // for one-offs (Comms Director's email gets cc'd on the confirmation).
     const existing = await sql`
-      SELECT id, signed_at FROM backup_coach_waivers WHERE token = ${token} LIMIT 1
+      SELECT id, role, person_name, person_email, signed_at, sent_by_email, registration_id
+      FROM waiver_signatures
+      WHERE pending_token = ${token}
+      LIMIT 1
     `;
-    if (existing.length > 0) {
-      if (existing[0].signed_at) return res.status(409).json({ error: 'This waiver has already been signed.' });
+    if (existing.length === 0) return res.status(404).json({ error: 'Waiver link not found.' });
+    if (existing[0].signed_at) return res.status(409).json({ error: 'This waiver has already been signed.' });
 
-      const updated = await sql`
-        UPDATE backup_coach_waivers
-        SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date},
-            photo_consent = ${photo_consent}
-        WHERE token = ${token} AND signed_at IS NULL
-        RETURNING id, name, email, registration_id
-      `;
-      if (updated.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
+    // waiver_version stamped at sign time (not row creation), so the value
+    // reflects what the signer actually read on /waiver.html.
+    const updated = await sql`
+      UPDATE waiver_signatures
+      SET signed_at = NOW(), signature_name = ${signature_name},
+          signature_date = ${signature_date}, photo_consent = ${photo_consent},
+          waiver_version = ${WAIVER_VERSION}
+      WHERE pending_token = ${token} AND signed_at IS NULL
+      RETURNING id, role, person_name, person_email, sent_by_email, registration_id
+    `;
+    if (updated.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
 
-      // Confirm to the coach + Main LC (best-effort).
+    const u = updated[0];
+    const isOneOff = u.role === 'one_off';
+
+    if (!isOneOff) {
+      // Backup-coach branch: confirm to coach + Main LC, propagate photo
+      // consent into member_profiles.parents[] so the Directory honors it.
       try {
         const related = await sql`
-          SELECT r.main_learning_coach, r.email AS main_email, r.season, r.existing_family_name
-          FROM registrations r WHERE r.id = ${updated[0].registration_id} LIMIT 1
+          SELECT r.main_learning_coach, r.email AS main_email, r.existing_family_name
+          FROM registrations r WHERE r.id = ${u.registration_id} LIMIT 1
         `;
         const info = related[0] || {};
 
-        // Propagate co-parent consent into member_profiles.parents[] so photo
-        // rendering honors the backup LC's own choice. Only matters when the
-        // backup LC is actually a parent in the family's Directory listing
-        // (i.e. a spouse); grandparents / friend backups don't appear in the
-        // face cards so skipping the upsert for them is fine.
         try {
           const famName = deriveFamilyName(info.main_learning_coach || '', info.existing_family_name || '');
           const famEmail = deriveFamilyEmail(info.main_learning_coach || '', famName);
           if (famEmail) {
             await upsertParentPhotoConsent(
-              sql, famEmail, famName, updated[0].name, photo_consent
+              sql, famEmail, famName, u.person_name, photo_consent
             );
           }
         } catch (consentErr) {
           console.error('Backup LC photo consent propagation error (non-fatal):', consentErr);
         }
+
         const resend = new Resend(process.env.RESEND_API_KEY);
         await resend.emails.send({
           from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
-          to: updated[0].email,
+          to: u.person_email,
           cc: [info.main_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
           replyTo: 'membership@rootsandwingsindy.com',
           subject: emailSubject(`Roots & Wings Co-op: Backup Learning Coach waiver on file`),
           html: `
             <h2>Waiver signed — thank you</h2>
-            <p>Thanks, ${escapeHtml(updated[0].name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(info.main_learning_coach || 'Roots & Wings')} family</strong> is on file.</p>
+            <p>Thanks, ${escapeHtml(u.person_name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(info.main_learning_coach || 'Roots & Wings')} family</strong> is on file.</p>
             <p><strong>Signed:</strong> ${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</p>
             <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
           `,
@@ -882,46 +906,29 @@ async function handleBackupWaiverSign(body, req, res) {
       } catch (mailErr) {
         console.error('Backup waiver confirmation email error (non-fatal):', mailErr);
       }
-
-      return res.status(200).json({ success: true, name: updated[0].name });
+    } else {
+      // One-off branch: confirm to recipient + the Comms Director who sent it.
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+          to: u.person_email,
+          cc: [u.sent_by_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
+          replyTo: 'membership@rootsandwingsindy.com',
+          subject: emailSubject(`Roots & Wings Co-op: Waiver on file`),
+          html: `
+            <h2>Waiver signed — thank you</h2>
+            <p>Thanks, ${escapeHtml(u.person_name)}! Your Roots &amp; Wings waiver is on file.</p>
+            <p><strong>Signed:</strong> ${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</p>
+            <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+          `,
+        });
+      } catch (mailErr) {
+        console.error('One-off waiver confirmation email error (non-fatal):', mailErr);
+      }
     }
 
-    // One-off waiver sign path.
-    const existingOneOff = await sql`
-      SELECT id, signed_at, sent_by_email FROM one_off_waivers WHERE token = ${token} LIMIT 1
-    `;
-    if (existingOneOff.length === 0) return res.status(404).json({ error: 'Waiver link not found.' });
-    if (existingOneOff[0].signed_at) return res.status(409).json({ error: 'This waiver has already been signed.' });
-
-    const updatedOneOff = await sql`
-      UPDATE one_off_waivers
-      SET signed_at = NOW(), signature_name = ${signature_name}, signature_date = ${signature_date},
-          photo_consent = ${photo_consent}
-      WHERE token = ${token} AND signed_at IS NULL
-      RETURNING id, name, email, sent_by_email
-    `;
-    if (updatedOneOff.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
-
-    try {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
-        from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
-        to: updatedOneOff[0].email,
-        cc: [updatedOneOff[0].sent_by_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
-        replyTo: 'membership@rootsandwingsindy.com',
-        subject: emailSubject(`Roots & Wings Co-op: Waiver on file`),
-        html: `
-          <h2>Waiver signed — thank you</h2>
-          <p>Thanks, ${escapeHtml(updatedOneOff[0].name)}! Your Roots &amp; Wings waiver is on file.</p>
-          <p><strong>Signed:</strong> ${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</p>
-          <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
-        `,
-      });
-    } catch (mailErr) {
-      console.error('One-off waiver confirmation email error (non-fatal):', mailErr);
-    }
-
-    return res.status(200).json({ success: true, name: updatedOneOff[0].name });
+    return res.status(200).json({ success: true, name: u.person_name });
   } catch (err) {
     console.error('Backup waiver sign error:', err);
     return res.status(500).json({ error: 'Could not record signature.' });
@@ -934,7 +941,7 @@ async function handleBackupWaiverSign(body, req, res) {
 // Membership Director flags a registration as declined. We email the family
 // (cc'ing Communications, Treasurer, and Membership), then hard-delete all
 // user info created by the registration: the registrations row itself,
-// backup_coach_waivers (cascades), and any member_profiles row we derived at
+// waiver_signatures (cascades on registration_id), and any member_profiles row we derived at
 // registration time. Treasurer issues the refund manually against the PayPal
 // transaction ID included in the email.
 async function handleRegistrationDecline(body, req, res) {
@@ -978,7 +985,7 @@ async function handleRegistrationDecline(body, req, res) {
       console.error('member_profiles delete (non-fatal):', mpErr);
     }
 
-    // backup_coach_waivers FK is ON DELETE CASCADE, so those clear with the
+    // waiver_signatures.registration_id is ON DELETE CASCADE, so MLC + backup-coach waiver rows clear with the
     // registration row. No separate DELETE needed.
     await sql`DELETE FROM registrations WHERE id = ${id}`;
 
@@ -1253,73 +1260,90 @@ async function handleWaiversReport(req, res) {
   }
   try {
     const sql = getSql();
-    // sent_at uses COALESCE(last_sent_at, created_at) so the Resend
-    // action surfaces the latest send timestamp instead of the original
-    // insert date — matters when Comms is prioritizing pending waivers.
-    const backup = await sql`
-      SELECT 'backup' AS source, b.id, b.name, b.email, b.signed_at,
-             COALESCE(b.last_sent_at, b.created_at) AS sent_at,
-             r.main_learning_coach AS sent_by, r.season
-      FROM backup_coach_waivers b
-      JOIN registrations r ON r.id = b.registration_id
-      ORDER BY COALESCE(b.last_sent_at, b.created_at) DESC
+    // Single query against waiver_signatures. sent_at uses COALESCE so the
+    // Resend action surfaces the latest send timestamp instead of the
+    // original insert date — matters when Comms is prioritizing pending rows.
+    // For Main LCs, "sent_by" is themselves; for backup coaches, it's the
+    // Main LC who listed them; for one-offs, the Comms Director who sent it.
+    const rows = await sql`
+      SELECT ws.id, ws.role, ws.season, ws.waiver_version,
+             ws.person_name AS name, ws.person_email AS email,
+             ws.signed_at, ws.signature_name, ws.signature_date,
+             COALESCE(ws.last_sent_at, ws.sent_at, ws.signed_at, ws.created_at) AS sent_at,
+             ws.sent_by_email, ws.note,
+             r.main_learning_coach
+      FROM waiver_signatures ws
+      LEFT JOIN registrations r ON r.id = ws.registration_id
+      ORDER BY COALESCE(ws.last_sent_at, ws.sent_at, ws.signed_at, ws.created_at) DESC
     `;
-    const oneOff = await sql`
-      SELECT 'one_off' AS source, id, name, email, signed_at,
-             COALESCE(last_sent_at, sent_at) AS sent_at,
-             sent_by_email AS sent_by, note
-      FROM one_off_waivers
-      ORDER BY COALESCE(last_sent_at, sent_at) DESC
-    `;
-    // Registration signers — Main LC for every registration, plus any
-    // 18+ adult students whose signatures were captured on the form.
-    // Both are always "signed" by definition (the form requires the
-    // signature inline before submit), so they sort below pending
-    // backup/one-off rows on the client.
-    const regs = await sql`
-      SELECT id, season, main_learning_coach, email, signature_name,
-             signature_date, student_signature, created_at
-      FROM registrations
-      ORDER BY created_at DESC
-    `;
-    const registration = [];
-    regs.forEach(r => {
-      registration.push({
-        source: 'registration',
-        id: r.id,
-        name: r.signature_name || r.main_learning_coach,
-        email: r.email,
-        signed_at: r.signature_date || r.created_at,
-        sent_at: r.created_at,
-        sent_by: r.main_learning_coach,
-        season: r.season,
-        context: 'Main Learning Coach'
-      });
-      // student_signature is a single string formatted as
-      // "KidName: SignedName; KidName2: SignedName2" — parse if present.
-      const ss = String(r.student_signature || '').trim();
-      if (ss) {
-        ss.split(/\s*;\s*/).forEach(part => {
-          if (!part) return;
-          const colonIdx = part.indexOf(':');
-          if (colonIdx === -1) return;
-          const kidName = part.slice(0, colonIdx).trim();
-          const signedName = part.slice(colonIdx + 1).trim();
-          if (!signedName) return;
-          registration.push({
-            source: 'registration',
-            id: r.id + '-' + kidName,
-            name: signedName,
-            email: r.email,
-            signed_at: r.signature_date || r.created_at,
-            sent_at: r.created_at,
-            sent_by: r.main_learning_coach,
-            season: r.season,
-            context: 'Adult student (' + kidName + ')'
-          });
+    // Re-shape into the three buckets the Waivers Report renderer
+    // expects ({backup, oneOff, registration}). Adult-student signatures
+    // (currently only stored on registrations.student_signature) are
+    // surfaced as additional "registration" rows by walking the
+    // registrations table once for the parsed pseudo-rows.
+    const backup = [], oneOff = [], registration = [];
+    rows.forEach(ws => {
+      if (ws.role === 'backup_coach') {
+        backup.push({
+          source: 'backup', id: ws.id, name: ws.name, email: ws.email,
+          signed_at: ws.signed_at, sent_at: ws.sent_at,
+          sent_by: ws.main_learning_coach || '',
+          season: ws.season, waiver_version: ws.waiver_version
+        });
+      } else if (ws.role === 'one_off') {
+        oneOff.push({
+          source: 'one_off', id: ws.id, name: ws.name, email: ws.email,
+          signed_at: ws.signed_at, sent_at: ws.sent_at,
+          sent_by: ws.sent_by_email || '', note: ws.note,
+          season: ws.season, waiver_version: ws.waiver_version
+        });
+      } else if (ws.role === 'main_lc') {
+        registration.push({
+          source: 'registration', id: ws.id,
+          name: ws.signature_name || ws.name, email: ws.email,
+          signed_at: ws.signature_date || ws.signed_at,
+          sent_at: ws.signed_at,
+          sent_by: ws.main_learning_coach || ws.name,
+          season: ws.season, context: 'Main Learning Coach',
+          waiver_version: ws.waiver_version
         });
       }
     });
+
+    // Adult-student signatures aren't yet in waiver_signatures (they're
+    // captured as a single delimited string on registrations.student_signature
+    // at form submit). Surface them as virtual rows so they still appear in
+    // the report. Future work: give them their own waiver_signatures rows.
+    const regsForStudents = await sql`
+      SELECT id, season, main_learning_coach, email, signature_date,
+             student_signature, created_at
+      FROM registrations
+      WHERE student_signature IS NOT NULL AND student_signature <> ''
+    `;
+    regsForStudents.forEach(r => {
+      const ss = String(r.student_signature || '').trim();
+      if (!ss) return;
+      ss.split(/\s*;\s*/).forEach(part => {
+        if (!part) return;
+        const colonIdx = part.indexOf(':');
+        if (colonIdx === -1) return;
+        const kidName = part.slice(0, colonIdx).trim();
+        const signedName = part.slice(colonIdx + 1).trim();
+        if (!signedName) return;
+        registration.push({
+          source: 'registration',
+          id: r.id + '-' + kidName,
+          name: signedName,
+          email: r.email,
+          signed_at: r.signature_date || r.created_at,
+          sent_at: r.created_at,
+          sent_by: r.main_learning_coach,
+          season: r.season,
+          context: 'Adult student (' + kidName + ')'
+        });
+      });
+    });
+
     return res.status(200).json({ backup, oneOff, registration });
   } catch (err) {
     console.error('waivers report error:', err);
@@ -1352,9 +1376,23 @@ async function handleWaiverSend(body, req, res) {
     const sql = getSql();
     const token = crypto.randomUUID().replace(/-/g, '');
 
+    // One-offs aren't tied to a registration. Derive a season from "now"
+    // (Aug-May = same year; Jun-Jul rolls into upcoming year) so the
+    // unique (person_email, season) index stays meaningful.
+    const now = new Date();
+    const yr = now.getUTCFullYear();
+    const mo = now.getUTCMonth() + 1;
+    const season = mo >= 8 ? `${yr}-${yr + 1}` : `${yr - 1}-${yr}`;
+
     await sql`
-      INSERT INTO one_off_waivers (name, email, token, sent_by_email, note)
-      VALUES (${name}, ${email}, ${token}, ${user.email}, ${note})
+      INSERT INTO waiver_signatures (
+        season, role, person_name, person_email,
+        pending_token, sent_at, sent_by_email, note
+      ) VALUES (
+        ${season}, 'one_off', ${name}, ${email},
+        ${token}, NOW(), ${user.email}, ${note}
+      )
+      ON CONFLICT DO NOTHING
     `;
 
     const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
@@ -1408,52 +1446,47 @@ async function handleWaiverResend(body, req, res) {
     });
   }
 
+  // The legacy `source` param is accepted but no longer needed for routing
+  // — everything now lives in waiver_signatures and id is unique across roles.
   const source = String(body.source || '').trim();
   const id = parseInt(body.id, 10);
   if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Valid waiver id is required.' });
-  if (source !== 'backup' && source !== 'one_off') return res.status(400).json({ error: 'source must be "backup" or "one_off".' });
+  if (source && source !== 'backup' && source !== 'one_off') return res.status(400).json({ error: 'source must be "backup" or "one_off" if provided.' });
 
   try {
     const sql = getSql();
-    let row, sentBy;
-    if (source === 'backup') {
-      const rows = await sql`
-        SELECT b.id, b.name, b.email, b.token, b.signed_at,
-               r.main_learning_coach AS sent_by
-        FROM backup_coach_waivers b
-        JOIN registrations r ON r.id = b.registration_id
-        WHERE b.id = ${id}
-        LIMIT 1
-      `;
-      row = rows[0];
-      sentBy = row && row.sent_by;
-    } else {
-      const rows = await sql`
-        SELECT id, name, email, token, signed_at, note
-        FROM one_off_waivers
-        WHERE id = ${id}
-        LIMIT 1
-      `;
-      row = rows[0];
-      sentBy = null;
-    }
+    const rows = await sql`
+      SELECT ws.id, ws.role, ws.person_name AS name, ws.person_email AS email,
+             ws.pending_token AS token, ws.signed_at, ws.note,
+             r.main_learning_coach AS sent_by
+      FROM waiver_signatures ws
+      LEFT JOIN registrations r ON r.id = ws.registration_id
+      WHERE ws.id = ${id}
+      LIMIT 1
+    `;
+    const row = rows[0];
     if (!row) return res.status(404).json({ error: 'Waiver not found.' });
     if (row.signed_at) return res.status(409).json({ error: 'Already signed — nothing to resend.' });
+    if (!row.token) return res.status(409).json({ error: 'No pending token on this row — cannot resend.' });
+    if (row.role !== 'backup_coach' && row.role !== 'one_off') {
+      return res.status(400).json({ error: 'Only backup-coach or one-off waivers can be resent.' });
+    }
 
+    const isBackup = row.role === 'backup_coach';
     const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
       ? `${req.headers['x-forwarded-proto']}://${req.headers.host}`
       : 'https://roots-and-wings-topaz.vercel.app';
     const link = `${baseUrl}/waiver.html?token=${encodeURIComponent(row.token)}`;
-    const note = source === 'one_off' ? String(row.note || '').trim() : '';
+    const note = isBackup ? '' : String(row.note || '').trim();
 
     let emailed = false;
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
-      const subject = source === 'backup'
+      const subject = isBackup
         ? `Reminder: Roots & Wings Co-op backup Learning Coach waiver`
         : `Reminder: Roots & Wings Co-op waiver`;
-      const intro = source === 'backup'
-        ? `<p>This is a reminder to sign the Roots &amp; Wings Homeschool Co-op waiver. ${escapeHtml(sentBy || 'The Main Learning Coach')} listed you as a backup Learning Coach; the waiver needs to be on file before you sub or cover at co-op.</p>`
+      const intro = isBackup
+        ? `<p>This is a reminder to sign the Roots &amp; Wings Homeschool Co-op waiver. ${escapeHtml(row.sent_by || 'The Main Learning Coach')} listed you as a backup Learning Coach; the waiver needs to be on file before you sub or cover at co-op.</p>`
         : `<p>This is a reminder to review and sign the Roots &amp; Wings Homeschool Co-op waiver before joining us at co-op.</p>`;
       await resend.emails.send({
         from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
@@ -1475,11 +1508,7 @@ async function handleWaiverResend(body, req, res) {
       console.error('Waiver resend email error (non-fatal):', mailErr);
     }
 
-    if (source === 'backup') {
-      await sql`UPDATE backup_coach_waivers SET last_sent_at = NOW() WHERE id = ${id}`;
-    } else {
-      await sql`UPDATE one_off_waivers SET last_sent_at = NOW() WHERE id = ${id}`;
-    }
+    await sql`UPDATE waiver_signatures SET last_sent_at = NOW() WHERE id = ${id}`;
 
     return res.status(200).json({ success: true, emailed, link });
   } catch (err) {

@@ -22,4 +22,10 @@ function emailSubject(subject) {
     : '[TEST] ' + subject;
 }
 
-module.exports = { ALLOWED_ORIGINS, emailSubject };
+// Current waiver version label. Stamped onto every new waiver_signatures row
+// at sign time. Bump this any time the text in waiver.html / register.html
+// changes materially, and snapshot the prior version into /waivers/<old>.html
+// so old signatures still resolve to the exact text that was agreed to.
+const WAIVER_VERSION = '2026-05-01';
+
+module.exports = { ALLOWED_ORIGINS, emailSubject, WAIVER_VERSION };

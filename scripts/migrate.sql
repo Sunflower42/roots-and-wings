@@ -411,6 +411,57 @@ ALTER TABLE backup_coach_waivers ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMP
 ALTER TABLE one_off_waivers      ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ;
 
 -- ──────────────────────────────────────────────
+-- Waiver signatures — consolidated, versioned record of every signed waiver.
+--
+-- Replaces the three split sources (registrations.signature_*, backup_coach_waivers,
+-- one_off_waivers) with one row per (person_email, season). The waiver_version
+-- column is a date string (e.g. '2026-04-27') that maps to an archived copy in
+-- /waivers/<version>.html, so any future reader can see the exact text someone
+-- agreed to. New signatures land here; the legacy tables stay populated by the
+-- backfill until callers are fully migrated, then drop in a follow-up.
+--
+-- Annual re-signing is implicit: a new season produces a fresh row. The unique
+-- index on (LOWER(person_email), season) prevents accidental duplicates while
+-- still allowing the same person to sign year over year.
+--
+-- pending_token is set only while a backup-coach or one-off recipient hasn't
+-- signed yet; on sign it stays in place (so the token URL keeps resolving) but
+-- signed_at / signature_name / signature_date / waiver_version become populated.
+--
+-- waiver_version is set at *sign time* (not row creation), so a backup coach
+-- who reads a newer version reflects what they actually agreed to. NULL until
+-- signed.
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS waiver_signatures (
+  id SERIAL PRIMARY KEY,
+  season TEXT NOT NULL,
+  waiver_version TEXT,
+  role TEXT NOT NULL CHECK (role IN ('main_lc', 'backup_coach', 'one_off')),
+  person_name TEXT NOT NULL,
+  person_email TEXT NOT NULL,
+  family_email TEXT DEFAULT '',
+  registration_id INTEGER REFERENCES registrations(id) ON DELETE CASCADE,
+  signed_at TIMESTAMPTZ,
+  signature_name TEXT DEFAULT '',
+  signature_date DATE,
+  photo_consent BOOLEAN NOT NULL DEFAULT TRUE,
+  pending_token TEXT UNIQUE,
+  sent_at TIMESTAMPTZ,
+  last_sent_at TIMESTAMPTZ,
+  sent_by_email TEXT DEFAULT '',
+  note TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS waiver_signatures_person_season_idx
+  ON waiver_signatures (LOWER(person_email), season);
+CREATE INDEX IF NOT EXISTS waiver_signatures_registration_idx
+  ON waiver_signatures (registration_id);
+CREATE INDEX IF NOT EXISTS waiver_signatures_family_email_idx
+  ON waiver_signatures (LOWER(family_email));
+CREATE INDEX IF NOT EXISTS waiver_signatures_role_signed_idx
+  ON waiver_signatures (role, signed_at);
+
+-- ──────────────────────────────────────────────
 -- Tours — prospective-family pipeline managed by the Membership Director.
 -- One row per request submitted via the public tour form. Status drives
 -- the lifecycle: requested → scheduled → toured → joined / declined /

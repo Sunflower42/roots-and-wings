@@ -3122,7 +3122,6 @@
     paypalFeeRate: 0.0199,
     paypalFeeFixed: 0.49,
     checkPayableTo: 'Roots and Wings Homeschool, Inc.',
-    checkDeliverTo: 'Jessica Shewan (Treasurer)',
     paypalMerchantId: 'MHDL7HTNRVQHE',
     semesters: {
       fall:   { name: 'Fall '   + ACTIVE_YEAR.fallYear,   sessions: [1, 2],     dueDate: FALL_DUE_DATE,   deposit: 40, showClassFees: SHOW_FALL_CLASS_FEES,   visible: true },
@@ -3969,7 +3968,7 @@
         'fee will appear here.</p>';
     }
     html += '<div class="mf-billing-footer">';
-    html += '<p>Also accepted: check payable to <em>' + BILLING_CONFIG.checkPayableTo + '</em>, deliver to ' + BILLING_CONFIG.checkDeliverTo + '</p>';
+    html += '<p>Also accepted: check payable to <em>' + BILLING_CONFIG.checkPayableTo + '</em>. Contact <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a> to arrange delivery.</p>';
     html += '<p class="mf-billing-contact">Questions? <a href="mailto:treasurer@rootsandwingsindy.com">treasurer@rootsandwingsindy.com</a></p>';
     html += '</div>';
     html += '</div>';
@@ -5965,6 +5964,16 @@
     { key: 'sent_at', label: 'Sent', type: 'date',
       render: function (w) { return formatReportDate(w.sent_at); }
     },
+    { key: 'waiver_version', label: 'Version', type: 'string',
+      // Versioned waiver text lives at /waivers/<version>.html (snapshot per
+      // version, kept indefinitely). Pending rows have no version yet —
+      // it's stamped at sign time, not row creation. Show "—" for those.
+      render: function (w) {
+        if (!w.waiver_version) return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        var v = escapeHtmlWs(w.waiver_version);
+        return '<a href="/waivers/' + encodeURIComponent(w.waiver_version) + '.html" target="_blank" rel="noopener">' + v + '</a>';
+      }
+    },
     { key: '_actions', label: 'Actions', type: 'string', sortable: false,
       render: function (w) {
         var resendable = !w.signed && (w.source === 'Backup Coach' || w.source === 'One-off');
@@ -6007,13 +6016,13 @@
       // (always signed by definition \u2014 form requires signature inline).
       var merged = [];
       backup.forEach(function (b) {
-        merged.push({ source: 'Backup Coach', rowId: b.id, name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '' });
+        merged.push({ source: 'Backup Coach', rowId: b.id, name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '', waiver_version: b.waiver_version || '' });
       });
       oneOff.forEach(function (o) {
-        merged.push({ source: 'One-off', rowId: o.id, name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, note: o.note || '', context: o.sent_by ? 'by ' + o.sent_by : '' });
+        merged.push({ source: 'One-off', rowId: o.id, name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, note: o.note || '', context: o.sent_by ? 'by ' + o.sent_by : '', waiver_version: o.waiver_version || '' });
       });
       registration.forEach(function (r) {
-        merged.push({ source: 'Registration', rowId: r.id, name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '' });
+        merged.push({ source: 'Registration', rowId: r.id, name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '', waiver_version: r.waiver_version || '' });
       });
       _waiversCache = merged;
 
