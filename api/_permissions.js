@@ -57,6 +57,16 @@ function canonicalTitle(t) {
 
 function isSuperUser(email) {
   if (!email) return false;
+  // In non-prod environments (preview / development), any signed-in
+  // @rootsandwingsindy.com user is treated as a super user so dev testers
+  // can use View As to impersonate any role-holder family. Auth itself is
+  // unchanged — Google ID token verification still runs first, so only
+  // real Workspace accounts get past the gate. Mirrors the client-side
+  // isDevHost() unlock in script.js.
+  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
+    const lower = String(email).toLowerCase();
+    if (lower.endsWith('@rootsandwingsindy.com')) return true;
+  }
   return SUPER_USER_EMAILS.indexOf(String(email).toLowerCase()) !== -1;
 }
 
