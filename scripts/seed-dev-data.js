@@ -56,7 +56,13 @@ function buildFamilyRecord(f) {
     phone: '3175550000',
     address: '100 Dev Lane, Indianapolis, IN 46220',
     parents: [
-      { firstName: f.firstName, lastName: f.lastName, email: f.familyEmail, role: 'mlc' }
+      {
+        name: f.firstName + ' ' + f.lastName,
+        firstName: f.firstName,
+        lastName: f.lastName,
+        email: f.familyEmail,
+        role: 'mlc'
+      }
     ],
     kids: [
       { name: 'Test Kid', birth_date: '2018-01-15', photo_consent: true }
