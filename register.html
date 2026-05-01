@@ -945,11 +945,21 @@
                   msg = 'Thanks! Your Fall Membership Fee has been paid (transaction ' + details.id + ') and your registration is saved. You\'ll get a confirmation email shortly.';
                   document.getElementById('reg-done-msg').textContent = msg;
                 } else {
-                  // Payment succeeded but save failed — tell the user clearly
+                  // Payment succeeded but save failed — tell the user clearly,
+                  // and if the API returned a specific reason (e.g. duplicate
+                  // registration), surface that so they know what to fix.
                   document.getElementById('reg-done-msg').textContent = 'Your payment went through.';
                   var txnEl = document.getElementById('reg-done-txn');
                   if (txnEl) txnEl.textContent = details.id;
-                  document.getElementById('reg-done-save-warning').style.display = '';
+                  var warnEl = document.getElementById('reg-done-save-warning');
+                  warnEl.style.display = '';
+                  if (res && res.error) {
+                    var reasonEl = document.createElement('p');
+                    reasonEl.style.marginTop = '8px';
+                    reasonEl.style.fontWeight = '600';
+                    reasonEl.textContent = 'Reason: ' + res.error;
+                    warnEl.appendChild(reasonEl);
+                  }
                 }
                 showStep('done');
               });
@@ -998,7 +1008,10 @@
             "Thanks! Your registration is saved and your spot is held. Please contact treasurer@rootsandwingsindy.com to arrange payment of the $40 registration fee by cash or check (payable to Roots and Wings Homeschool, Inc.). You'll get a confirmation email shortly, and another email once payment is recorded.";
           showStep('done');
         } else {
-          showError('reg-pay-error', 'Could not save your registration. Please try again or email treasurer@rootsandwingsindy.com.');
+          var msg = (res && res.error)
+            ? res.error
+            : 'Could not save your registration. Please try again or email membership@rootsandwingsindy.com.';
+          showError('reg-pay-error', msg);
         }
       });
     });
@@ -1017,7 +1030,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       }).then(function (r) {
-        return r.json().then(function (d) { return r.ok ? d : null; }).catch(function () { return null; });
+        // Always return the parsed body (or null on parse failure) so the
+        // caller can branch on res.id (success) or res.error (server-side
+        // validation message worth surfacing — e.g. "A registration already
+        // exists for this email this season.").
+        return r.json().then(function (d) { return d; }).catch(function () { return null; });
       }).catch(function () { return null; });
     }
 
