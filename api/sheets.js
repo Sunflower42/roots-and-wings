@@ -1550,9 +1550,15 @@ async function participationFetchSheetData(sheetsClient) {
   var familiesPromise = loadFamiliesFromProfiles(sql).catch(function (e) {
     console.error('Profiles fetch failed:', e.message); return [];
   });
-  var masterPromise = fetchSheet(sheetsClient, masterSheetId).catch(function (e) {
-    console.error('Master fetch failed:', e.message); return {};
-  });
+  // Dev/Preview environments skip the master-sheet read so participation tests
+  // run against DB-only data (mirrors the dev gate in the main /api/sheets
+  // handler). In prod we still pull AM/PM/cleaning/events from the master sheet.
+  var isProdEnv = process.env.VERCEL_ENV === 'production';
+  var masterPromise = isProdEnv
+    ? fetchSheet(sheetsClient, masterSheetId).catch(function (e) {
+        console.error('Master fetch failed:', e.message); return {};
+      })
+    : Promise.resolve({});
   var resultsP = await Promise.all([familiesPromise, masterPromise]);
   var families = resultsP[0];
   var masterTabs = resultsP[1] || {};
@@ -2193,20 +2199,29 @@ module.exports = async function handler(req, res) {
     var directorySheetId = process.env.DIRECTORY_SHEET_ID;
     var masterSheetId = process.env.MASTER_SHEET_ID;
 
-    // Fetch both spreadsheets
-    var directoryTabs, masterTabs;
+    // Fetch both spreadsheets — but ONLY in production. Preview / Development
+    // deploys read DB-only so dev testers see the seeded role-named families
+    // instead of the real prod members that live in the shared Google Sheets.
+    // Billing reads (handled in a separate handler) intentionally still touch
+    // sheets in dev — they're scoped to a different sheet ID.
+    var directoryTabs = {}, masterTabs = {};
     var errors = [];
-    try {
-      directoryTabs = await fetchSheet(sheets, directorySheetId);
-    } catch (e) {
-      errors.push({ sheet: 'directory', error: 'Failed to fetch' });
-      directoryTabs = {};
-    }
-    try {
-      masterTabs = await fetchSheet(sheets, masterSheetId);
-    } catch (e) {
-      errors.push({ sheet: 'master', error: 'Failed to fetch' });
-      masterTabs = {};
+    var isProdEnv = process.env.VERCEL_ENV === 'production';
+    if (isProdEnv) {
+      try {
+        directoryTabs = await fetchSheet(sheets, directorySheetId);
+      } catch (e) {
+        errors.push({ sheet: 'directory', error: 'Failed to fetch' });
+        directoryTabs = {};
+      }
+      try {
+        masterTabs = await fetchSheet(sheets, masterSheetId);
+      } catch (e) {
+        errors.push({ sheet: 'master', error: 'Failed to fetch' });
+        masterTabs = {};
+      }
+    } else {
+      console.log('[dev-mode] skipping directory + master sheet reads in non-prod env (VERCEL_ENV=' + (process.env.VERCEL_ENV || 'unset') + ')');
     }
 
     var result = { errors: errors };
