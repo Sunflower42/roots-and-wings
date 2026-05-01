@@ -160,3 +160,25 @@ End-state: remove `backup_coach_waivers`, `one_off_waivers`, and the `registrati
 - Then drop the columns and remove the writes from the registration insert path.
 
 **Estimated:** Phase A is 15 min (2-line migration + run). Phase B is 1–2 hours.
+
+## Rotate GOOGLE_SERVICE_ACCOUNT_KEY (blocked by org policy)
+
+Vercel flagged `GOOGLE_SERVICE_ACCOUNT_KEY` as "Needs Attention" — its value was created without the Sensitive flag, so it was readable by anyone with project access. Should be rotated + saved as Sensitive.
+
+**Blocker:** Google Cloud project `rw-members-auth` has an organization policy enforced — `iam.disableServiceAccountKeyCreation` — that prevents creating new service-account JSON keys. Rotating the existing key requires resolving this first.
+
+**Options to unblock:**
+- **Temporarily lift the policy** (Workspace admin): Cloud Console → IAM & Admin → Organization Policies → search for "Disable service account key creation" → temporarily set Enforcement = Off (or scope an exception to project `rw-members-auth`) → create the new key → re-enable the policy.
+- **Use Workload Identity Federation instead:** Configure Vercel as a trusted OIDC issuer to Google Cloud, then have Vercel exchange its short-lived OIDC token for a Google access token. No long-lived key file. Bigger lift — would touch `api/sheets.js getAuth()` to use the federation flow.
+- **Use a different service account in a project without the policy:** Spin up a new service account in a project that allows key creation (or in a personal Google Cloud project), grant it sheet access, swap its key in. Sidesteps the org policy without needing admin to flip it.
+
+**Recommended:** Temporarily lift the policy for the rotation, then re-enable. Fastest. ~10 min once admin access is sorted.
+
+**Once unblocked, the rotation steps are:**
+1. Cloud Console → Service Accounts → `rw-sheets-reader@rw-members-auth.iam.gserviceaccount.com` → Keys → Add Key → Create new (JSON) → save the file.
+2. Copy the entire JSON contents into Vercel: `GOOGLE_SERVICE_ACCOUNT_KEY` → Rotate Variable → paste → Sensitive ON → Save. Note: Sensitive can't combine with Development scope; drop Development if needed (only affects local `vercel dev` Sheets access — `rw-dev` Preview and prod still work).
+3. `npm run deploy:dev` → verify directory loads on `rw-dev.vercel.app/members.html` and `roots-and-wings-topaz.vercel.app/members.html`.
+4. Cloud Console → delete the OLD key from the Keys tab.
+5. Confirm Vercel's revocation prompt.
+
+**Estimated:** 15 min once the org policy is sorted.
