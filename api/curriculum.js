@@ -13,7 +13,7 @@
 
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
-const { Resend } = require('resend');
+const { Resend } = require('./_resend');
 const { ALLOWED_ORIGINS, emailSubject } = require('./_config');
 const { canEditAsRole, getRoleHolderEmail, isSuperUser } = require('./_permissions');
 

@@ -2,7 +2,8 @@
   "name": "roots-and-wings",
   "private": true,
   "scripts": {
-    "test": "node scripts/regression.js"
+    "test": "node scripts/regression.js",
+    "deploy:dev": "node scripts/deploy-dev.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

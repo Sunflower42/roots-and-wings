@@ -7,7 +7,7 @@
 //   - GET ?config=1            — public config (e.g., Google Maps key) for the register page
 
 const crypto = require('crypto');
-const { Resend } = require('resend');
+const { Resend } = require('./_resend');
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { google } = require('googleapis');
