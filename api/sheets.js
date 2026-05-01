@@ -2234,6 +2234,19 @@ module.exports = async function handler(req, res) {
     result.families = dirParsed.families || [];
     result.groupMeta = dirParsed.groupMeta || {};
 
+    // Dev/Preview: sheets were skipped, so families is empty. Build the
+    // list directly from member_profiles instead so the directory + View As
+    // dropdown render against the seeded role-named families.
+    if (!isProdEnv && result.families.length === 0) {
+      try {
+        var sql = getDb();
+        result.families = await loadFamiliesFromProfiles(sql);
+        console.log('[dev-mode] families loaded from member_profiles:', result.families.length);
+      } catch (devLoadErr) {
+        console.error('[dev-mode] loadFamiliesFromProfiles failed:', devLoadErr.message);
+      }
+    }
+
     // Overlay member_profiles (member self-edits). DB wins for any non-empty
     // field; blank DB fields fall through to the sheet value so membership@
     // can still import/correct data via the Sheet when needed.
