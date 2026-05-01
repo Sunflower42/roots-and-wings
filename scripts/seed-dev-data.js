@@ -23,36 +23,40 @@ const SEASON = '2026-2027';
 const SCHOOL_YEAR = '2026-2027';
 const OLD_VERSION = '2026-04-27';
 
-// One family per major role. Email matches the role for easy ID in the
-// View As dropdown. The communications@ family also doubles as a
-// super-user account (matches SUPER_USER_EMAILS in script.js).
+// One family per major role. The Vercel/script.js dropdown label resolves
+// to firstName + ' ' + lastName, so firstName MUST equal the (capitalized)
+// email prefix — that's how deriveFirstNameFromLogin matches a user back
+// to their parentInfo entry. lastName is the role descriptor that pairs
+// naturally ("Communications Director", "Afternoon Class Liaison"). A
+// uniform "Family" suffix is used for short single-word roles where there's
+// no longer descriptor that reads cleanly.
 const ROLE_FAMILIES = [
-  { roleKey: 'president',                familyEmail: 'president@rootsandwingsindy.com',         displayName: 'President',                    firstName: 'Pat'    },
-  { roleKey: 'vice_president',           familyEmail: 'vicepresident@rootsandwingsindy.com',     displayName: 'Vice President',               firstName: 'Vee'    },
-  { roleKey: 'communications_director',  familyEmail: 'communications@rootsandwingsindy.com',    displayName: 'Communications Director',      firstName: 'Cam'    },
-  { roleKey: 'membership_director',      familyEmail: 'membership@rootsandwingsindy.com',        displayName: 'Membership Director',          firstName: 'Mel'    },
-  { roleKey: 'treasurer',                familyEmail: 'treasurer@rootsandwingsindy.com',         displayName: 'Treasurer',                    firstName: 'Tess'   },
-  { roleKey: 'secretary',                familyEmail: 'secretary@rootsandwingsindy.com',         displayName: 'Secretary',                    firstName: 'Sam'    },
-  { roleKey: 'afternoon_class_liaison',  familyEmail: 'afternoon@rootsandwingsindy.com',         displayName: 'Afternoon Class Liaison',      firstName: 'Avery'  },
-  { roleKey: 'morning_class_liaison',    familyEmail: 'morning@rootsandwingsindy.com',           displayName: 'Morning Class Liaison',        firstName: 'Morgan' }
+  { roleKey: 'president',                familyEmail: 'president@rootsandwingsindy.com',      firstName: 'President',      lastName: 'Family'         },
+  { roleKey: 'vice_president',           familyEmail: 'vp@rootsandwingsindy.com',             firstName: 'VP',             lastName: 'Family'         },
+  { roleKey: 'communications_director',  familyEmail: 'communications@rootsandwingsindy.com', firstName: 'Communications', lastName: 'Director'       },
+  { roleKey: 'membership_director',      familyEmail: 'membership@rootsandwingsindy.com',     firstName: 'Membership',     lastName: 'Director'       },
+  { roleKey: 'treasurer',                familyEmail: 'treasurer@rootsandwingsindy.com',      firstName: 'Treasurer',      lastName: 'Family'         },
+  { roleKey: 'secretary',                familyEmail: 'secretary@rootsandwingsindy.com',      firstName: 'Secretary',      lastName: 'Family'         },
+  { roleKey: 'afternoon_class_liaison',  familyEmail: 'afternoon@rootsandwingsindy.com',      firstName: 'Afternoon',      lastName: 'Class Liaison'  },
+  { roleKey: 'morning_class_liaison',    familyEmail: 'morning@rootsandwingsindy.com',        firstName: 'Morning',        lastName: 'Class Liaison'  }
 ];
 
 // One regular member family with no role — for testing the "what does a
 // rank-and-file member see?" perspective.
 const REGULAR_FAMILY = {
-  familyEmail: 'regularmember@rootsandwingsindy.com',
-  displayName: 'Regular Member',
-  firstName: 'Robin'
+  familyEmail: 'member@rootsandwingsindy.com',
+  firstName: 'Member',
+  lastName: 'Family'
 };
 
 function buildFamilyRecord(f) {
   return {
     family_email: f.familyEmail,
-    family_name: f.displayName,
+    family_name: f.lastName,
     phone: '3175550000',
     address: '100 Dev Lane, Indianapolis, IN 46220',
     parents: [
-      { firstName: f.firstName, lastName: f.displayName, email: f.familyEmail, role: 'mlc' }
+      { firstName: f.firstName, lastName: f.lastName, email: f.familyEmail, role: 'mlc' }
     ],
     kids: [
       { name: 'Test Kid', birth_date: '2018-01-15', photo_consent: true }
@@ -141,10 +145,10 @@ function buildFamilyRecord(f) {
       console.log('  ! skip', rf.roleKey, '(no role_descriptions row — run seed-role-descriptions.js first)');
       continue;
     }
-    const personName = rf.firstName + ' ' + rf.displayName;
+    const personName = rf.firstName + ' ' + rf.lastName;
     await sql`
       INSERT INTO role_holders (role_id, email, person_name, family_name, school_year, updated_by)
-      VALUES (${r[0].id}, ${rf.familyEmail}, ${personName}, ${rf.displayName}, ${SCHOOL_YEAR}, 'seed-dev-data.js')
+      VALUES (${r[0].id}, ${rf.familyEmail}, ${personName}, ${rf.lastName}, ${SCHOOL_YEAR}, 'seed-dev-data.js')
       ON CONFLICT (role_id, LOWER(email), school_year) DO NOTHING
     `;
     console.log('  ✓', rf.roleKey.padEnd(28), '→', rf.familyEmail);
