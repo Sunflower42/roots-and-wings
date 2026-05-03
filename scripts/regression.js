@@ -111,6 +111,20 @@ const landmines = [
     regex: /console\.log\s*\(\s*['"`]\[coverage\]/,
   },
   {
+    name: 'no `fam.parents.split` calls outside renderMyFamily/EMI seed',
+    // After the people-table migration, fam.people[] is the canonical
+    // per-person source. fam.parents is kept as a first-name-only
+    // compatibility shim ("Erin & Michael") for the participation report
+    // + a few legacy display strings, NOT for matching duties to people.
+    // Any new `.parents.split(' & ')` is almost certainly the bug we
+    // just fixed. The existing call sites are intentional (display-only
+    // "Parents: ..." strings); raise this allowance only with a comment
+    // explaining why.
+    files: [SCRIPT_JS],
+    regex: /\bfam\.parents\.split\s*\(\s*['"`]\s*&\s*['"`]\s*\)/,
+    allowedHits: 12,
+  },
+  {
     name: 'no new direct `localStorage.getItem(\'rw_user_email\')` reads',
     // View As impersonation routes through `getActiveEmail()`. Direct reads of
     // localStorage skip the sessionStorage override and silently break the
@@ -158,6 +172,7 @@ const unitTests = [
   'scripts/test-helpers.js',
   'scripts/test-reports.js',
   'scripts/test-coparent-auth.js',
+  'scripts/test-responsibilities.js',
 ];
 
 for (const rel of unitTests) {

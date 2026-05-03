@@ -1099,151 +1099,184 @@ async function handleBillingPost(req, res) {
 // ══════════════════════════════════════════════
 // MEMBER PROFILE OVERLAY
 // ══════════════════════════════════════════════
-// member_profiles stores family-editable values that override the Directory
-// sheet for phone / address / per-parent pronouns + photos / per-kid
-// pronouns, allergies, birth_date, schedule, photo. Non-empty DB values win;
-// empty DB values fall through so membership@'s sheet edits still show up.
+// member_profiles stores family-level metadata (phone, address, display
+// name); the normalized people + kids tables hold the per-person rows.
+// This overlay sets fam.people[] (replaces the legacy fam.parentInfo[] +
+// fam.parents string) and merges per-kid DB fields onto the sheet's
+// classlist-derived kids.
+//
+// fam.people[] shape — this is the contract the frontend relies on:
+//   { email, family_email, first_name, last_name, role,
+//     personal_email, phone, pronouns, photo_url, photo_consent,
+//     nicknames: [string] }
+// ordered by sort_order (mlc first, then blc, then other parents).
+
+// Convert a snake_case people row from Postgres into the camelCase-friendly
+// shape the client expects. Keeps photo_consent / photo_url / personal_email
+// in snake_case because the frontend save payload uses snake_case (matches
+// the EMI form field names) — readability over consistency here.
+function shapePersonRow(r) {
+  return {
+    email:          String(r.email || '').toLowerCase(),
+    family_email:   String(r.family_email || '').toLowerCase(),
+    first_name:     r.first_name || '',
+    last_name:      r.last_name || '',
+    role:           r.role || 'parent',
+    personal_email: r.personal_email || '',
+    phone:          r.phone || '',
+    pronouns:       r.pronouns || '',
+    photo_url:      r.photo_url || '',
+    photo_consent:  r.photo_consent !== false,
+    nicknames:      Array.isArray(r.nicknames) ? r.nicknames : []
+  };
+}
 
 async function applyMemberProfileOverlay(families) {
   if (!Array.isArray(families) || families.length === 0) return;
   var sql = getDb();
   var rows = await sql`
     SELECT family_email, family_name, phone, address,
-           parents, kids, placement_notes, additional_emails
+           placement_notes, additional_emails
     FROM member_profiles
   `;
-  if (!rows || rows.length === 0) return;
-  var byEmail = {};
-  rows.forEach(function (r) {
-    if (r.family_email) byEmail[String(r.family_email).toLowerCase()] = r;
+  // Family-level overlay still works even when there are no DB rows (we
+  // synthesize fam.people from the sheet below in that case).
+  var familyByEmail = {};
+  (rows || []).forEach(function (r) {
+    if (r.family_email) familyByEmail[String(r.family_email).toLowerCase()] = r;
+  });
+
+  // Single round-trip per table; group in JS rather than N queries.
+  var peopleRows = await sql`
+    SELECT email, family_email, first_name, last_name, role,
+           personal_email, phone, pronouns, photo_url, photo_consent,
+           nicknames, sort_order
+    FROM people
+    ORDER BY family_email, sort_order, email
+  `;
+  var peopleByFamily = {};
+  (peopleRows || []).forEach(function (pr) {
+    var k = String(pr.family_email || '').toLowerCase();
+    if (!peopleByFamily[k]) peopleByFamily[k] = [];
+    peopleByFamily[k].push(shapePersonRow(pr));
+  });
+
+  var kidsRows = await sql`
+    SELECT id, family_email, first_name, last_name, birth_date,
+           pronouns, allergies, schedule, photo_url, photo_consent,
+           sort_order
+    FROM kids
+    ORDER BY family_email, sort_order, id
+  `;
+  var kidsByFamily = {};
+  (kidsRows || []).forEach(function (kr) {
+    var k = String(kr.family_email || '').toLowerCase();
+    if (!kidsByFamily[k]) kidsByFamily[k] = [];
+    kidsByFamily[k].push(kr);
   });
 
   families.forEach(function (fam) {
     var key = String(fam.email || '').toLowerCase();
-    var p = byEmail[key];
-    if (!p) return;
+    var p = familyByEmail[key];
+    var dbPeople = peopleByFamily[key] || [];
+    var dbKids = kidsByFamily[key] || [];
 
-    if (p.phone) fam.phone = p.phone;
-    if (p.address) fam.address = p.address;
-    if (p.placement_notes) fam.placementNotes = p.placement_notes;
-    // Display name: surface the DB-stored family_name when it differs from
-    // the sheet-parsed last word (e.g. compound surnames like "O'Connor
-    // Gading"). Kept separate from fam.name so existing classlist + last-
-    // initial lookups (which expect the parsed single-word value) keep
-    // working until those callers migrate.
-    if (p.family_name && p.family_name !== fam.name) {
-      fam.displayName = p.family_name;
+    if (p) {
+      if (p.phone) fam.phone = p.phone;
+      if (p.address) fam.address = p.address;
+      if (p.placement_notes) fam.placementNotes = p.placement_notes;
+      // Display name: surface the DB-stored family_name when it differs from
+      // the sheet-parsed last word (e.g. compound surnames like "O'Connor
+      // Gading"). Kept separate from fam.name so existing classlist + last-
+      // initial lookups (which expect the parsed single-word value) keep
+      // working until those callers migrate.
+      if (p.family_name && p.family_name !== fam.name) {
+        fam.displayName = p.family_name;
+      }
     }
 
-    // Phase 3: surface co-parent secondary login emails. The client uses this
-    // to match the authenticated user's JWT email against ANY of the family's
-    // emails, not just the derived primary. fam.email stays as the canonical
-    // primary (still the member_profiles PK + the value used as family_email
-    // in API requests).
-    var addl = Array.isArray(p.additional_emails) ? p.additional_emails : [];
+    // ── People ──
+    // Authoritative source is the people table. If the DB has rows, they
+    // win wholesale (parentInfo + the legacy fam.parents string stay only
+    // as compatibility shims for participation/internal flows).
+    if (dbPeople.length > 0) {
+      fam.people = dbPeople;
+    } else if (Array.isArray(fam.people) && fam.people.length > 0) {
+      // Already populated upstream (e.g. dev-mode loadFamiliesFromProfiles)
+      // — keep as-is.
+    } else {
+      // Sheet-only family with no DB row: synthesize fam.people from the
+      // legacy fam.parents string so the frontend has SOMETHING to render.
+      // No emails available → use the family_email for the [0] slot, so
+      // the MLC at least has a login identity.
+      var sheetFirsts = String(fam.parents || '')
+        .split(/\s*&\s*/).map(function (s) { return s.trim(); }).filter(Boolean);
+      fam.people = sheetFirsts.map(function (n, idx) {
+        var parts = String(n).trim().split(/\s+/);
+        var first = parts[0] || '';
+        var last = parts.length > 1 ? parts.slice(1).join(' ') : '';
+        return {
+          email: idx === 0 ? String(fam.email || '').toLowerCase() : '',
+          family_email: String(fam.email || '').toLowerCase(),
+          first_name: first,
+          last_name: last,
+          role: idx === 0 ? 'mlc' : idx === 1 ? 'blc' : 'parent',
+          personal_email: '',
+          phone: '',
+          pronouns: (fam.parentPronouns && fam.parentPronouns[n]) || '',
+          photo_url: '',
+          photo_consent: true,
+          nicknames: []
+        };
+      });
+    }
+
+    // Compatibility shims — the participation report and a few legacy
+    // sheet helpers still expect fam.parents (first-names string) and
+    // fam.parentInfo (camelCase). The frontend has been migrated off both.
+    // Synthesize from fam.people so they stay consistent.
+    fam.parents = fam.people.map(function (pp) { return pp.first_name; }).filter(Boolean).join(' & ');
+    fam.parentInfo = fam.people.map(function (pp) {
+      return {
+        name: ((pp.first_name || '') + ' ' + (pp.last_name || '')).trim(),
+        firstName: pp.first_name,
+        lastName: pp.last_name,
+        pronouns: pp.pronouns,
+        photoUrl: pp.photo_url,
+        photoConsent: pp.photo_consent !== false,
+        role: pp.role,
+        email: pp.email,
+        personalEmail: pp.personal_email,
+        phone: pp.phone,
+        nicknames: pp.nicknames
+      };
+    });
+
+    // Phase 3 co-parent login surface. Now derived from people.email +
+    // member_profiles.additional_emails (the latter kept for back-compat
+    // with rows that haven't been backfilled into people yet).
     var primary = String(fam.email || '').toLowerCase();
     var seen = primary ? { [primary]: true } : {};
     var loginEmails = primary ? [primary] : [];
+    fam.people.forEach(function (pp) {
+      var lc = String(pp.email || '').toLowerCase();
+      if (lc && !seen[lc]) { seen[lc] = true; loginEmails.push(lc); }
+    });
+    var addl = (p && Array.isArray(p.additional_emails)) ? p.additional_emails : [];
     addl.forEach(function (ae) {
       var lc = String(ae || '').toLowerCase();
       if (lc && !seen[lc]) { seen[lc] = true; loginEmails.push(lc); }
     });
     fam.loginEmails = loginEmails;
 
-    // Parents: merge pronouns and photoUrl onto the derived parent list.
-    // parents are stored on the family as a "First & First" string; we expose
-    // a parsed structure here (parentInfo) so the client can render per-parent
-    // pronouns/photos without rebuilding the split logic.
-    var parentFirstNames = String(fam.parents || '')
-      .split(/\s*&\s*/).map(function (s) { return s.trim(); }).filter(Boolean);
-    var pMap = {};
-    (p.parents || []).forEach(function (pp) {
-      if (pp && pp.name) {
-        var first = String(pp.name).trim().split(/\s+/)[0].toLowerCase();
-        pMap[first] = pp;
-      }
-    });
-    // Phase 4: surface role + per-person email/phone on parentInfo. When the
-    // DB row hasn't been backfilled yet, default by position so the client
-    // gets sensible values: parents[0] = mlc, [1] = blc, [2+] = parent.
-    fam.parentInfo = parentFirstNames.map(function (n, idx) {
-      // Match DB entry by FIRST WORD of the parsed sheet name. For a
-      // compound name like "Aimee O'Connor", the sheet's parsed value is
-      // "Aimee O'Connor" while the DB key is "aimee" — full-string lookup
-      // would miss every time and create phantom duplicates.
-      var firstWord = String(n).trim().split(/\s+/)[0].toLowerCase();
-      var hit = pMap[firstWord] || {};
-      var pronouns = hit.pronouns || (fam.parentPronouns && fam.parentPronouns[n]) || '';
-      if (pronouns) {
-        fam.parentPronouns = fam.parentPronouns || {};
-        fam.parentPronouns[n] = pronouns;
-      }
-      // Prefer the DB-stored name when present so corrections (typo fixes,
-      // updated spellings) flow through to display without waiting on a
-      // sheet edit.
-      var displayedName = hit.name || n;
-      return {
-        name: displayedName,
-        // First/last name carried separately so a parent with their own
-        // surname (maiden name kept) displays correctly without the family
-        // last name being appended.
-        firstName: hit.first_name || '',
-        lastName: hit.last_name || '',
-        pronouns: pronouns,
-        photoUrl: hit.photo_url || '',
-        // Explicit false opts the adult out; anything else (missing field, true)
-        // stays consented so legacy rows and Directory-only families keep photos.
-        photoConsent: hit.photo_consent !== false,
-        role: hit.role || (idx === 0 ? 'mlc' : (idx === 1 ? 'blc' : 'parent')),
-        email: hit.email || '',
-        personalEmail: hit.personal_email || '',
-        phone: hit.phone || '',
-        nicknames: Array.isArray(hit.nicknames) ? hit.nicknames : []
-      };
-    });
-    // Any DB-only parents (name not yet in the sheet) appended so edits are
-    // visible before the sheet catches up. Existence check uses FIRST WORD
-    // so a DB entry "Aimee" doesn't get appended again when parentInfo
-    // already has "Aimee O'Connor".
-    (p.parents || []).forEach(function (pp) {
-      if (!pp || !pp.name) return;
-      var first = String(pp.name).trim().split(/\s+/)[0];
-      var exists = fam.parentInfo.some(function (x) {
-        return String(x.name || '').trim().split(/\s+/)[0].toLowerCase() === first.toLowerCase();
-      });
-      if (!exists) {
-        var nextIdx = fam.parentInfo.length;
-        fam.parentInfo.push({
-          name: pp.name,
-          firstName: pp.first_name || '',
-          lastName: pp.last_name || '',
-          pronouns: pp.pronouns || '',
-          photoUrl: pp.photo_url || '',
-          photoConsent: pp.photo_consent !== false,
-          role: pp.role || (nextIdx === 0 ? 'mlc' : (nextIdx === 1 ? 'blc' : 'parent')),
-          email: pp.email || '',
-          personalEmail: pp.personal_email || '',
-          phone: pp.phone || '',
-          nicknames: Array.isArray(pp.nicknames) ? pp.nicknames : []
-        });
-        if (pp.pronouns) {
-          fam.parentPronouns = fam.parentPronouns || {};
-          fam.parentPronouns[pp.name] = pp.pronouns;
-        }
-      }
-    });
-    // Re-sync the family's parents-string from the (possibly DB-corrected)
-    // parentInfo names so downstream consumers (allPeople, Directory grid,
-    // detail card heading) use the corrected name even when the sheet still
-    // has the legacy spelling.
-    fam.parents = fam.parentInfo.map(function (pi) { return pi.name; }).join(' & ');
-
-    // Kids: match by first name (case-insensitive).
+    // ── Kids ──
+    // Match DB kid rows onto sheet-parsed fam.kids by first name
+    // (case-insensitive). DB wins for non-empty fields. DB-only kids
+    // (no matching sheet entry) get appended.
     var kMap = {};
-    (p.kids || []).forEach(function (k) {
-      if (k && k.name) {
-        var first = String(k.name).trim().split(/\s+/)[0].toLowerCase();
-        kMap[first] = k;
+    dbKids.forEach(function (k) {
+      if (k && k.first_name) {
+        kMap[String(k.first_name).trim().toLowerCase()] = k;
       }
     });
     (fam.kids || []).forEach(function (kid) {
@@ -1255,17 +1288,13 @@ async function applyMemberProfileOverlay(families) {
       if (ov.birth_date) kid.birthDate = ov.birth_date;
       if (ov.schedule) kid.schedule = ov.schedule;
       if (ov.photo_url) kid.photoUrl = ov.photo_url;
-      // Per-kid last name. Empty/missing falls back to family last name in
-      // display (kid.lastName || fam.name pattern in allPeople).
       if (ov.last_name) kid.lastName = ov.last_name;
-      // photo_consent: explicit false opts the child out. Default when the
-      // field is missing is consent=true so legacy rows keep their photos.
       kid.photo_consent = ov.photo_consent !== false;
     });
-    // Append DB-only kids (not yet in the sheet).
-    (p.kids || []).forEach(function (k) {
-      if (!k || !k.name) return;
-      var first = String(k.name).trim().split(/\s+/)[0];
+    // DB-only kids (not in the sheet's classlist).
+    dbKids.forEach(function (k) {
+      if (!k || !k.first_name) return;
+      var first = String(k.first_name).trim();
       var exists = (fam.kids || []).some(function (x) {
         return String(x.name || '').trim().toLowerCase() === first.toLowerCase();
       });
@@ -1285,6 +1314,52 @@ async function applyMemberProfileOverlay(families) {
       }
     });
   });
+
+  // ── Board roles from role_holders ──
+  // Surface fam.boardRole + fam.boardEmail from the role_holders table so
+  // dev environments (where the master sheet's Volunteer Committees tab
+  // is skipped) and any future sheet-free path get the right board cards
+  // in My Workspace + the right "Board Member" duty in My Responsibilities.
+  // In prod, applySheetsData on the client may still overwrite this from
+  // the Volunteer Committees sheet — both sources should agree, but the
+  // sheet stays authoritative until that flow retires.
+  try {
+    var boardRows = await sql`
+      SELECT rh.email, rh.family_name, rd.title
+      FROM role_holders rh
+      JOIN role_descriptions rd ON rd.id = rh.role_id
+      WHERE rd.status = 'active'
+        AND rd.title ~* '(President|Treasurer|Secretary|Director|Class Liaison|Vice)'
+    `;
+    var BOARD_TITLE_NORMALIZE = {
+      'Vice-President': 'Vice President',
+      'Membership Dir.': 'Membership Director',
+      'Sustaining Dir.': 'Sustaining Director',
+      'Communications Dir.': 'Communications Director'
+    };
+    families.forEach(function (fam) {
+      // First match: by primary family_email (covers dev seed where the
+      // role inbox IS the family_email). Otherwise by family_name (the
+      // Volunteer Committees sheet convention — last-name match).
+      var hit = null;
+      var famEmailLc = String(fam.email || '').toLowerCase();
+      var famNameLc = String(fam.name || '').toLowerCase();
+      for (var bi = 0; bi < boardRows.length; bi++) {
+        var br = boardRows[bi];
+        var brEmailLc = String(br.email || '').toLowerCase();
+        var brFamLc = String(br.family_name || '').toLowerCase();
+        if (famEmailLc && brEmailLc === famEmailLc) { hit = br; break; }
+        if (famNameLc && brFamLc === famNameLc) { hit = br; /* keep looking for an email match */ }
+      }
+      if (hit) {
+        var title = BOARD_TITLE_NORMALIZE[hit.title] || hit.title;
+        fam.boardRole = title;
+        fam.boardEmail = String(hit.email || '').toLowerCase() || fam.boardEmail || null;
+      }
+    });
+  } catch (boardErr) {
+    console.warn('[overlay] role_holders lookup failed (non-fatal):', boardErr.message);
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -1489,51 +1564,61 @@ function participationBlankCounts() {
 }
 
 // Build the families[] shape buildParticipationReport expects — name,
-// parents string ("First & First"), email — directly from member_profiles.
-// Replaces the prior Directory-sheet read; everyone in the co-op has a
-// member_profiles row (seeded historically + auto-written by the
-// registration flow), so the DB is now authoritative for "who exists".
+// parents string ("First & First"), email, plus a fam.people[] array — by
+// joining member_profiles with the normalized people table.
+//
+// BLCs are excluded from the participation totals (they only step in for
+// the MLC's absences, so they're not on the same expected-points baseline),
+// but they ARE included in fam.people so the dev-mode dashboard render
+// has the full roster. The fam.parents string + parentInfo[] (consumed by
+// participationBuildNameIndex) only carry MLC + 'parent' rows.
 async function loadFamiliesFromProfiles(sql) {
-  var rows = await sql`
-    SELECT family_email, family_name, parents
+  // Pull families and people in parallel; group people by family.
+  var famRows = await sql`
+    SELECT family_email, family_name
     FROM member_profiles
     ORDER BY LOWER(family_name)
   `;
-  return rows.map(function (r) {
-    var parents = Array.isArray(r.parents) ? r.parents : [];
+  var peopleRows = await sql`
+    SELECT email, family_email, first_name, last_name, role,
+           personal_email, phone, pronouns, photo_url, photo_consent,
+           nicknames, sort_order
+    FROM people
+    ORDER BY family_email, sort_order, email
+  `;
+  var byFamily = {};
+  peopleRows.forEach(function (pr) {
+    var k = String(pr.family_email || '').toLowerCase();
+    if (!byFamily[k]) byFamily[k] = [];
+    byFamily[k].push(shapePersonRow(pr));
+  });
+
+  return famRows.map(function (r) {
+    var key = String(r.family_email || '').toLowerCase();
+    var people = byFamily[key] || [];
+
     var firstNames = [];
     var parentInfo = [];
-    parents.forEach(function (p) {
-      // Backup Learning Coaches (BLCs) aren't expected to hit the
-      // same participation baseline — they only step in for the MLC's
-      // absences. Excluding them from the families list means they
-      // don't get a participation row, their first name doesn't get
-      // indexed, and any master-sheet entry under their name credits
-      // no one (rather than misattributing). Mirror this filter when
-      // reading parent roles in any new participation logic.
-      if (p && String(p.role || '').toLowerCase() === 'blc') return;
-      var fn = String((p && p.first_name) || '').trim();
-      if (!fn) {
-        var nm = String((p && p.name) || '').trim();
-        fn = nm.split(/\s+/)[0] || '';
-      }
+    people.forEach(function (pp) {
+      if (pp.role === 'blc') return; // skip BLCs from participation index
+      var fn = String(pp.first_name || '').trim();
       if (!fn) return;
       firstNames.push(fn);
       parentInfo.push({
-        name: String((p && p.name) || '').trim(),
+        name: ((pp.first_name || '') + ' ' + (pp.last_name || '')).trim(),
         firstName: fn,
-        lastName: String((p && p.last_name) || '').trim(),
-        nicknames: Array.isArray(p && p.nicknames) ? p.nicknames : []
+        lastName: pp.last_name || '',
+        nicknames: pp.nicknames || []
       });
     });
     return {
       name: String(r.family_name || '').trim(),
       parents: firstNames.join(' & '),
       email: String(r.family_email || '').toLowerCase(),
-      // parentInfo carries per-parent metadata (notably nicknames) so
-      // participationBuildNameIndex can register sheet-side aliases like
-      // "Becca" → "Rebecca" for each individual.
-      parentInfo: parentInfo
+      parentInfo: parentInfo,
+      // Full normalized roster for downstream consumers that want every
+      // person (e.g. dev-mode renderMyFamily / View As).
+      people: people
     };
   });
 }
@@ -2343,3 +2428,5 @@ module.exports.parseDirectory = parseDirectory;
 module.exports.parseBillingSheet = parseBillingSheet;
 module.exports.fetchSheet = fetchSheet;
 module.exports.getAuth = getAuth;
+module.exports.applyMemberProfileOverlay = applyMemberProfileOverlay;
+module.exports.loadFamiliesFromProfiles = loadFamiliesFromProfiles;

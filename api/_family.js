@@ -1,27 +1,23 @@
 // Family-membership resolver.
 //
-// Phase 3 of the directory→DB migration. Before this, every ownership check
-// in the codebase compared the JWT email directly to member_profiles.family_email,
-// which prevented co-parents (e.g. Jay Shewan with login jays@) from editing
-// family-scoped data even when they're listed as a parent.
+// Originally Phase 3 of the directory→DB migration; rewritten when the
+// `people` table replaced `member_profiles.parents` JSONB. The lookup
+// chain is now:
+//   1. JWT email matches member_profiles.family_email directly (the primary
+//      parent / family PK).
+//   2. JWT email matches a row in `people` (a co-parent or other adult).
+//   3. (Compat) JWT email matches member_profiles.additional_emails — kept
+//      so families that haven't been backfilled into `people` yet still
+//      resolve. Drop in a follow-up after a few days of clean prod runs.
 //
-// The two helpers below are the central lookup. resolveFamily returns the
-// family_profiles row for a given login email; canActAs answers the boolean
-// "is this user authorized to act for this family" question. Every auth
-// ownership check in tour.js / absences.js / photos.js uses canActAs.
-//
-// Email matching is case-insensitive on both sides. additional_emails is
-// stored verbatim as written (the column has no LOWER() index, but the
-// comparison normalizes via LOWER() / lower(unnest)) so a row inserted with
-// 'Jays@…' still resolves for a JWT with 'jays@…'.
+// Email matching is case-insensitive on both sides.
 
 function normalizeEmail(e) {
   return e ? String(e).trim().toLowerCase() : '';
 }
 
-// Find the member_profiles row owned by this login email, checking the
-// primary family_email first and additional_emails as a secondary lookup.
-// Returns null if the email isn't tied to any family.
+// Find the member_profiles row owned by this login email. Returns null if
+// the email isn't tied to any family.
 async function resolveFamily(sql, userEmail) {
   const email = normalizeEmail(userEmail);
   if (!email) return null;
@@ -30,6 +26,11 @@ async function resolveFamily(sql, userEmail) {
            parents, kids, placement_notes, additional_emails
     FROM member_profiles
     WHERE LOWER(family_email) = ${email}
+       OR EXISTS (
+         SELECT 1 FROM people p
+         WHERE p.family_email = member_profiles.family_email
+           AND LOWER(p.email) = ${email}
+       )
        OR EXISTS (
          SELECT 1 FROM unnest(additional_emails) ae
          WHERE LOWER(ae) = ${email}
@@ -42,7 +43,9 @@ async function resolveFamily(sql, userEmail) {
 // True iff userEmail is allowed to act for the family identified by
 // targetFamilyEmail. Matches when:
 //   - userEmail equals targetFamilyEmail (the primary parent), or
-//   - userEmail appears in that family's additional_emails (a co-parent).
+//   - userEmail belongs to a `people` row whose family_email = targetFamilyEmail
+//     (co-parents and other adults), or
+//   - userEmail appears in that family's additional_emails (legacy fallback).
 // Super-user override is intentionally NOT folded in here — call sites add
 // their own super-user short-circuit so this helper stays focused.
 async function canActAs(sql, userEmail, targetFamilyEmail) {
@@ -53,9 +56,16 @@ async function canActAs(sql, userEmail, targetFamilyEmail) {
   const rows = await sql`
     SELECT 1 FROM member_profiles
     WHERE LOWER(family_email) = ${t}
-      AND EXISTS (
-        SELECT 1 FROM unnest(additional_emails) ae
-        WHERE LOWER(ae) = ${u}
+      AND (
+        EXISTS (
+          SELECT 1 FROM people p
+          WHERE p.family_email = member_profiles.family_email
+            AND LOWER(p.email) = ${u}
+        )
+        OR EXISTS (
+          SELECT 1 FROM unnest(additional_emails) ae
+          WHERE LOWER(ae) = ${u}
+        )
       )
     LIMIT 1
   `;

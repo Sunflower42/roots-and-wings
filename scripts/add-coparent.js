@@ -1,13 +1,9 @@
+// DEPRECATED — writes to the legacy member_profiles.parents JSONB column,
+// which is no longer read after the people-table migration. Use
+// `INSERT INTO people` (or the EMI form) instead. Left in the tree for
+// historical reference; do NOT use to add a new co-parent.
+//
 // Append a co-parent to an existing family's member_profiles.parents JSONB.
-//
-// Phase 1 of the directory → DB migration: lets us add a new co-parent (e.g.
-// Jay Shewan) so they show up in the family roster + photo grid alongside the
-// primary parent, without yet needing their own portal login. Multi-login
-// support comes in Phase 3 (see PARKING_LOT.md "Directory migration").
-//
-// The existing applyMemberProfileOverlay (api/sheets.js) already appends
-// DB-only parents onto the family object served to the client, so this script
-// is the only thing needed for Phase 1.
 //
 // Idempotent — if a parent with the same first name already exists on the row,
 // we update their pronouns instead of inserting a duplicate.

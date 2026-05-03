@@ -882,7 +882,7 @@ async function handleBackupWaiverSign(body, req, res) {
           const famEmail = deriveFamilyEmail(info.main_learning_coach || '', famName);
           if (famEmail) {
             await upsertParentPhotoConsent(
-              sql, famEmail, famName, u.person_name, photo_consent
+              sql, famEmail, famName, u.person_name, photo_consent, u.person_email
             );
           }
         } catch (consentErr) {
@@ -1649,55 +1649,86 @@ function deriveFamilyName(mainLcName, existingFamilyName) {
   return words[words.length - 1] || '';
 }
 
-// Upsert a single parent's photo_consent into member_profiles.parents[]. Used
-// by the registration insert (Main LC's own choice) and the backup LC sign
-// (co-parent's own choice when they happen to be listed in the family). Merges
-// into whatever's already there so we never clobber other portal edits.
-async function upsertParentPhotoConsent(sql, familyEmail, familyName, parentFullName, photoConsent) {
+// Upsert a single parent's photo_consent. Used by the registration insert
+// (Main LC's own choice) and the backup LC sign (co-parent's own choice).
+// Writes against the `people` table. Match priority:
+//   1. Existing person row by email (when parentEmail supplied + non-empty)
+//   2. Existing person row by family_email + LOWER(first_name)
+//   3. Insert a new row (only when parentEmail is supplied — people.email is PK)
+async function upsertParentPhotoConsent(sql, familyEmail, familyName, parentFullName, photoConsent, parentEmail) {
   if (!familyEmail || !parentFullName) return;
   const parentFirst = String(parentFullName).trim().split(/\s+/)[0];
   if (!parentFirst) return;
-  const parentFirstLower = parentFirst.toLowerCase();
+  const parts = String(parentFullName).trim().split(/\s+/);
+  const firstName = parts[0];
+  const lastName = parts.length > 1 ? parts.slice(1).join(' ') : '';
+  const email = String(parentEmail || '').trim().toLowerCase();
 
-  const rows = await sql`
-    SELECT parents FROM member_profiles WHERE family_email = ${familyEmail} LIMIT 1
-  `;
-  const existing = rows[0];
-  const currentParents = (existing && Array.isArray(existing.parents)) ? existing.parents : [];
-
-  let found = false;
-  const mergedParents = currentParents.map(p => {
-    if (!p || !p.name) return p;
-    if (String(p.name).trim().split(/\s+/)[0].toLowerCase() === parentFirstLower) {
-      found = true;
-      return Object.assign({}, p, { photo_consent: photoConsent });
-    }
-    return p;
-  });
-  if (!found) {
-    mergedParents.push({
-      name: parentFirst,
-      pronouns: '',
-      photo_url: '',
-      photo_consent: photoConsent
-    });
-  }
-
+  // Ensure the family row exists so the FK on people resolves.
   await sql`
     INSERT INTO member_profiles (
       family_email, family_name, phone, address, parents, kids,
       placement_notes, updated_by
     ) VALUES (
       ${familyEmail}, ${familyName || ''}, '', '',
-      ${JSON.stringify(mergedParents)}::jsonb, '[]'::jsonb,
-      '', 'waiver-sign'
+      '[]'::jsonb, '[]'::jsonb, '', 'waiver-sign'
     )
     ON CONFLICT (family_email) DO UPDATE SET
-      parents = ${JSON.stringify(mergedParents)}::jsonb,
       family_name = COALESCE(NULLIF(member_profiles.family_name, ''), EXCLUDED.family_name),
-      updated_at = NOW(),
-      updated_by = 'waiver-sign'
+      updated_at = NOW()
   `;
+
+  // 1) Match by email
+  if (email) {
+    const byEmail = await sql`
+      SELECT email FROM people
+      WHERE LOWER(email) = ${email} AND family_email = ${familyEmail}
+      LIMIT 1
+    `;
+    if (byEmail.length > 0) {
+      await sql`
+        UPDATE people SET photo_consent = ${photoConsent}, updated_at = NOW(),
+                          updated_by = 'waiver-sign'
+        WHERE email = ${byEmail[0].email}
+      `;
+      return;
+    }
+  }
+
+  // 2) Match by first_name within the family
+  const byName = await sql`
+    SELECT email FROM people
+    WHERE family_email = ${familyEmail}
+      AND LOWER(first_name) = ${firstName.toLowerCase()}
+    LIMIT 1
+  `;
+  if (byName.length > 0) {
+    await sql`
+      UPDATE people SET photo_consent = ${photoConsent}, updated_at = NOW(),
+                        updated_by = 'waiver-sign'
+      WHERE email = ${byName[0].email}
+    `;
+    return;
+  }
+
+  // 3) Insert (requires an email to satisfy people.email PK)
+  if (email) {
+    await sql`
+      INSERT INTO people (
+        email, family_email, first_name, last_name, role,
+        photo_consent, sort_order, updated_by
+      ) VALUES (
+        ${email}, ${familyEmail}, ${firstName}, ${lastName}, 'parent',
+        ${photoConsent}, 99, 'waiver-sign'
+      )
+      ON CONFLICT (email) DO UPDATE SET
+        photo_consent = EXCLUDED.photo_consent,
+        updated_at = NOW(),
+        updated_by = 'waiver-sign'
+    `;
+  }
+  // No email available, no existing row by name → silently skip. Photo
+  // consent for an unknown person can't be stored without an identity key.
 }
 
 // Comprehensive member_profiles upsert from a registration submission.
@@ -1801,11 +1832,22 @@ async function upsertProfileFromRegistration(sql, params) {
     return sk;
   }).filter(Boolean);
 
-  const existingRows = await sql`
-    SELECT parents, kids FROM member_profiles WHERE family_email = ${familyEmail} LIMIT 1
+  // Read existing people + kids so we can preserve unchanged entries
+  // and merge field-level data when the same person re-registers.
+  const exPeopleRows = await sql`
+    SELECT email, first_name, last_name, role, personal_email, phone,
+           pronouns, photo_url, photo_consent, nicknames, sort_order
+    FROM people WHERE family_email = ${familyEmail}
+    ORDER BY sort_order, id
   `;
-  const exParents = (existingRows[0] && Array.isArray(existingRows[0].parents)) ? existingRows[0].parents : [];
-  const exKids = (existingRows[0] && Array.isArray(existingRows[0].kids)) ? existingRows[0].kids : [];
+  const exKidsRows = await sql`
+    SELECT first_name, last_name, birth_date, pronouns, allergies,
+           schedule, photo_url, photo_consent, sort_order
+    FROM kids WHERE family_email = ${familyEmail}
+    ORDER BY sort_order, id
+  `;
+  const exPeople = exPeopleRows;
+  const exKids = exKidsRows;
 
   function firstKey(p) {
     const fn = String((p && p.first_name) || '').trim();
@@ -1814,23 +1856,25 @@ async function upsertProfileFromRegistration(sql, params) {
     return (nm.split(/\s+/)[0] || '').toLowerCase();
   }
 
-  // Merge parents.
+  // Merge parents. Registration is authoritative for the fields it
+  // supplies (role, photo_consent, last_name); existing values win for
+  // pronouns / photo_url / personal_email / phone (preserves later EMI
+  // edits when a family re-registers without updating those).
   const mergedParents = [];
   const seenFirsts = new Set();
   newParents.forEach(np => {
     const key = firstKey(np);
     if (!key) return;
     seenFirsts.add(key);
-    const ex = exParents.find(p => firstKey(p) === key) || {};
+    const ex = exPeople.find(p => firstKey(p) === key) || {};
     mergedParents.push({
-      name: np.name || ex.name || '',
       first_name: np.first_name || ex.first_name || '',
       last_name: np.last_name || ex.last_name || '',
       pronouns: ex.pronouns || np.pronouns || '',
       photo_url: ex.photo_url || np.photo_url || '',
       photo_consent: typeof np.photo_consent === 'boolean' ? np.photo_consent : (ex.photo_consent !== false),
-      role: np.role || ex.role || '',
-      email: ex.email || np.email || '',
+      role: np.role || ex.role || 'parent',
+      email: (ex.email || np.email || '').toLowerCase(),
       personal_email: np.personal_email || ex.personal_email || '',
       phone: ex.phone || np.phone || '',
       // Registration form doesn't collect nicknames, so registration
@@ -1838,34 +1882,23 @@ async function upsertProfileFromRegistration(sql, params) {
       nicknames: Array.isArray(ex.nicknames) ? ex.nicknames : []
     });
   });
-  exParents.forEach(p => { if (!seenFirsts.has(firstKey(p))) mergedParents.push(p); });
+  exPeople.forEach(p => { if (!seenFirsts.has(firstKey(p))) mergedParents.push(p); });
 
-  // Merge kids by lowercased FIRST name. Phase 3 stored kids as
-  // first-name-only ("Aiden") while registration submits whatever the
-  // parent typed (often "Aiden Bogan"). Matching on full name leaves
-  // duplicates; matching on first name correctly consolidates them.
-  // The overlay in api/sheets.js (applyMemberProfileOverlay) uses the
-  // same first-name key.
-  //
-  // CRITICAL: when multiple existing kids share a first name (the
-  // Phase-3 duplicate scenario where "Aiden" + "Aiden Bogan" both
-  // exist), aggregate non-empty fields across ALL matches before
-  // merging with the registration kid. A previous pass used
-  // `Array.find` which returned just the first hit — losing photos
-  // and other data that lived only on the second entry.
+  // Merge kids by lowercased FIRST name. Same convention as before.
   function kidFirst(k) {
-    return String((k && k.name) || '').trim().split(/\s+/)[0].toLowerCase();
+    if (!k) return '';
+    // people-table rows store first_name; legacy registration kids store name
+    return String((k.first_name || k.name) || '').trim().split(/\s+/)[0].toLowerCase();
   }
   function aggregateKidMatches(matches) {
     const out = {};
     matches.forEach(m => {
       if (!m) return;
-      ['name', 'last_name', 'birth_date', 'pronouns', 'allergies',
+      ['first_name', 'last_name', 'birth_date', 'pronouns', 'allergies',
        'schedule', 'photo_url'].forEach(field => {
         const v = m[field];
         if ((out[field] == null || out[field] === '') && v) out[field] = v;
       });
-      // photo_consent — if any match explicitly opted out, propagate.
       if (m.photo_consent === false) out.photo_consent = false;
       else if (out.photo_consent == null) out.photo_consent = (m.photo_consent !== false);
     });
@@ -1879,12 +1912,12 @@ async function upsertProfileFromRegistration(sql, params) {
     seenKids.add(key);
     const ex = aggregateKidMatches(exKids.filter(k => kidFirst(k) === key));
     mergedKids.push({
-      name: nk.name,
+      first_name: String(nk.name || nk.first_name || '').trim().split(/\s+/)[0],
       last_name: nk.last_name || ex.last_name || '',
-      birth_date: nk.birth_date || ex.birth_date || '',
+      birth_date: nk.birth_date || ex.birth_date || null,
       pronouns: nk.pronouns || ex.pronouns || '',
       allergies: nk.allergies || ex.allergies || '',
-      schedule: nk.schedule || ex.schedule || '',
+      schedule: nk.schedule || ex.schedule || 'all-day',
       photo_url: ex.photo_url || nk.photo_url || '',
       photo_consent: typeof nk.photo_consent === 'boolean' ? nk.photo_consent : (ex.photo_consent !== false)
     });
@@ -1895,25 +1928,69 @@ async function upsertProfileFromRegistration(sql, params) {
   const address = String(params.address || '').trim();
   const placementNotes = String(params.placementNotes || '').trim();
 
+  // 1) UPSERT family-level row.
+  const additionalEmails = Array.from(new Set(
+    mergedParents
+      .filter(p => p.role !== 'mlc' && p.email && p.email.toLowerCase() !== familyEmail)
+      .map(p => p.email.toLowerCase())
+  ));
   await sql`
     INSERT INTO member_profiles (
       family_email, family_name, phone, address, parents, kids,
-      placement_notes, updated_by
+      placement_notes, additional_emails, updated_by
     ) VALUES (
       ${familyEmail}, ${familyName}, ${phone}, ${address},
-      ${JSON.stringify(mergedParents)}::jsonb, ${JSON.stringify(mergedKids)}::jsonb,
-      ${placementNotes}, 'registration'
+      '[]'::jsonb, '[]'::jsonb,
+      ${placementNotes}, ${additionalEmails}::text[], 'registration'
     )
     ON CONFLICT (family_email) DO UPDATE SET
-      family_name      = COALESCE(NULLIF(EXCLUDED.family_name, ''), member_profiles.family_name),
-      phone            = COALESCE(NULLIF(EXCLUDED.phone, ''), member_profiles.phone),
-      address          = COALESCE(NULLIF(EXCLUDED.address, ''), member_profiles.address),
-      parents          = EXCLUDED.parents,
-      kids             = EXCLUDED.kids,
-      placement_notes  = COALESCE(NULLIF(EXCLUDED.placement_notes, ''), member_profiles.placement_notes),
-      updated_at       = NOW(),
-      updated_by       = 'registration'
+      family_name       = COALESCE(NULLIF(EXCLUDED.family_name, ''), member_profiles.family_name),
+      phone             = COALESCE(NULLIF(EXCLUDED.phone, ''), member_profiles.phone),
+      address           = COALESCE(NULLIF(EXCLUDED.address, ''), member_profiles.address),
+      placement_notes   = COALESCE(NULLIF(EXCLUDED.placement_notes, ''), member_profiles.placement_notes),
+      additional_emails = EXCLUDED.additional_emails,
+      updated_at        = NOW(),
+      updated_by        = 'registration'
   `;
+
+  // 2) Replace people + kids wholesale with the merged sets.
+  await sql`DELETE FROM people WHERE family_email = ${familyEmail}`;
+  await sql`DELETE FROM kids   WHERE family_email = ${familyEmail}`;
+
+  for (let i = 0; i < mergedParents.length; i++) {
+    const pp = mergedParents[i];
+    if (!pp.first_name) continue;
+    let email = String(pp.email || '').trim().toLowerCase();
+    if (!email && pp.role === 'mlc') email = familyEmail;
+    await sql`
+      INSERT INTO people (
+        email, family_email, first_name, last_name, role,
+        personal_email, phone, pronouns, photo_url, photo_consent,
+        nicknames, sort_order, updated_by
+      ) VALUES (
+        ${email || null}, ${familyEmail}, ${pp.first_name}, ${pp.last_name || ''}, ${pp.role || 'parent'},
+        ${pp.personal_email || ''}, ${pp.phone || ''}, ${pp.pronouns || ''},
+        ${pp.photo_url || ''}, ${pp.photo_consent !== false},
+        ${JSON.stringify(pp.nicknames || [])}::jsonb, ${i}, 'registration'
+      )
+    `;
+  }
+  for (let i = 0; i < mergedKids.length; i++) {
+    const k = mergedKids[i];
+    if (!k.first_name) continue;
+    await sql`
+      INSERT INTO kids (
+        family_email, first_name, last_name, birth_date,
+        pronouns, allergies, schedule, photo_url, photo_consent,
+        sort_order
+      ) VALUES (
+        ${familyEmail}, ${k.first_name}, ${k.last_name || ''},
+        ${k.birth_date || null}, ${k.pronouns || ''}, ${k.allergies || ''},
+        ${k.schedule || 'all-day'}, ${k.photo_url || ''}, ${k.photo_consent !== false},
+        ${i}
+      )
+    `;
+  }
 }
 
 function sanitizeKid(k) {
@@ -1966,17 +2043,37 @@ async function handleProfileGet(req, res) {
     return res.status(403).json({ error: 'You can only view/edit your own family.' });
   }
   try {
-    const rows = await sql`
+    const famRows = await sql`
       SELECT family_email, family_name, phone, address,
-             parents, kids, placement_notes, updated_at, updated_by
+             placement_notes, updated_at, updated_by
       FROM member_profiles
       WHERE family_email = ${familyEmail}
       LIMIT 1
     `;
-    if (rows.length === 0) {
+    if (famRows.length === 0) {
       return res.status(200).json({ profile: null, family_email: familyEmail });
     }
-    return res.status(200).json({ profile: rows[0] });
+    const peopleRows = await sql`
+      SELECT email, first_name, last_name, role, personal_email, phone,
+             pronouns, photo_url, photo_consent, nicknames, sort_order
+      FROM people WHERE family_email = ${familyEmail}
+      ORDER BY sort_order, id
+    `;
+    const kidsRows = await sql`
+      SELECT id, first_name, last_name, birth_date,
+             pronouns, allergies, schedule, photo_url, photo_consent, sort_order
+      FROM kids WHERE family_email = ${familyEmail}
+      ORDER BY sort_order, id
+    `;
+    // EMI form expects `people` and `kids` arrays. The legacy `parents`
+    // alias is included so a stale browser tab from before the cutover
+    // still finds something to render.
+    const profile = Object.assign({}, famRows[0], {
+      people: peopleRows,
+      kids: kidsRows,
+      parents: peopleRows
+    });
+    return res.status(200).json({ profile });
   } catch (err) {
     console.error('Profile GET error:', err);
     return res.status(500).json({ error: 'Could not load profile.' });
@@ -2001,53 +2098,107 @@ async function handleProfileUpdate(body, req, res) {
   const phone = String(body.phone || '').trim().slice(0, 50);
   const address = String(body.address || '').trim().slice(0, 500);
 
-  const parentsRaw = Array.isArray(body.parents) ? body.parents : [];
+  // The frontend now sends `body.people`; tolerate the legacy `body.parents`
+  // shape too so a stale browser tab from before the cutover doesn't 500.
+  const peopleRaw = Array.isArray(body.people) ? body.people
+                  : Array.isArray(body.parents) ? body.parents : [];
   const kidsRaw = Array.isArray(body.kids) ? body.kids : [];
-  if (parentsRaw.length > 6) return res.status(400).json({ error: 'Too many parents.' });
+  if (peopleRaw.length > 6) return res.status(400).json({ error: 'Too many parents.' });
   if (kidsRaw.length > 12) return res.status(400).json({ error: 'Too many kids.' });
 
-  const parents = parentsRaw.map(sanitizeParent).filter(Boolean);
+  const people = peopleRaw.map(sanitizeParent).filter(Boolean);
   const kids = kidsRaw.map(sanitizeKid).filter(Boolean);
 
-  // P5 sync: additional_emails is now a derived view of non-MLC parents'
-  // emails. Keeping it in lockstep with parents.email means the auth lookup
-  // (api/_family.js resolveFamily, which queries this column with a GIN
-  // index) stays correct without doing JSONB scans on the hot path. A BLC
-  // edits their email in the form → it propagates to the auth column on
-  // save. The MLC's own email is family_email and is intentionally excluded.
-  const additionalEmails = Array.from(new Set(
-    parents
-      .filter(p => p.role !== 'mlc' && p.email && p.email.toLowerCase() !== familyEmail)
-      .map(p => p.email.toLowerCase())
-  ));
+  // The MLC's email defaults to the family_email if the form didn't supply
+  // one (the EMI input is read-only for the MLC). All other people keep
+  // whatever they have, even if blank — schema allows email = NULL.
+  let mlcSeen = false;
+  for (const pp of people) {
+    if (pp.role === 'mlc') {
+      if (mlcSeen) return res.status(400).json({ error: 'Only one MLC per family.' });
+      mlcSeen = true;
+      if (!pp.email) pp.email = familyEmail;
+    }
+  }
 
   try {
     // placement_notes is intentionally not touched here — it's collected
     // at registration only and the Edit My Info form no longer exposes
     // it. New profiles default to '' from the column default; existing
     // values are preserved across updates.
-    const rows = await sql`
+    //
+    // additional_emails kept in lockstep with non-MLC people emails for
+    // back-compat with the legacy auth path (resolveFamily still falls
+    // back to it when no people row matches). Drop in the follow-up.
+    const additionalEmails = Array.from(new Set(
+      people
+        .filter(p => p.role !== 'mlc' && p.email && p.email.toLowerCase() !== familyEmail)
+        .map(p => p.email.toLowerCase())
+    ));
+    await sql`
       INSERT INTO member_profiles (
         family_email, family_name, phone, address, parents, kids,
         additional_emails, updated_by
       ) VALUES (
         ${familyEmail}, ${familyName}, ${phone}, ${address},
-        ${JSON.stringify(parents)}::jsonb, ${JSON.stringify(kids)}::jsonb,
+        '[]'::jsonb, '[]'::jsonb,
         ${additionalEmails}::text[], ${user.email}
       )
       ON CONFLICT (family_email) DO UPDATE SET
         family_name = EXCLUDED.family_name,
         phone = EXCLUDED.phone,
         address = EXCLUDED.address,
-        parents = EXCLUDED.parents,
-        kids = EXCLUDED.kids,
         additional_emails = EXCLUDED.additional_emails,
         updated_at = NOW(),
         updated_by = EXCLUDED.updated_by
-      RETURNING family_email, family_name, phone, address, parents, kids,
-                placement_notes, updated_at, updated_by
     `;
-    return res.status(200).json({ success: true, profile: rows[0] });
+
+    // Replace the family's people + kids wholesale. The EMI form sends
+    // the full set every save, so DELETE + INSERT is the simplest correct
+    // semantics — anything the user removed from the form goes away.
+    await sql`DELETE FROM people WHERE family_email = ${familyEmail}`;
+    await sql`DELETE FROM kids   WHERE family_email = ${familyEmail}`;
+
+    for (let i = 0; i < people.length; i++) {
+      const pp = people[i];
+      await sql`
+        INSERT INTO people (
+          email, family_email, first_name, last_name, role,
+          personal_email, phone, pronouns, photo_url, photo_consent,
+          nicknames, sort_order, updated_by
+        ) VALUES (
+          ${pp.email || null}, ${familyEmail}, ${pp.first_name}, ${pp.last_name}, ${pp.role || 'parent'},
+          ${pp.personal_email || ''}, ${pp.phone || ''}, ${pp.pronouns || ''},
+          ${pp.photo_url || ''}, ${pp.photo_consent !== false},
+          ${JSON.stringify(pp.nicknames || [])}::jsonb, ${i}, ${user.email}
+        )
+      `;
+    }
+    for (let i = 0; i < kids.length; i++) {
+      const k = kids[i];
+      await sql`
+        INSERT INTO kids (
+          family_email, first_name, last_name, birth_date,
+          pronouns, allergies, schedule, photo_url, photo_consent,
+          sort_order
+        ) VALUES (
+          ${familyEmail}, ${k.name}, ${k.last_name || ''},
+          ${k.birth_date || null}, ${k.pronouns || ''}, ${k.allergies || ''},
+          ${k.schedule || 'all-day'}, ${k.photo_url || ''}, ${k.photo_consent !== false},
+          ${i}
+        )
+      `;
+    }
+
+    // Echo the saved family back. The frontend ignores the returned shape
+    // (it triggers a refresh from /api/sheets), so just confirm success.
+    return res.status(200).json({
+      success: true,
+      family_email: familyEmail,
+      family_name: familyName,
+      people_count: people.length,
+      kids_count: kids.length
+    });
   } catch (err) {
     console.error('Profile update error:', err);
     return res.status(500).json({ error: 'Could not save profile.' });
@@ -2110,14 +2261,12 @@ async function handleProfilePhoto(body, req, res) {
 async function handleTourList(req, res) {
   const user = await verifyWorkspaceAuth(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
-  // Both role checks fire in parallel — each is a Sheets read, and the
-  // Membership Director user normally short-circuits on the first
-  // anyway. Comms is only a fallback for read-only handoffs.
-  const [isMembership, isComms] = await Promise.all([
-    canEditAsRole(user.email, 'Membership Director'),
-    canEditAsRole(user.email, 'Communications Director')
-  ]);
-  if (!isMembership && !isComms) {
+  // Tour Pipeline is owned exclusively by the Membership Director.
+  // canEditAsRole already short-circuits true for app-wide super users
+  // (communications@, vicepresident@) so they keep access via View As
+  // without needing to be listed explicitly here.
+  const isMembership = await canEditAsRole(user.email, 'Membership Director');
+  if (!isMembership) {
     const expected = await getRoleHolderEmail('Membership Director');
     return res.status(403).json({
       error: 'Only the Membership Director can view the tour pipeline.',

@@ -292,6 +292,40 @@
     return localStorage.getItem('rw_user_email');
   }
 
+  // Return the fam.people[] entry for the logged-in user (or the View-As
+  // target). Match priority: exact email match > family_email match for
+  // the MLC entry. Returns null if nothing matches — callers should
+  // handle the "anonymous super-user viewing this family" case.
+  function getActivePerson(fam) {
+    if (!fam || !Array.isArray(fam.people)) return null;
+    var email = String(getActiveEmail() || '').toLowerCase();
+    if (!email) return null;
+    for (var i = 0; i < fam.people.length; i++) {
+      var pp = fam.people[i];
+      if (pp && String(pp.email || '').toLowerCase() === email) return pp;
+    }
+    // Family-email fallback: when viewing a family as their primary login,
+    // map to the MLC slot. Covers the impersonation case where the View
+    // As email is the family_email itself.
+    if (email === String(fam.email || '').toLowerCase()) {
+      for (var j = 0; j < fam.people.length; j++) {
+        if (fam.people[j] && fam.people[j].role === 'mlc') return fam.people[j];
+      }
+    }
+    return null;
+  }
+
+  // Compose "First Last" for a fam.people entry. Falls back to the family
+  // last name when the person doesn't carry their own (the common case;
+  // last_name on a person row is only set when it differs from family).
+  function personFullName(p, fam) {
+    if (!p) return '';
+    var first = String(p.first_name || '').trim();
+    var last = String(p.last_name || '').trim();
+    if (!last && fam && fam.name) last = fam.name;
+    return (first + (last ? ' ' + last : '')).trim();
+  }
+
   // True when the host is a dev environment (localhost or a Vercel
   // preview deploy). In dev, every signed-in tester gets the View As
   // picker + super-user affordances so they can impersonate any role-
@@ -355,22 +389,33 @@
         emails.forEach(function (em) {
           if (!em) return;
           var emLc = String(em).toLowerCase();
-          var who = deriveFirstNameFromLogin(emLc, f.name);
-          // Match this email's parent to its parentInfo entry so we can
-          // surface their actual last name (e.g. "Brian Richter" married
-          // into the Shewan family — keeps Richter, not Shewan).
-          var pInfo = null;
-          if (Array.isArray(f.parentInfo)) {
-            var whoLc = String(who || '').toLowerCase();
-            for (var i = 0; i < f.parentInfo.length; i++) {
-              var pi = f.parentInfo[i];
-              var piFirst = String(pi.firstName || (pi.name || '').split(/\s+/)[0] || '').toLowerCase();
-              if (piFirst && piFirst === whoLc) { pInfo = pi; break; }
+          // Prefer email-keyed lookup against fam.people — the person
+          // row's first_name + last_name are authoritative. Falls back
+          // to the email-prefix derivation for sheet-only families that
+          // don't have a person row yet.
+          var label = '';
+          if (Array.isArray(f.people)) {
+            for (var pi2 = 0; pi2 < f.people.length; pi2++) {
+              var pp2 = f.people[pi2];
+              if (pp2 && String(pp2.email || '').toLowerCase() === emLc) {
+                var first2 = String(pp2.first_name || '').trim();
+                var last2 = String(pp2.last_name || '').trim() || familyDisplay || '';
+                label = first2 ? (first2 + (last2 ? ' ' + last2 : '')).trim() : (familyDisplay || emLc);
+                break;
+              }
             }
           }
-          var firstName = (pInfo && pInfo.firstName) || who || '';
-          var lastName = (pInfo && pInfo.lastName) || familyDisplay || '';
-          var label = firstName ? (firstName + ' ' + lastName).trim() : (familyDisplay || emLc);
+          if (!label) {
+            var who = deriveFirstNameFromLogin(emLc, f.name);
+            var lastFallback = familyDisplay || '';
+            if (who && lastFallback && who.toLowerCase() === lastFallback.toLowerCase()) {
+              label = who; // avoid "Communications Communications"
+            } else if (who) {
+              label = (who + ' ' + lastFallback).trim();
+            } else {
+              label = familyDisplay || emLc;
+            }
+          }
           var selected = viewAsEmail === emLc ? ' selected' : '';
           html += '<option value="' + emLc + '"' + selected + '>' + escapeHtml(label) + '</option>';
         });
@@ -3380,25 +3425,38 @@
       html += '<div class="view-as-bar">';
       html += '<div class="view-as-banner">';
       html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-      // Label the banner as "First Last" for the specific person
-      // being impersonated. Last name comes from parentInfo when
-      // available so a co-parent who kept their own surname
-      // (Brian Richter in the Shewan family) renders correctly.
-      // Same name-resolution logic the impersonation dropdown uses.
-      var viewAsFirst = deriveFirstNameFromLogin(viewAsEmail, fam.name);
-      var viewAsLast = '';
-      if (Array.isArray(fam.parentInfo)) {
-        var firstLc = String(viewAsFirst || '').toLowerCase();
-        for (var vp = 0; vp < fam.parentInfo.length; vp++) {
-          var pi = fam.parentInfo[vp];
-          var piFirst = String(pi.firstName || (pi.name || '').split(/\s+/)[0] || '').toLowerCase();
-          if (piFirst && piFirst === firstLc) { viewAsLast = pi.lastName || ''; break; }
+      // Label the banner as "First Last" for the specific person being
+      // impersonated. Look the person up in fam.people by email so we get
+      // their ACTUAL first + last name — not whatever the email prefix
+      // parses to (which duplicates the family name when the prefix and
+      // family name happen to share their first letter, e.g.
+      // communications@ + family "Communications" → "Communications
+      // Communications" via the email-derived fallback).
+      var viewAsLabel = '';
+      if (Array.isArray(fam.people)) {
+        var emLc = String(viewAsEmail || '').toLowerCase();
+        for (var vp = 0; vp < fam.people.length; vp++) {
+          var ppl = fam.people[vp];
+          if (ppl && String(ppl.email || '').toLowerCase() === emLc) {
+            viewAsLabel = personFullName(ppl, fam);
+            break;
+          }
         }
       }
-      if (!viewAsLast) viewAsLast = fam.displayName || fam.name || '';
-      var viewAsLabel = viewAsFirst
-        ? (viewAsFirst + ' ' + viewAsLast).trim()
-        : (fam.displayName || fam.name || '');
+      if (!viewAsLabel) {
+        // Fallback for sheet-only / no-people-row families: use the
+        // legacy email-prefix derivation but DON'T re-append the family
+        // name when it already collapses into a duplicate.
+        var fallbackFirst = deriveFirstNameFromLogin(viewAsEmail, fam.name);
+        var fallbackLast = fam.displayName || fam.name || '';
+        if (fallbackFirst && fallbackLast && fallbackFirst.toLowerCase() === fallbackLast.toLowerCase()) {
+          viewAsLabel = fallbackFirst; // would otherwise dupe
+        } else if (fallbackFirst) {
+          viewAsLabel = (fallbackFirst + ' ' + fallbackLast).trim();
+        } else {
+          viewAsLabel = fallbackLast;
+        }
+      }
       html += ' Viewing as <strong>' + viewAsLabel + '</strong>';
       html += '<button class="view-as-reset" id="viewAsReset">Back to my view</button>';
       html += '</div>';
@@ -3439,7 +3497,21 @@
     html += '<div class="mf-card">';
     html += '<h3 class="mf-card-title">My Responsibilities</h3>';
     var duties = [];
-    var parentFullNames = fam.parents.split(' & ').map(function(p) { return p.trim() + ' ' + fam.name; });
+
+    // Match against the LOGGED-IN PERSON, not "any parent in this family".
+    // The per-person model means a co-parent (BLC) doesn't inherit their
+    // spouse's AM/PM/cleaning duties or vice versa. When we can't identify
+    // the active person (super-user impersonating an unfamiliar family,
+    // or a sheet-only family with no people row yet), fall back to every
+    // person in fam.people so a logged-in coordinator still sees what
+    // the family is on the hook for.
+    var activePerson = getActivePerson(fam);
+    var matchTargets = activePerson
+      ? [personFullName(activePerson, fam)]
+      : (Array.isArray(fam.people) ? fam.people.map(function (pp) { return personFullName(pp, fam); }) : []);
+    matchTargets = matchTargets.filter(Boolean);
+    // Kept named `parentFullNames` so the forEach blocks below stay readable.
+    var parentFullNames = matchTargets;
 
     function nameMatch(a, b) {
       if (!a || !b) return false;
@@ -3650,8 +3722,15 @@
       }
     }
     SPECIAL_EVENTS.forEach(function (ev) {
-      var isCoord = ev.coordinator && parentFullNames.some(function(full) {
-        return ev.coordinator.indexOf(fam.parents.split(' & ')[0].split(' ')[0]) !== -1;
+      // Coordinator strings come from the master sheet and may include
+      // "Erin" or "Erin Bogan" or even free-form ("Erin & Joey"). Match
+      // the active person's first name against any whitespace-separated
+      // token in the coordinator string.
+      var firstNames = (Array.isArray(fam.people) ? fam.people.map(function(pp) { return pp.first_name; }) : [])
+        .filter(Boolean);
+      if (activePerson) firstNames = [activePerson.first_name].filter(Boolean);
+      var isCoord = ev.coordinator && firstNames.some(function (fn) {
+        return ev.coordinator.indexOf(fn) !== -1;
       });
       if (isCoord) {
         var statusClass = ev.status === 'Complete' ? 'mf-status-done' : ev.status === 'Needs Volunteers' ? 'mf-status-open' : 'mf-status-upcoming';
@@ -5241,35 +5320,71 @@
       if (norm && out.indexOf(norm) === -1) out.push(norm);
     }
 
-    // Find the family for this email, matching either the personal inbox
-    // (fam.email) or a board role inbox (fam.boardEmail, e.g., communications@).
+    // Find the family for this email. familyMatchesEmail consults
+    // fam.loginEmails (which now includes every person's email + the
+    // primary family_email + legacy additional_emails), so a co-parent
+    // logging in as their own Workspace email resolves to the same
+    // family as the MLC. The board-email path catches the role inboxes
+    // (communications@, vp@, treasurer@…) that aren't tied to a specific
+    // person but ARE the canonical login for the role.
     var fam = null;
+    var matchedViaBoardEmail = false;
     for (var i = 0; i < FAMILIES.length; i++) {
       var f = FAMILIES[i];
-      var personalMatch = f.email && f.email.toLowerCase() === lower;
-      var boardMatch = f.boardEmail && f.boardEmail.toLowerCase() === lower;
-      if (personalMatch || boardMatch) { fam = f; break; }
+      if (familyMatchesEmail(f, lower)) { fam = f; break; }
+      if (f.boardEmail && f.boardEmail.toLowerCase() === lower) { fam = f; matchedViaBoardEmail = true; break; }
     }
 
-    if (fam && fam.boardRole) addRole(fam.boardRole);
+    // Board role belongs to the specific parent who holds it OR to
+    // anyone signing in via the role inbox (vp@, treasurer@, …). A
+    // co-parent (BLC) signing in via their own personal email shouldn't
+    // inherit the board card.
+    if (fam && fam.boardRole) {
+      var isPrimary = lower === String(fam.email || '').toLowerCase();
+      if (isPrimary || matchedViaBoardEmail) addRole(fam.boardRole);
+    }
 
-    // Super-user shortcut, regardless of family match
+    // Super-user shortcut, regardless of family match.
     if (lower === 'communications@rootsandwingsindy.com') addRole('Communications Director');
 
     if (fam) {
-      var parentNames = (fam.parents || '').split(/\s*&\s*/).map(function (first) {
-        return (first.trim() + ' ' + fam.name).trim();
-      });
+      // Build the set of person full names this email represents. When the
+      // active user maps to a specific person row in fam.people, only that
+      // person's name participates in committee-role matching (so a BLC
+      // doesn't inherit the MLC's volunteer roles or vice versa). When we
+      // can't pin them to a row (super-user impersonating, sheet-only
+      // family with no people row), fall back to every person in the family
+      // so coordinator-style logins still surface the family's roles.
+      var activePersonRow = null;
+      if (Array.isArray(fam.people)) {
+        for (var pi = 0; pi < fam.people.length; pi++) {
+          var pp = fam.people[pi];
+          if (pp && String(pp.email || '').toLowerCase() === lower) { activePersonRow = pp; break; }
+        }
+      }
+      var matchTargets;
+      if (activePersonRow) {
+        matchTargets = [personFullName(activePersonRow, fam)];
+      } else if (Array.isArray(fam.people) && fam.people.length > 0) {
+        matchTargets = fam.people.map(function (p) { return personFullName(p, fam); });
+      } else {
+        // Legacy fallback: parse fam.parents string.
+        matchTargets = (fam.parents || '').split(/\s*&\s*/).map(function (first) {
+          return (first.trim() + ' ' + fam.name).trim();
+        });
+      }
+      matchTargets = matchTargets.filter(Boolean);
+
       function wsMatch(a, b) {
         if (!a || !b) return false;
         return a.trim().toLowerCase() === b.trim().toLowerCase();
       }
       (VOLUNTEER_COMMITTEES || []).forEach(function (c) {
-        if (c.chair && c.chair.person && parentNames.some(function (n) { return wsMatch(c.chair.person, n); })) {
+        if (c.chair && c.chair.person && matchTargets.some(function (n) { return wsMatch(c.chair.person, n); })) {
           addRole(c.chair.title);
         }
         (c.roles || []).forEach(function (r) {
-          if (r.person && parentNames.some(function (n) { return wsMatch(r.person, n); })) {
+          if (r.person && matchTargets.some(function (n) { return wsMatch(r.person, n); })) {
             addRole(r.title);
           }
         });
@@ -5632,7 +5747,9 @@
   // safely embedded in data-* attributes.
   var ROLE_REPORTS = {
     'Communications Director': [
-      { key: 'tour-pipeline', title: 'Tour Pipeline' },
+      // Tour Pipeline intentionally not listed here — it lives on the
+      // Membership Director's workspace only. Super users can still see it
+      // by View-As'ing into Membership.
       { key: 'waivers', title: 'Waivers Report' },
       { key: 'membership', title: 'Membership Report' }
     ],
@@ -15574,7 +15691,27 @@
     }
 
     var parentSeed;
-    if (Array.isArray(fam.parentInfo) && fam.parentInfo.length) {
+    if (Array.isArray(fam.people) && fam.people.length) {
+      // Preferred path: each person row already carries the snake_case
+      // fields the EMI form binds to + the canonical email identity.
+      parentSeed = fam.people.map(function (p) {
+        return {
+          name: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
+          first_name: p.first_name || '',
+          last_name: p.last_name || '',
+          pronouns: p.pronouns || '',
+          photo_url: p.photo_url || '',
+          photo_consent: p.photo_consent !== false,
+          role: p.role || 'parent',
+          email: p.email || '',
+          personal_email: p.personal_email || '',
+          phone: p.phone || '',
+          nicknames: Array.isArray(p.nicknames) ? p.nicknames.slice() : [],
+          _queuedPhoto: null
+        };
+      });
+    } else if (Array.isArray(fam.parentInfo) && fam.parentInfo.length) {
+      // Compat: pre-people-table API responses still set parentInfo only.
       parentSeed = fam.parentInfo.map(function (p, idx) {
         var split = (p.firstName || p.lastName)
           ? { first: p.firstName || '', last: p.lastName || '' }
@@ -16042,21 +16179,34 @@
       }
 
       function saveProfile() {
+        // Each adult is a row in the `people` table identified by their own
+        // email. Send as `people` (preferred); the API still accepts the
+        // legacy `parents` key from older browser tabs.
+        var people = state.parents.map(function (p) {
+          var first = String(p.first_name || '').trim();
+          var last = String(p.last_name || '').trim();
+          var composed = [first, last].filter(Boolean).join(' ').trim();
+          return {
+            name: composed || String(p.name || '').trim(),
+            first_name: first,
+            last_name: last,
+            pronouns: p.pronouns,
+            photo_url: p.photo_url,
+            photo_consent: p.photo_consent !== false,
+            role: p.role || 'parent',
+            email: String(p.email || '').trim().toLowerCase(),
+            personal_email: p.personal_email || '',
+            phone: p.phone || '',
+            nicknames: Array.isArray(p.nicknames) ? p.nicknames : []
+          };
+        });
         var payload = {
           kind: 'profile-update',
           family_email: state.family_email,
           family_name: state.family_name,
           phone: state.phone,
           address: state.address,
-          // Each adult sends first_name + last_name as separate fields. The
-          // server composes `name` from them for legacy readers (lookupPerson,
-          // allPeople matchers, etc.) so older code paths keep working.
-          parents: state.parents.map(function (p) {
-            var first = String(p.first_name || '').trim();
-            var last = String(p.last_name || '').trim();
-            var composed = [first, last].filter(Boolean).join(' ').trim();
-            return { name: composed || String(p.name || '').trim(), first_name: first, last_name: last, pronouns: p.pronouns, photo_url: p.photo_url, photo_consent: p.photo_consent !== false, role: p.role || 'parent', email: p.email || '', personal_email: p.personal_email || '', phone: p.phone || '', nicknames: Array.isArray(p.nicknames) ? p.nicknames : [] };
-          }),
+          people: people,
           kids: state.kids.map(function (k) { return { name: k.name, last_name: k.last_name || '', birth_date: k.birth_date, pronouns: k.pronouns, allergies: k.allergies, schedule: k.schedule, photo_url: k.photo_url, photo_consent: k.photo_consent !== false }; })
         };
         return fetch('/api/tour', {
@@ -16075,6 +16225,11 @@
                   applySheetsData(data);
                   if (typeof renderMyFamily === 'function') renderMyFamily();
                   if (typeof renderDirectory === 'function') renderDirectory();
+                  // Rebuild the header View As picker so a name edit
+                  // shows up immediately in the dropdown labels (the
+                  // picker reads from FAMILIES + parentInfo, both just
+                  // refreshed by applySheetsData above).
+                  if (typeof renderHeaderViewAs === 'function') renderHeaderViewAs();
                 }
                 closeDetail();
               })

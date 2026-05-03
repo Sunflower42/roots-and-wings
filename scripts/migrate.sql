@@ -667,3 +667,78 @@ ALTER TABLE member_profiles
   ADD COLUMN IF NOT EXISTS additional_emails TEXT[] NOT NULL DEFAULT '{}'::text[];
 CREATE INDEX IF NOT EXISTS member_profiles_additional_emails_idx
   ON member_profiles USING GIN (additional_emails);
+
+-- ──────────────────────────────────────────────
+-- Normalized people + kids tables. Replace the JSONB blobs on
+-- member_profiles.parents / .kids so each person and each kid is its own
+-- row. The motivation is that responsibilities (AM/PM/cleaning/committee
+-- duties) need to match the LOGGED-IN PERSON, not "all parents in this
+-- family." Keying people by their own email makes that lookup direct
+-- (person.email = JWT email), and giving each row its own first_name +
+-- last_name handles maiden names + blended families without the family
+-- last name being awkwardly appended.
+--
+-- Each row is owned by a member_profiles family via family_email FK.
+-- ON DELETE CASCADE so a family removal cleans up its people + kids.
+-- The JSONB columns on member_profiles stay through this migration
+-- (frozen at backfill time) so a rollback can read them; a follow-up
+-- migration drops them once prod is stable.
+-- ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS people (
+  id             SERIAL PRIMARY KEY,
+  -- Workspace email = primary login identity. Nullable because BLCs
+  -- captured at registration time often don't have a Workspace email yet
+  -- (it gets set later via the EMI form or when they sign their waiver).
+  -- Unique among non-NULL values via a partial index.
+  email          TEXT,
+  family_email   TEXT NOT NULL REFERENCES member_profiles(family_email) ON DELETE CASCADE,
+  first_name     TEXT NOT NULL DEFAULT '',
+  last_name      TEXT NOT NULL DEFAULT '',
+  role           TEXT NOT NULL DEFAULT 'parent'
+                 CHECK (role IN ('mlc', 'blc', 'parent')),
+  personal_email TEXT NOT NULL DEFAULT '',
+  phone          TEXT NOT NULL DEFAULT '',
+  pronouns       TEXT NOT NULL DEFAULT '',
+  photo_url      TEXT NOT NULL DEFAULT '',
+  photo_consent  BOOLEAN NOT NULL DEFAULT TRUE,
+  nicknames      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  sort_order     INTEGER NOT NULL DEFAULT 0,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS people_family_email_idx ON people (LOWER(family_email));
+-- Email is unique among rows that have one. BLCs without a Workspace
+-- email yet are skipped here (NULL values aren't compared in unique
+-- indexes — exactly the semantics we want).
+CREATE UNIQUE INDEX IF NOT EXISTS people_email_lc_idx
+  ON people (LOWER(email)) WHERE email IS NOT NULL;
+-- Within a family, names are unique too — protects against accidental
+-- duplicate "Erin" rows from registration + EMI both writing.
+CREATE UNIQUE INDEX IF NOT EXISTS people_family_first_lc_idx
+  ON people (family_email, LOWER(first_name));
+-- Exactly one MLC per family.
+CREATE UNIQUE INDEX IF NOT EXISTS people_one_mlc_per_family_idx
+  ON people (family_email) WHERE role = 'mlc';
+
+CREATE TABLE IF NOT EXISTS kids (
+  id             SERIAL PRIMARY KEY,
+  family_email   TEXT NOT NULL REFERENCES member_profiles(family_email) ON DELETE CASCADE,
+  first_name     TEXT NOT NULL,
+  last_name      TEXT NOT NULL DEFAULT '',
+  birth_date     DATE,
+  pronouns       TEXT NOT NULL DEFAULT '',
+  allergies      TEXT NOT NULL DEFAULT '',
+  schedule       TEXT NOT NULL DEFAULT 'all-day'
+                 CHECK (schedule IN ('all-day', 'morning', 'afternoon', '')),
+  photo_url      TEXT NOT NULL DEFAULT '',
+  photo_consent  BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order     INTEGER NOT NULL DEFAULT 0,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS kids_family_email_idx ON kids (LOWER(family_email));
+-- A kid is identified within a family by first_name (case-insensitive),
+-- which mirrors the existing JSONB merge logic in
+-- upsertProfileFromRegistration. Hard-enforced so registration writes
+-- can do ON CONFLICT (family_email, lower(first_name)) DO UPDATE.
+CREATE UNIQUE INDEX IF NOT EXISTS kids_family_first_lc_idx
+  ON kids (family_email, LOWER(first_name));

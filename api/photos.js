@@ -78,23 +78,17 @@ async function getOptedOutAdultEmails(workspaceUsers) {
   const sql = getSql();
   if (!sql) return new Set();
   try {
+    // Each opted-out person now lives as a row in `people` keyed by their
+    // own Workspace email, so we can directly intersect against the
+    // workspaceUsers map without re-deriving emails from family_email +
+    // first-name initials.
     const rows = await sql`
-      SELECT family_email, parents FROM member_profiles
+      SELECT email FROM people WHERE photo_consent = FALSE
     `;
     const optedOut = new Set();
     for (const r of rows) {
-      const famEmail = String(r.family_email || '').toLowerCase();
-      const atIdx = famEmail.indexOf('@');
-      if (atIdx < 2) continue;
-      const lastInitial = famEmail.charAt(atIdx - 1);
-      const domain = famEmail.slice(atIdx);
-      for (const p of (r.parents || [])) {
-        if (!p || p.photo_consent !== false) continue;
-        const first = String(p.name || '').trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
-        if (!first) continue;
-        const guessed = first + lastInitial + domain;
-        if (workspaceUsers[guessed]) optedOut.add(guessed);
-      }
+      const e = String(r.email || '').toLowerCase();
+      if (e && workspaceUsers[e]) optedOut.add(e);
     }
     return optedOut;
   } catch (err) {

@@ -1,3 +1,9 @@
+// DEPRECATED — writes to the legacy member_profiles.kids JSONB column.
+// After the people-table migration, photos live on `kids.photo_url` instead.
+// Equivalent against the new schema:
+//   UPDATE kids SET photo_url = $1 WHERE family_email = $2 AND LOWER(first_name) = $3
+// Left in the tree for reference.
+//
 // Recover member_profiles.kids[].photo_url values from Vercel Blob.
 //
 // Background: an earlier kid-merge pass (commit 3ef110e, since fixed)

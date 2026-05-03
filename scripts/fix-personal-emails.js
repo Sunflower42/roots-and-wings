@@ -1,3 +1,10 @@
+// DEPRECATED — writes to the legacy member_profiles.parents JSONB column,
+// which is no longer read after the people-table migration. The equivalent
+// query against the new schema:
+//   UPDATE people SET personal_email = ''
+//   WHERE LOWER(personal_email) = LOWER(email);
+// Left in the tree for reference.
+//
 // Clear member_profiles.parents[].personal_email where it accidentally
 // duplicates the workspace email.
 //

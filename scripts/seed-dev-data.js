@@ -90,19 +90,44 @@ function buildFamilyRecord(f) {
 
   const allFamilies = ROLE_FAMILIES.map(buildFamilyRecord).concat([buildFamilyRecord(REGULAR_FAMILY)]);
 
-  console.log('--- Seeding member_profiles ---');
+  console.log('--- Seeding member_profiles + people + kids ---');
   for (const f of allFamilies) {
     await sql`
       INSERT INTO member_profiles (family_email, family_name, phone, address, parents, kids)
       VALUES (${f.family_email}, ${f.family_name}, ${f.phone}, ${f.address},
-              ${JSON.stringify(f.parents)}::jsonb, ${JSON.stringify(f.kids)}::jsonb)
+              '[]'::jsonb, '[]'::jsonb)
       ON CONFLICT (family_email) DO UPDATE SET
         family_name = EXCLUDED.family_name,
         phone = EXCLUDED.phone,
-        address = EXCLUDED.address,
-        parents = EXCLUDED.parents,
-        kids = EXCLUDED.kids
+        address = EXCLUDED.address
     `;
+    // Wipe + re-insert so re-running with edited fixture data produces
+    // the expected state instead of stacking duplicate people/kids.
+    await sql`DELETE FROM people WHERE family_email = ${f.family_email}`;
+    await sql`DELETE FROM kids   WHERE family_email = ${f.family_email}`;
+    for (let i = 0; i < f.parents.length; i++) {
+      const p = f.parents[i];
+      await sql`
+        INSERT INTO people (
+          email, family_email, first_name, last_name, role, sort_order, updated_by
+        ) VALUES (
+          ${(p.email || '').toLowerCase() || null}, ${f.family_email},
+          ${p.firstName || ''}, ${p.lastName || ''}, ${p.role || 'parent'},
+          ${i}, 'seed-dev-data'
+        )
+      `;
+    }
+    for (let i = 0; i < f.kids.length; i++) {
+      const k = f.kids[i];
+      await sql`
+        INSERT INTO kids (
+          family_email, first_name, last_name, birth_date, photo_consent, sort_order
+        ) VALUES (
+          ${f.family_email}, ${(k.name || '').split(/\s+/)[0]}, ${k.last_name || ''},
+          ${k.birth_date || null}, ${k.photo_consent !== false}, ${i}
+        )
+      `;
+    }
     console.log('  ✓', f.family_email);
   }
 
