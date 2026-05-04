@@ -3478,12 +3478,15 @@
       return;
     }
 
-    // Personalize greeting. Use the login-email derivation so a co-parent
-    // (e.g. Jay logging in as jays@) sees their own name, not the family's
-    // primary parent. Falls back to the first parent string if the
-    // derivation can't infer (e.g. unusual email shape).
-    var derivedFirst = deriveFirstNameFromLogin(email, fam.name);
-    var firstName = derivedFirst || fam.parents.split(' & ')[0].split(' ')[0];
+    // Personalize greeting. Look the active user up in fam.people by
+    // email so they see THEIR actual first name (which may differ from
+    // the email prefix — e.g. Jay's row was renamed to "Michael" via
+    // EMI). Falls back to email-prefix derivation, then to the family's
+    // first listed parent. Co-parents see their own name, not the MLC's.
+    var greetingPerson = getActivePerson(fam);
+    var firstName = (greetingPerson && greetingPerson.first_name)
+      || deriveFirstNameFromLogin(email, fam.name)
+      || fam.parents.split(' & ')[0].split(' ')[0];
     if (greeting) greeting.textContent = 'Welcome, ' + firstName + '!';
 
     // ──── Coverage Board (full width, collapsible) ────
