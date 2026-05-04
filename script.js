@@ -4078,7 +4078,7 @@
     // Card is always visible; body is populated by renderClassSubsCardBody()
     // after loadMyClassSubmissions() fills `myClassSubmissions`.
     html += '<div class="mf-card mf-classsubs-card" id="mfClassSubsCard">';
-    html += '<h3 class="mf-card-title">PM Class Submissions</h3>';
+    html += '<h3 class="mf-card-title">Afternoon Class Submissions</h3>';
     html += '<p class="mf-card-subtitle" style="color:var(--color-text-light);font-size:0.9rem;margin:0 0 1rem;">';
     html += 'Have an idea for an afternoon class? Propose it here and the VP + Afternoon Class Liaison will reach out when planning the next session.';
     html += '</p>';
@@ -5493,8 +5493,8 @@
           function pluralize(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
           if (c.am_lead)          recap.push('Taught ' + pluralize(c.am_lead, 'AM session', 'AM sessions'));
           if (c.am_assist)        recap.push('Assisted ' + pluralize(c.am_assist, 'AM session', 'AM sessions'));
-          if (c.pm_lead)          recap.push('Led ' + pluralize(c.pm_lead, 'PM elective', 'PM electives'));
-          if (c.pm_assist)        recap.push('Assisted ' + pluralize(c.pm_assist, 'PM elective', 'PM electives'));
+          if (c.pm_lead)          recap.push('Led ' + pluralize(c.pm_lead, 'afternoon elective', 'afternoon electives'));
+          if (c.pm_assist)        recap.push('Assisted ' + pluralize(c.pm_assist, 'afternoon elective', 'afternoon electives'));
           if (c.cleaning_session) recap.push('Cleaned ' + pluralize(c.cleaning_session, 'session', 'sessions'));
           if (c.event_lead)       recap.push('Coordinated ' + pluralize(c.event_lead, 'special event', 'special events'));
           if (c.event_assist)     recap.push('Supported ' + pluralize(c.event_assist, 'event', 'events'));
@@ -5526,8 +5526,8 @@
         h += '<h5 class="ws-part-subhead">Ways to get more involved</h5>';
         // A PM class proposal is always a welcome way to contribute, whether
         // or not committee seats are open. Button opens the same submission
-        // modal that the My Family "+ Submit a PM Class" card uses.
-        h += '<p class="ws-part-submit-line"><button type="button" class="ws-part-submit-link" data-resource-action="submit-pm-class">✨ Submit a PM Class</button><span class="ws-part-submit-hint">Teach an elective you love — propose an idea for an upcoming session.</span></p>';
+        // modal that the My Family "+ Submit an Afternoon Class" card uses.
+        h += '<p class="ws-part-submit-line"><button type="button" class="ws-part-submit-link" data-resource-action="submit-pm-class">✨ Submit an Afternoon Class</button><span class="ws-part-submit-hint">Teach an elective you love — propose an idea for an upcoming session.</span></p>';
         if (open.length === 0) {
           h += '<p class="ws-empty">Every volunteer seat is filled right now. If you want to start something new, pitch it in <a href="https://chat.google.com/" target="_blank" rel="noopener">Google Chat</a>.</p>';
         } else {
@@ -5578,10 +5578,10 @@
       // communications@ is a super user server-side but we hide the
       // widget from her own profile so it surfaces only when she
       // View-As's into a VP / PM-scheduler row.
-      title: 'PM Class Scheduling',
+      title: 'Afternoon Class Scheduling',
       roleGate: ['Vice President', 'Afternoon Class Liaison'],
       render: function () {
-        var h = '<p class="ws-body-hint">Review inbound PM class submissions and draft the upcoming session.</p>';
+        var h = '<p class="ws-body-hint">Review inbound afternoon class submissions and draft the upcoming session.</p>';
         h += '<ul class="ws-link-list">';
         h += '<li><button type="button" class="ws-link-btn" data-resource-action="schedule-builder"><span class="ws-link-icon">📋</span>Open Schedule Builder</button></li>';
         // The submissions report opens in a modal so the workspace card
@@ -10614,8 +10614,8 @@
     var curBlock = d.block || '';
     html += '<option value=""' + (curBlock === '' ? ' selected' : '') + '>— Not set —</option>';
     html += '<option value="AM"' + (curBlock === 'AM' ? ' selected' : '') + '>AM (morning class)</option>';
-    html += '<option value="PM"' + (curBlock === 'PM' ? ' selected' : '') + '>PM (afternoon elective)</option>';
-    html += '<option value="both"' + (curBlock === 'both' ? ' selected' : '') + '>Works for AM or PM</option>';
+    html += '<option value="PM"' + (curBlock === 'PM' ? ' selected' : '') + '>Afternoon elective</option>';
+    html += '<option value="both"' + (curBlock === 'both' ? ' selected' : '') + '>Works for morning or afternoon</option>';
     html += '</select></label>';
     html += '</div>';
 
@@ -13122,7 +13122,7 @@
 
     if (activeSubs.length === 0) {
       html += '<p style="margin:0 0 0.75rem;color:var(--color-text-light);font-size:0.9rem;">';
-      html += 'You haven\'t proposed a PM class yet.';
+      html += 'You haven\'t proposed an afternoon class yet.';
       html += '</p>';
     } else {
       html += '<ul class="mf-classsubs-list" style="list-style:none;padding:0;margin:0 0 1rem;">';
@@ -13153,7 +13153,7 @@
     }
 
     html += '<button class="btn btn-primary mf-classsubs-new-btn" id="mfSubmitClassBtn" style="padding:10px 22px;font-size:0.95rem;">';
-    html += (activeSubs.length === 0 ? '+ Submit a PM Class' : '+ Submit Another Class');
+    html += (activeSubs.length === 0 ? '+ Submit an Afternoon Class' : '+ Submit Another Class');
     html += '</button>';
 
     body.innerHTML = html;
@@ -13218,9 +13218,9 @@
     var maxStudentsOtherVal = cur.max_students_other || (!isPreset && cur.max_students ? String(cur.max_students) : '');
 
     var html = '<div class="cls-overlay" id="classSubOverlay">';
-    html += '<div class="cls-modal" role="dialog" aria-modal="true" aria-label="Submit a PM class">';
+    html += '<div class="cls-modal" role="dialog" aria-modal="true" aria-label="Submit an afternoon class">';
     html += '<button class="detail-close" id="clsCloseBtn" aria-label="Close">&times;</button>';
-    html += '<h3 style="margin:0 0 0.25rem;">' + (isEdit ? 'Edit PM Class Submission' : 'Submit a PM Class') + '</h3>';
+    html += '<h3 style="margin:0 0 0.25rem;">' + (isEdit ? 'Edit Afternoon Class Submission' : 'Submit an Afternoon Class') + '</h3>';
     html += '<p style="color:var(--color-text-light);font-size:0.9rem;margin:0 0 1rem;">';
     html += 'The VP and Afternoon Class Liaison will reach out when they\'re planning the next session.';
     html += '</p>';
@@ -13449,7 +13449,7 @@
     var strip = document.getElementById('clsInspiration');
     if (!strip) return;
     var html = '<div class="cls-inspire-head">⭐ <strong>Need inspiration?</strong> ';
-    html += '<span style="color:var(--color-text-light);font-size:0.85rem;">Past PM classes kids loved — click to use as a starting point.</span></div>';
+    html += '<span style="color:var(--color-text-light);font-size:0.85rem;">Past afternoon classes kids loved — click to use as a starting point.</span></div>';
     html += '<div class="cls-inspire-grid">';
     list.forEach(function (c) {
       var overview = (c.overview || '').slice(0, 120);
@@ -14190,7 +14190,7 @@
         action: function () { exportPmSubmissionsCSV(); } }
     ];
     var body = renderReportModal({
-      title: 'PM Class Submissions',
+      title: 'Afternoon Class Submissions',
       subtitle: 'Approve to queue a submission for scheduling, or decline with a confirmation. The Schedule Builder still owns final session/hour placement.',
       meta: '',
       icons: icons,
@@ -14255,10 +14255,10 @@
   function printPmSubmissionsReport() {
     var subs = pmFilteredSubmissions();
     var year = _pmReportState.filters.school_year;
-    var doc = '<!doctype html><html><head><meta charset="utf-8"><title>PM Class Submissions ' + escapeHtml(year) + '</title>';
+    var doc = '<!doctype html><html><head><meta charset="utf-8"><title>Afternoon Class Submissions ' + escapeHtml(year) + '</title>';
     doc += '<style>body{font:13px Georgia,serif;color:#222;padding:24px;}h1{font-size:18px;margin:0 0 4px;}p.meta{color:#666;margin:0 0 16px;font-size:12px;}table{border-collapse:collapse;width:100%;font-size:12px;}th,td{border-bottom:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;}th{background:#f5f0e8;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;}td.desc{color:#444;font-size:11px;}</style>';
     doc += '</head><body>';
-    doc += '<h1>PM Class Submissions</h1>';
+    doc += '<h1>Afternoon Class Submissions</h1>';
     doc += '<p class="meta">Year ' + escapeHtml(year) + ' · ' + subs.length + ' submission' + (subs.length === 1 ? '' : 's') + '</p>';
     doc += '<table><thead><tr><th>Class</th><th>Status</th><th>Submitter</th><th>Sessions</th><th>Hour</th><th>Ages</th><th>Max</th></tr></thead><tbody>';
     subs.forEach(function (s) {
@@ -14761,10 +14761,10 @@
   function showScheduleBuilder() {
     if (document.getElementById('sbOverlay')) return;
     var html = '<div class="sb-overlay" id="sbOverlay">';
-    html += '<div class="sb-panel" role="dialog" aria-modal="true" aria-label="PM Class Schedule Builder">';
+    html += '<div class="sb-panel" role="dialog" aria-modal="true" aria-label="Afternoon Class Schedule Builder">';
     html += '<button class="detail-close" id="sbCloseBtn" aria-label="Close">&times;</button>';
     html += '<div class="sb-header">';
-    html += '<h3 style="margin:0;">PM Class Schedule Builder</h3>';
+    html += '<h3 style="margin:0;">Afternoon Class Schedule Builder</h3>';
     html += '<label class="sb-year-label">School Year ';
     html += '<select id="sbYearSelect" class="cl-input" style="display:inline-block;width:auto;margin-left:6px;">';
     html += '<option value="2026-2027">2026–2027</option>';
