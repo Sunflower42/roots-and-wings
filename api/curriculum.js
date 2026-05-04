@@ -22,6 +22,17 @@ const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
 
 const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+// When a super user passes ?view_as=<member-email>, return that email so
+// the scope=mine query filters by the impersonated identity. Mirrors
+// resolveRecipient() in api/notifications.js.
+function resolveSubmitterEmail(user, viewAsQuery) {
+  if (!isSuperUser(user.email)) return user.email;
+  const va = (viewAsQuery || '').toString().trim().toLowerCase();
+  if (!va) return user.email;
+  if ((va.split('@')[1] || '') !== ALLOWED_DOMAIN) return user.email;
+  return va;
+}
+
 async function verifyGoogleAuth(req) {
   const authHeader = req.headers.authorization || '';
   if (!authHeader.startsWith('Bearer ')) return null;
@@ -556,9 +567,14 @@ module.exports = async function handler(req, res) {
             is_reviewer: true
           });
         }
+        // scope=mine — super users may impersonate via ?view_as= so the
+        // My Family card on a View-As'd dashboard shows that family's
+        // submissions instead of the super user's own. Same pattern as
+        // /api/notifications resolveRecipient.
+        const filterEmail = resolveSubmitterEmail(user, req.query.view_as);
         const [rows, isReviewer] = await Promise.all([
           sql`SELECT * FROM class_submissions
-              WHERE LOWER(submitted_by_email) = LOWER(${user.email})
+              WHERE LOWER(submitted_by_email) = LOWER(${filterEmail})
               ORDER BY created_at DESC`,
           canReviewSubmissions(user.email)
         ]);

@@ -434,6 +434,7 @@
         if (typeof renderMyFamily === 'function') renderMyFamily();
         if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
         if (typeof loadNotifications === 'function') loadNotifications();
+        if (typeof loadMyClassSubmissions === 'function') loadMyClassSubmissions();
         if (typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
       });
       select._rwWired = true;
@@ -4098,6 +4099,7 @@
         renderMyFamily();
         if (typeof renderCoordinationTabs === 'function') renderCoordinationTabs();
         if (typeof loadNotifications === 'function') loadNotifications();
+        if (typeof loadMyClassSubmissions === 'function') loadMyClassSubmissions();
         if (typeof renderWorkspaceTab === 'function') renderWorkspaceTab();
       };
     }
@@ -13096,7 +13098,7 @@
   function loadMyClassSubmissions() {
     var cred = localStorage.getItem('rw_google_credential');
     if (!cred) return;
-    fetch('/api/curriculum?action=class-submissions&scope=mine', {
+    fetch('/api/curriculum?action=class-submissions&scope=mine' + notifViewAsSuffix(), {
       headers: { 'Authorization': 'Bearer ' + cred }
     })
     .then(function (r) { return r.json(); })
