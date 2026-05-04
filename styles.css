@@ -9511,6 +9511,22 @@ button.staff-role:hover {
 }
 .ws-wv-ok      { background: rgba(90, 107, 57, 0.14);   color: var(--color-leaf); }
 .ws-wv-pending { background: rgba(224, 181, 44, 0.18);  color: var(--color-accent-dark); }
+/* Photos column pills — same shape as the status pills above so the
+   Waivers Report reads as one consistent badge style. Allowed = leaf
+   green (matches "signed"); opted out = slate so it stands apart from
+   the warning amber used for pending rows. */
+.ws-wv-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+.ws-wv-photo-ok  { background: rgba(90, 107, 57, 0.14); color: var(--color-leaf); }
+.ws-wv-photo-opt { background: rgba(80, 80, 90, 0.14);  color: #4b4f57; }
 /* Tour Pipeline status pills — same shape as .ws-wv-* / .pmrep-status
    so all reports' status columns read as the same kind of badge.
    Color tracks the lifecycle: amber (waiting on us) → plum (committed

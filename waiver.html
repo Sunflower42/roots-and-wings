@@ -84,26 +84,10 @@
   </header>
 
   <main class="wv-container">
-    <div class="wv-card" id="wv-sign-card" style="display:none;">
+    <div class="wv-card" id="wv-sign-card-top" style="display:none;">
       <h2 style="font-family:'Playfair Display',serif;color:var(--color-primary-dark);margin:0 0 10px;">Sign as a backup Learning Coach</h2>
       <p id="wv-sign-intro" style="color:#555;margin:0 0 16px;"></p>
-      <div id="wv-sign-status" style="display:none;padding:14px 16px;border-radius:8px;margin-bottom:16px;"></div>
-      <form id="wv-sign-form">
-        <div style="margin-bottom:14px;">
-          <label for="wv-sig-name" style="display:block;font-weight:600;color:var(--color-primary-dark);margin-bottom:6px;">Signature <span aria-hidden="true" style="color:var(--color-error,#c0392b);">*</span></label>
-          <input type="text" id="wv-sig-name" placeholder="Type your full legal name as your electronic signature" required style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:8px;font-size:1rem;box-sizing:border-box;">
-        </div>
-        <div style="margin-bottom:14px;max-width:240px;">
-          <label for="wv-sig-date" style="display:block;font-weight:600;color:var(--color-primary-dark);margin-bottom:6px;">Date <span aria-hidden="true" style="color:var(--color-error,#c0392b);">*</span></label>
-          <input type="date" id="wv-sig-date" required style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:8px;font-size:1rem;box-sizing:border-box;">
-        </div>
-        <label for="wv-photo-optout" style="display:flex;gap:10px;align-items:flex-start;font-weight:500;color:#222;margin:0 0 14px;cursor:pointer;padding:12px 14px;background:rgba(255,248,225,0.6);border:1.5px solid rgba(var(--color-primary-rgb),0.18);border-radius:8px;">
-          <input type="checkbox" id="wv-photo-optout" style="width:18px;height:18px;accent-color:var(--color-primary);flex-shrink:0;margin-top:2px;">
-          <span><strong>Opt out of photo and film.</strong> Check this box and Roots and Wings will not use my photo, video, or quote in any co-op material.</span>
-        </label>
-        <p style="color:#555;font-size:0.92rem;margin:0 0 14px;">By typing your name to sign below, you agree to the full Member Agreement &amp; Waivers on this page on behalf of yourself.</p>
-        <button type="submit" class="btn btn-primary">Sign &amp; Submit</button>
-      </form>
+      <div id="wv-sign-status" style="display:none;padding:14px 16px;border-radius:8px;"></div>
     </div>
 
     <div class="wv-card">
@@ -149,8 +133,30 @@
 
       <div class="wv-actions">
         <button type="button" class="btn btn-outline-dark" onclick="window.print()">Print / Save as PDF</button>
-        <a href="members.html" class="btn btn-primary" id="backToPortalBtn">Back to Member Portal</a>
       </div>
+    </div>
+
+    <div class="wv-card" id="wv-sign-card-bottom" style="display:none;">
+      <h3 id="wv-sign-bottom-title" style="font-family:'Playfair Display',serif;color:var(--color-primary-dark);margin:0 0 12px;">Sign &amp; submit</h3>
+      <div id="wv-sign-done" style="display:none;padding:14px 16px;border-radius:8px;background:#e8f5e9;color:#2f7d3b;border:1px solid #b8e0c1;font-size:1rem;"></div>
+      <form id="wv-sign-form">
+        <p style="color:#555;font-size:0.95rem;margin:0 0 14px;">By typing your name below and clicking Sign &amp; Submit, you agree to the full Member Agreement &amp; Waivers above on behalf of yourself.</p>
+        <label for="wv-photo-optout" style="display:flex;gap:10px;align-items:flex-start;font-weight:500;color:#222;margin:0 0 14px;cursor:pointer;padding:12px 14px;background:rgba(255,248,225,0.6);border:1.5px solid rgba(var(--color-primary-rgb),0.18);border-radius:8px;">
+          <input type="checkbox" id="wv-photo-optout" style="width:18px;height:18px;accent-color:var(--color-primary);flex-shrink:0;margin-top:2px;">
+          <span><strong>Opt out of photo and film.</strong> Check this box and Roots and Wings will not use my photo, video, or quote in any co-op material.</span>
+        </label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;">
+          <div style="flex:1 1 260px;min-width:0;">
+            <label for="wv-sig-name" style="display:block;font-weight:600;color:var(--color-primary-dark);margin-bottom:6px;">Signature <span aria-hidden="true" style="color:var(--color-error,#c0392b);">*</span></label>
+            <input type="text" id="wv-sig-name" placeholder="Type your full legal name as your electronic signature" required style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:8px;font-size:1rem;box-sizing:border-box;">
+          </div>
+          <div style="flex:0 0 200px;">
+            <label for="wv-sig-date" style="display:block;font-weight:600;color:var(--color-primary-dark);margin-bottom:6px;">Date <span aria-hidden="true" style="color:var(--color-error,#c0392b);">*</span></label>
+            <input type="date" id="wv-sig-date" required style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:8px;font-size:1rem;box-sizing:border-box;">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Sign &amp; Submit</button>
+      </form>
     </div>
   </main>
 
@@ -225,7 +231,13 @@
       var token = params.get('token') || '';
       if (!/^[a-f0-9]{8,64}$/i.test(token)) return;
 
-      var card = document.getElementById('wv-sign-card');
+      // The sign experience is split into two cards: the top one
+      // (intro/status) appears above the waiver text so the BLC knows
+      // what they're being asked to sign for; the bottom one (the
+      // actual form) sits after the agreement text so they read first
+      // and sign last. Both share the same display-toggle lifecycle.
+      var cardTop = document.getElementById('wv-sign-card-top');
+      var cardBottom = document.getElementById('wv-sign-card-bottom');
       var intro = document.getElementById('wv-sign-intro');
       var status = document.getElementById('wv-sign-status');
       var form = document.getElementById('wv-sign-form');
@@ -242,7 +254,8 @@
         else { status.style.background = '#eee'; status.style.color = '#555'; status.style.border = '1px solid #ddd'; }
       }
 
-      card.style.display = '';
+      cardTop.style.display = '';
+      cardBottom.style.display = '';
       showStatus('info', 'Loading your waiver…');
 
       fetch('/api/tour?backup_waiver_token=' + encodeURIComponent(token))
@@ -250,30 +263,26 @@
         .then(function (result) {
           if (!result.ok) {
             showStatus('err', (result.data && result.data.error) || 'Could not load this waiver link.');
-            form.style.display = 'none';
+            cardBottom.style.display = 'none';
             return;
           }
           var d = result.data;
           var isOneOff = d.source === 'one_off';
-          // One-off recipients aren't members — hide the "Back to Member Portal"
-          // link since it'd only lead to a login screen they can't pass.
-          if (isOneOff) {
-            var backBtn = document.getElementById('backToPortalBtn');
-            if (backBtn) backBtn.style.display = 'none';
-          }
           heroTitle.textContent = isOneOff ? 'Roots & Wings Co-op Waiver' : 'Backup Learning Coach Waiver';
-          heroSub.textContent = 'Review the agreement below, then sign at the top of this page.';
+          heroSub.textContent = 'Review the agreement, then sign at the bottom of this page.';
           if (d.signed) {
             showStatus('ok', 'This waiver was signed on ' + (d.signature_date || '').slice(0, 10) + ' by ' + (d.signature_name || d.name) + '. No further action needed.');
-            form.style.display = 'none';
+            cardBottom.style.display = 'none';
             return;
           }
           if (isOneOff) {
-            intro.innerHTML = 'Hi <strong>' + escapeText(d.name) + '</strong> — please review the Roots &amp; Wings Member Agreement &amp; Waivers below, then sign at the top of this page to put your waiver on file.';
+            intro.innerHTML = 'Hi <strong>' + escapeText(d.name) + '</strong> — please review the Roots &amp; Wings Member Agreement &amp; Waivers below, then sign at the bottom of this page to put your waiver on file.';
           } else {
-            intro.innerHTML = 'Hi <strong>' + escapeText(d.name) + '</strong> — ' + escapeText(d.main_learning_coach) + ' listed you as a backup Learning Coach for the <strong>' + escapeText(d.family_name) + ' family</strong>. Review the Member Agreement &amp; Waivers below, then sign to put your waiver on file.';
+            intro.innerHTML = 'Hi <strong>' + escapeText(d.name) + '</strong> — ' + escapeText(d.main_learning_coach) + ' listed you as a backup Learning Coach for the <strong>' + escapeText(d.family_name) + ' family</strong>. Review the Member Agreement &amp; Waivers below, then sign at the bottom of this page to put your waiver on file.';
           }
-          nameInput.value = d.name || '';
+          // Don't prefill the signature field — the BLC must type their
+          // own name as the electronic signature for it to actually count
+          // as a signature.
           dateInput.value = new Date().toISOString().slice(0, 10);
           status.style.display = 'none';
         })
@@ -307,8 +316,18 @@
             showStatus('err', (result.data && result.data.error) || 'Could not record signature.');
             return;
           }
+          // Confirm both at the top (where the intro lives) and inline at
+          // the bottom card so the user sees the success right where they
+          // clicked Submit, without having to scroll back up.
           showStatus('ok', 'Thanks — your waiver is on file. A confirmation email is on the way.');
           form.style.display = 'none';
+          var bottomTitle = document.getElementById('wv-sign-bottom-title');
+          if (bottomTitle) bottomTitle.textContent = 'Waiver signed';
+          var done = document.getElementById('wv-sign-done');
+          if (done) {
+            done.textContent = 'Thanks — your waiver is on file. A confirmation email is on the way.';
+            done.style.display = '';
+          }
         }).catch(function () {
           showStatus('err', 'Could not reach the server. Please try again.');
         });

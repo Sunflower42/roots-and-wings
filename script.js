@@ -6098,6 +6098,22 @@
         return w.context ? s + '<br><span class="ws-wv-context">' + escapeHtmlWs(w.context) + '</span>' : s;
       }
     },
+    { key: 'photo_consent', label: 'Photos', type: 'string',
+      // Photo consent is set at sign time; pending rows have nothing to
+      // report yet so show "—". Signed rows render a small allow / opted-out
+      // pill so Comms can spot the opt-outs at a glance.
+      sortValue: function (w) {
+        if (!w.signed) return 'z'; // pendings sort last
+        return w.photo_consent === false ? 'a' : 'b';
+      },
+      render: function (w) {
+        if (!w.signed) return '<span class="ws-srt-actions-empty">&mdash;</span>';
+        if (w.photo_consent === false) {
+          return '<span class="ws-wv-pill ws-wv-photo-opt" title="Opted out of photo and film">No</span>';
+        }
+        return '<span class="ws-wv-pill ws-wv-photo-ok" title="Photos &amp; film allowed">Yes</span>';
+      }
+    },
     { key: 'email', label: 'Email', type: 'string',
       render: function (w) { return escapeHtmlWs(w.email); }
     },
@@ -6156,13 +6172,13 @@
       // (always signed by definition \u2014 form requires signature inline).
       var merged = [];
       backup.forEach(function (b) {
-        merged.push({ source: 'Backup Coach', rowId: b.id, name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '', waiver_version: b.waiver_version || '' });
+        merged.push({ source: 'Backup Coach', rowId: b.id, name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '', waiver_version: b.waiver_version || '', photo_consent: b.photo_consent });
       });
       oneOff.forEach(function (o) {
-        merged.push({ source: 'One-off', rowId: o.id, name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, note: o.note || '', context: o.sent_by ? 'by ' + o.sent_by : '', waiver_version: o.waiver_version || '' });
+        merged.push({ source: 'One-off', rowId: o.id, name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, note: o.note || '', context: o.sent_by ? 'by ' + o.sent_by : '', waiver_version: o.waiver_version || '', photo_consent: o.photo_consent });
       });
       registration.forEach(function (r) {
-        merged.push({ source: 'Registration', rowId: r.id, name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '', waiver_version: r.waiver_version || '' });
+        merged.push({ source: 'Registration', rowId: r.id, name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '', waiver_version: r.waiver_version || '', photo_consent: r.photo_consent });
       });
       _waiversCache = merged;
 
@@ -6286,17 +6302,22 @@
 
   function exportWaiversCSV() {
     var rows = waiversFilteredRows();
-    var headers = ['Name', 'Email', 'Source', 'Context', 'Status', 'Sent', 'Signed'];
+    var headers = ['Name', 'Email', 'Source', 'Context', 'Status', 'Photos', 'Sent', 'Signed'];
     function esc(v) {
       var s = String(v == null ? '' : v);
       if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
       return s;
+    }
+    function photoCell(w) {
+      if (!w.signed) return '';
+      return w.photo_consent === false ? 'No' : 'Yes';
     }
     var lines = [headers.join(',')];
     rows.forEach(function (w) {
       lines.push([
         esc(w.name), esc(w.email), esc(w.source), esc(w.context || ''),
         esc(w.signed ? 'Signed' : 'Pending'),
+        esc(photoCell(w)),
         esc(w.sent_at || ''), esc(w.signed_at || '')
       ].join(','));
     });
@@ -6318,12 +6339,14 @@
     doc += '</head><body>';
     doc += '<h1>Waivers Report</h1>';
     doc += '<p class="meta">' + rows.length + ' waiver' + (rows.length === 1 ? '' : 's') + ' \u00b7 printed ' + new Date().toLocaleDateString() + '</p>';
-    doc += '<table><thead><tr><th>Name</th><th>Status</th><th>Source</th><th>Email</th><th>Sent</th></tr></thead><tbody>';
+    doc += '<table><thead><tr><th>Name</th><th>Status</th><th>Source</th><th>Photos</th><th>Email</th><th>Sent</th></tr></thead><tbody>';
     rows.forEach(function (w) {
+      var photoCell = !w.signed ? '—' : (w.photo_consent === false ? 'No' : 'Yes');
       doc += '<tr>';
       doc += '<td><strong>' + escapeHtml(w.name || '') + '</strong></td>';
       doc += '<td>' + (w.signed ? 'SIGNED' : 'PENDING') + '</td>';
       doc += '<td>' + escapeHtml(w.source) + (w.context ? ' <span style="color:#666;font-size:11px;">(' + escapeHtml(w.context) + ')</span>' : '') + '</td>';
+      doc += '<td>' + escapeHtml(photoCell) + '</td>';
       doc += '<td>' + escapeHtml(w.email || '') + '</td>';
       doc += '<td>' + escapeHtml(formatReportDate(w.sent_at)) + '</td>';
       doc += '</tr>';
@@ -15825,7 +15848,7 @@
       // realistic entry "they/them" is short) so it shares the line with
       // first + last instead of taking its own grid row.
       h += '<div class="emi-full" style="display:flex;gap:8px;min-width:0;">';
-      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name" data-field="first_name" value="' + escapeHtml(p.first_name || '') + '">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name *" data-field="first_name" value="' + escapeHtml(p.first_name || '') + '">';
       h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(p.last_name || '') + '">';
       h += '<input class="rd-input" style="flex:1.5;min-width:0;" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(p.pronouns) + '">';
       h += '</div>';
@@ -15844,12 +15867,19 @@
       // email is the family_email (PK) so it's read-only; BLC + Parent
       // are editable. Personal email is where reminders / billing
       // notices actually get read; differs from the Workspace login.
+      // BLCs only get a Workspace account on request, so the waiver link
+      // is sent to their personal email instead. Workspace email stays
+      // optional for all non-MLC roles; personal email is required for
+      // BLC so we have a deliverable address.
       var emailAttrs = emailIsPrimary
         ? 'readonly tabindex="-1" title="This is your family\'s primary login. Contact communications@ to change it."'
         : 'placeholder="Their workspace email (optional)"';
+      var personalEmailPlaceholder = (p.role === 'blc')
+        ? 'Personal email * (so we can send the waiver)'
+        : 'Personal email (gmail, etc.)';
       h += '<div class="emi-full" style="display:flex;gap:8px;min-width:0;">';
       h += '<input class="rd-input' + (emailIsPrimary ? ' emi-readonly' : '') + '" style="flex:1;min-width:0;" type="email" data-field="email" value="' + escapeHtml(p.email) + '" ' + emailAttrs + '>';
-      h += '<input class="rd-input" style="flex:1;min-width:0;" type="email" placeholder="Personal email (gmail, etc.)" data-field="personal_email" value="' + escapeHtml(p.personal_email || '') + '">';
+      h += '<input class="rd-input" style="flex:1;min-width:0;" type="email" placeholder="' + escapeHtml(personalEmailPlaceholder) + '" data-field="personal_email" value="' + escapeHtml(p.personal_email || '') + '">';
       h += '</div>';
       var pOptOut = p.photo_consent === false;
       h += '<label class="emi-inline-label emi-full emi-photo-optout">' +
@@ -15873,11 +15903,11 @@
       // enough to share the line). Row 2 pairs Birthday + Schedule.
       h += '<div class="emi-fields">';
       h += '<div class="emi-full" style="display:flex;gap:8px;min-width:0;">';
-      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name" data-field="name" value="' + escapeHtml(k.name) + '">';
+      h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="First name *" data-field="name" value="' + escapeHtml(k.name) + '">';
       h += '<input class="rd-input" style="flex:3;min-width:0;" placeholder="Last name (leave blank to use family last name)" data-field="last_name" value="' + escapeHtml(k.last_name || '') + '">';
       h += '<input class="rd-input" style="flex:1.5;min-width:0;" placeholder="Pronouns" data-field="pronouns" value="' + escapeHtml(k.pronouns) + '">';
       h += '</div>';
-      h += '<label class="emi-inline-label">Birthday<input type="date" class="rd-input" data-field="birth_date" value="' + escapeHtml(k.birth_date) + '"></label>';
+      h += '<label class="emi-inline-label"><span>Birthday <span style="color:#d35a48;font-weight:700;">*</span></span><input type="date" class="rd-input" data-field="birth_date" value="' + escapeHtml(k.birth_date) + '"></label>';
       // Schedule is read-only here because changing it has billing implications
       // (half-day vs. full-day dues). Members contact the Membership Director to
       // change schedules; we may enable self-service once billing is integrated.
@@ -15909,9 +15939,10 @@
       html += '<div class="elective-detail emi-modal">';
       html += '<h3 style="margin:0 0 4px;">Edit My Info</h3>';
       html += '<p class="emi-subtitle">' + escapeHtml(fam.displayName || fam.name) + ' family — everything you enter here is visible to all signed-in co-op members in the directory and class rosters. (Not shown to the public.)</p>';
+      html += '<p class="emi-subtitle" style="margin-top:-6px;"><span style="color:#d35a48;font-weight:700;">*</span> marks required fields.</p>';
       html += '<div id="emiError" class="emi-error" style="display:none;"></div>';
 
-      html += '<label class="rd-label">Family last name</label>';
+      html += '<label class="rd-label">Family last name <span style="color:#d35a48;font-weight:700;">*</span></label>';
       html += '<input class="rd-input" id="emiFamilyName" placeholder="e.g. Smith or O’Connor Gading" value="' + escapeHtml(state.family_name) + '">';
 
       html += '<label class="rd-label">Family phone</label>';
@@ -16131,7 +16162,16 @@
       clearError();
 
       for (var pi = 0; pi < state.parents.length; pi++) {
-        if (!String(state.parents[pi].name || '').trim()) {
+        // Match the compose-then-fallback the save block uses: a newly-added
+        // adult only has first_name/last_name from the form fields; the
+        // legacy `name` field stays blank until the next render. Without
+        // this mirror, typing only a first name on a fresh row trips the
+        // "blank rows" guard even though the save would have accepted it.
+        var pFirst = String(state.parents[pi].first_name || '').trim();
+        var pLast = String(state.parents[pi].last_name || '').trim();
+        var pComposed = [pFirst, pLast].filter(Boolean).join(' ').trim();
+        var pName = pComposed || String(state.parents[pi].name || '').trim();
+        if (!pName) {
           showError('Please name each adult or remove blank rows.'); return;
         }
       }
@@ -16221,6 +16261,26 @@
         }).then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); })
           .then(function (resp) {
             if (resp.status !== 200) throw new Error((resp.body && resp.body.error) || 'Save failed.');
+            // Surface BLC waiver outcomes so the Main LC isn't left wondering
+            // why no email was sent (a same-season waiver already on file
+            // for that personal email — same person can't double-sign per
+            // the unique index on waiver_signatures).
+            var blcSent = (resp.body && resp.body.blc_waivers_sent) || [];
+            var blcSkipped = (resp.body && resp.body.blc_waivers_skipped) || [];
+            if (blcSent.length || blcSkipped.length) {
+              var lines = [];
+              if (blcSent.length) {
+                lines.push('Backup Learning Coach waiver email sent to:\n  - ' +
+                  blcSent.map(function (b) { return b.name + ' (' + b.email + ')'; }).join('\n  - '));
+              }
+              if (blcSkipped.length) {
+                lines.push('Already has a waiver on file this year (no new email sent):\n  - ' +
+                  blcSkipped.map(function (b) {
+                    return b.name + ' (' + b.email + ', ' + (b.status === 'signed' ? 'signed' : 'pending — link still active') + ')';
+                  }).join('\n  - '));
+              }
+              alert(lines.join('\n\n'));
+            }
             // Refresh sheets data so the overlay renders immediately.
             return fetch('/api/sheets', { headers: { 'Authorization': 'Bearer ' + cred } })
               .then(function (r) { return r.json(); })

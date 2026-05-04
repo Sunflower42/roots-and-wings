@@ -793,26 +793,46 @@ async function handleBackupWaiverInfo(req, res) {
   if (!token || !/^[a-f0-9]{8,64}$/i.test(token)) return res.status(400).json({ error: 'Invalid token.' });
   const sql = getSql();
   try {
+    // Portal-added BLCs may have no registration_id yet (the family hasn't
+    // registered for the current season), so the registrations JOIN
+    // returns NULL. Fall back to member_profiles + people, keyed off the
+    // family_email stamped on the waiver row, so the waiver page still
+    // shows the correct MLC name and family last name.
     const rows = await sql`
       SELECT ws.role, ws.person_name, ws.person_email, ws.season,
              ws.signed_at, ws.signature_name, ws.signature_date, ws.waiver_version,
-             r.main_learning_coach, r.existing_family_name
+             ws.family_email,
+             r.main_learning_coach, r.existing_family_name,
+             mp.family_name AS profile_family_name,
+             (
+               SELECT TRIM(BOTH ' ' FROM (COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')))
+               FROM people p
+               WHERE LOWER(p.family_email) = LOWER(ws.family_email) AND p.role = 'mlc'
+               ORDER BY p.sort_order LIMIT 1
+             ) AS profile_mlc_name
       FROM waiver_signatures ws
       LEFT JOIN registrations r ON r.id = ws.registration_id
+      LEFT JOIN member_profiles mp ON LOWER(mp.family_email) = LOWER(ws.family_email)
       WHERE ws.pending_token = ${token}
       LIMIT 1
     `;
     if (rows.length === 0) return res.status(404).json({ error: 'Waiver link not found. Please contact membership@rootsandwingsindy.com.' });
     const row = rows[0];
     const isOneOff = row.role === 'one_off';
+    // Prefer the live people / member_profiles values (what the family
+    // currently shows in the directory) over the registrations snapshot,
+    // which is frozen at registration time and won't reflect EMI edits.
+    // The email body uses the same live source, so both stay consistent.
+    const mlcName = String(row.profile_mlc_name || row.main_learning_coach || '').trim();
+    const familyName = String(row.profile_family_name || row.existing_family_name || mlcName || row.person_name).trim();
     return res.status(200).json({
       // Keep the legacy 'source' field shape so the existing waiver.html
       // client-side branch ("if isOneOff…") keeps working unmodified.
       source: isOneOff ? 'one_off' : 'backup',
       name: row.person_name,
       email: row.person_email,
-      main_learning_coach: row.main_learning_coach || '',
-      family_name: row.existing_family_name || row.main_learning_coach || row.person_name,
+      main_learning_coach: mlcName,
+      family_name: familyName,
       season: row.season || '',
       signed: !!row.signed_at,
       signed_at: row.signed_at || null,
@@ -860,7 +880,7 @@ async function handleBackupWaiverSign(body, req, res) {
           signature_date = ${signature_date}, photo_consent = ${photo_consent},
           waiver_version = ${WAIVER_VERSION}
       WHERE pending_token = ${token} AND signed_at IS NULL
-      RETURNING id, role, person_name, person_email, sent_by_email, registration_id
+      RETURNING id, role, person_name, person_email, family_email, sent_by_email, registration_id
     `;
     if (updated.length === 0) return res.status(409).json({ error: 'This waiver has already been signed.' });
 
@@ -869,7 +889,7 @@ async function handleBackupWaiverSign(body, req, res) {
 
     if (!isOneOff) {
       // Backup-coach branch: confirm to coach + Main LC, propagate photo
-      // consent into member_profiles.parents[] so the Directory honors it.
+      // consent into the people table so the Directory honors it.
       try {
         const related = await sql`
           SELECT r.main_learning_coach, r.email AS main_email, r.existing_family_name
@@ -877,9 +897,39 @@ async function handleBackupWaiverSign(body, req, res) {
         `;
         const info = related[0] || {};
 
+        // family_email was stamped on the waiver_signatures row at insert
+        // time and is the canonical key. Don't derive it from the
+        // registration's main_learning_coach — deriveFamilyEmail assumes
+        // firstName+lastInitial@ but real (and seed) families don't all
+        // follow that pattern, so deriving silently produces an orphan
+        // email that doesn't match any member_profiles row, and the
+        // photo-consent upsert lands in nowhere.
+        let famEmail = u.family_email || info.main_email || '';
+        let famName = deriveFamilyName(info.main_learning_coach || '', info.existing_family_name || '');
+        let mlcDisplay = info.main_learning_coach || '';
+        let mainEmail = info.main_email || u.family_email || '';
+        if (famEmail) {
+          const profileRows = await sql`
+            SELECT mp.family_name AS profile_family_name,
+                   (
+                     SELECT TRIM(BOTH ' ' FROM (COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')))
+                     FROM people p
+                     WHERE LOWER(p.family_email) = LOWER(${famEmail}) AND p.role = 'mlc'
+                     ORDER BY p.sort_order LIMIT 1
+                   ) AS profile_mlc_name
+            FROM member_profiles mp
+            WHERE LOWER(mp.family_email) = LOWER(${famEmail})
+            LIMIT 1
+          `;
+          if (profileRows.length > 0) {
+            // Prefer live profile values over the registration snapshot so
+            // EMI edits to the family name / MLC name win.
+            famName = profileRows[0].profile_family_name || famName;
+            mlcDisplay = profileRows[0].profile_mlc_name || mlcDisplay;
+          }
+        }
+
         try {
-          const famName = deriveFamilyName(info.main_learning_coach || '', info.existing_family_name || '');
-          const famEmail = deriveFamilyEmail(info.main_learning_coach || '', famName);
           if (famEmail) {
             await upsertParentPhotoConsent(
               sql, famEmail, famName, u.person_name, photo_consent, u.person_email
@@ -893,12 +943,12 @@ async function handleBackupWaiverSign(body, req, res) {
         await resend.emails.send({
           from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
           to: u.person_email,
-          cc: [info.main_email, 'membership@rootsandwingsindy.com'].filter(Boolean),
+          cc: [mainEmail, 'membership@rootsandwingsindy.com'].filter(Boolean),
           replyTo: 'membership@rootsandwingsindy.com',
           subject: emailSubject(`Roots & Wings Co-op: Backup Learning Coach waiver on file`),
           html: `
             <h2>Waiver signed — thank you</h2>
-            <p>Thanks, ${escapeHtml(u.person_name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(info.main_learning_coach || 'Roots & Wings')} family</strong> is on file.</p>
+            <p>Thanks, ${escapeHtml(u.person_name)}! Your backup Learning Coach waiver for the <strong>${escapeHtml(famName || mlcDisplay || 'Roots & Wings')} family</strong> is on file.</p>
             <p><strong>Signed:</strong> ${escapeHtml(signature_name)} on ${escapeHtml(signature_date)}</p>
             <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
           `,
@@ -1269,6 +1319,7 @@ async function handleWaiversReport(req, res) {
       SELECT ws.id, ws.role, ws.season, ws.waiver_version,
              ws.person_name AS name, ws.person_email AS email,
              ws.signed_at, ws.signature_name, ws.signature_date,
+             ws.photo_consent,
              COALESCE(ws.last_sent_at, ws.sent_at, ws.signed_at, ws.created_at) AS sent_at,
              ws.sent_by_email, ws.note,
              r.main_learning_coach
@@ -1288,14 +1339,16 @@ async function handleWaiversReport(req, res) {
           source: 'backup', id: ws.id, name: ws.name, email: ws.email,
           signed_at: ws.signed_at, sent_at: ws.sent_at,
           sent_by: ws.main_learning_coach || '',
-          season: ws.season, waiver_version: ws.waiver_version
+          season: ws.season, waiver_version: ws.waiver_version,
+          photo_consent: ws.photo_consent
         });
       } else if (ws.role === 'one_off') {
         oneOff.push({
           source: 'one_off', id: ws.id, name: ws.name, email: ws.email,
           signed_at: ws.signed_at, sent_at: ws.sent_at,
           sent_by: ws.sent_by_email || '', note: ws.note,
-          season: ws.season, waiver_version: ws.waiver_version
+          season: ws.season, waiver_version: ws.waiver_version,
+          photo_consent: ws.photo_consent
         });
       } else if (ws.role === 'main_lc') {
         registration.push({
@@ -1305,7 +1358,8 @@ async function handleWaiversReport(req, res) {
           sent_at: ws.signed_at,
           sent_by: ws.main_learning_coach || ws.name,
           season: ws.season, context: 'Main Learning Coach',
-          waiver_version: ws.waiver_version
+          waiver_version: ws.waiver_version,
+          photo_consent: ws.photo_consent
         });
       }
     });
@@ -1316,7 +1370,7 @@ async function handleWaiversReport(req, res) {
     // the report. Future work: give them their own waiver_signatures rows.
     const regsForStudents = await sql`
       SELECT id, season, main_learning_coach, email, signature_date,
-             student_signature, created_at
+             student_signature, waiver_photo_consent, created_at
       FROM registrations
       WHERE student_signature IS NOT NULL AND student_signature <> ''
     `;
@@ -1339,7 +1393,10 @@ async function handleWaiversReport(req, res) {
           sent_at: r.created_at,
           sent_by: r.main_learning_coach,
           season: r.season,
-          context: 'Adult student (' + kidName + ')'
+          context: 'Adult student (' + kidName + ')',
+          // Adult-student rows aren't in waiver_signatures yet, so they
+          // inherit the family's MLC photo consent from the registration.
+          photo_consent: r.waiver_photo_consent === 'yes'
         });
       });
     });
@@ -1678,40 +1735,46 @@ async function upsertParentPhotoConsent(sql, familyEmail, familyName, parentFull
       updated_at = NOW()
   `;
 
-  // 1) Match by email
+  // Match strategies (first hit wins). Update by people.id rather than
+  // email because BLCs added via the portal often have NULL workspace
+  // email — the personal email is their only contact field. Updating by
+  // a NULL email column silently no-ops, which is the pre-fix bug.
+  let targetId = null;
   if (email) {
-    const byEmail = await sql`
-      SELECT email FROM people
+    const byWsEmail = await sql`
+      SELECT id FROM people
       WHERE LOWER(email) = ${email} AND family_email = ${familyEmail}
       LIMIT 1
     `;
-    if (byEmail.length > 0) {
-      await sql`
-        UPDATE people SET photo_consent = ${photoConsent}, updated_at = NOW(),
-                          updated_by = 'waiver-sign'
-        WHERE email = ${byEmail[0].email}
-      `;
-      return;
-    }
+    if (byWsEmail.length > 0) targetId = byWsEmail[0].id;
   }
-
-  // 2) Match by first_name within the family
-  const byName = await sql`
-    SELECT email FROM people
-    WHERE family_email = ${familyEmail}
-      AND LOWER(first_name) = ${firstName.toLowerCase()}
-    LIMIT 1
-  `;
-  if (byName.length > 0) {
+  if (!targetId && email) {
+    const byPersonalEmail = await sql`
+      SELECT id FROM people
+      WHERE LOWER(personal_email) = ${email} AND family_email = ${familyEmail}
+      LIMIT 1
+    `;
+    if (byPersonalEmail.length > 0) targetId = byPersonalEmail[0].id;
+  }
+  if (!targetId) {
+    const byName = await sql`
+      SELECT id FROM people
+      WHERE family_email = ${familyEmail}
+        AND LOWER(first_name) = ${firstName.toLowerCase()}
+      LIMIT 1
+    `;
+    if (byName.length > 0) targetId = byName[0].id;
+  }
+  if (targetId) {
     await sql`
       UPDATE people SET photo_consent = ${photoConsent}, updated_at = NOW(),
                         updated_by = 'waiver-sign'
-      WHERE email = ${byName[0].email}
+      WHERE id = ${targetId}
     `;
     return;
   }
 
-  // 3) Insert (requires an email to satisfy people.email PK)
+  // No matching row — insert one (requires an email to satisfy uniqueness)
   if (email) {
     await sql`
       INSERT INTO people (
@@ -2121,6 +2184,18 @@ async function handleProfileUpdate(body, req, res) {
     }
   }
 
+  // BLCs must have a personal email — that's where their waiver signing
+  // link is sent. Workspace email stays optional (R&W only provisions
+  // BLC Workspace accounts on request). Caught here rather than in
+  // sanitizeParent so the Main LC sees a single clear validation message.
+  for (const pp of people) {
+    if (pp.role === 'blc' && !pp.personal_email) {
+      return res.status(400).json({
+        error: 'A Back Up Learning Coach needs a personal email so we can send them the waiver to sign.'
+      });
+    }
+  }
+
   try {
     // placement_notes is intentionally not touched here — it's collected
     // at registration only and the Edit My Info form no longer exposes
@@ -2190,6 +2265,93 @@ async function handleProfileUpdate(body, req, res) {
       `;
     }
 
+    // Auto-trigger a backup-coach waiver for any newly-added BLC. Mirrors
+    // the registration-time backup-coach flow: insert a pending row in
+    // waiver_signatures (role='backup_coach') and email the BLC their
+    // signing link. Idempotent on (LOWER(person_email), season) so a
+    // re-save of the same EMI form doesn't double-send. registration_id
+    // is best-effort — linked to the family's most recent registration in
+    // DEFAULT_SEASON if one exists, NULL otherwise.
+    //
+    // BLCs are addressed at their personal email (Workspace email is
+    // optional / only provisioned on request), so person_email + the
+    // outbound send both use personal_email here.
+    const newBlcRows = [];
+    const skippedBlcs = [];
+    const blcs = people.filter(p => p.role === 'blc' && p.personal_email);
+    for (const blc of blcs) {
+      const existing = await sql`
+        SELECT signed_at FROM waiver_signatures
+        WHERE LOWER(person_email) = LOWER(${blc.personal_email}) AND season = ${DEFAULT_SEASON}
+        LIMIT 1
+      `;
+      if (existing.length > 0) {
+        skippedBlcs.push({
+          name: blc.name,
+          email: blc.personal_email,
+          status: existing[0].signed_at ? 'signed' : 'pending'
+        });
+        continue;
+      }
+
+      const reg = await sql`
+        SELECT id FROM registrations
+        WHERE LOWER(email) = LOWER(${familyEmail}) AND season = ${DEFAULT_SEASON}
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      const registrationId = reg.length > 0 ? reg[0].id : null;
+
+      const token = crypto.randomUUID().replace(/-/g, '');
+      try {
+        await sql`
+          INSERT INTO waiver_signatures (
+            season, role, person_name, person_email, family_email, registration_id,
+            pending_token, sent_at, sent_by_email
+          ) VALUES (
+            ${DEFAULT_SEASON}, 'backup_coach',
+            ${blc.name}, ${blc.personal_email}, ${familyEmail}, ${registrationId},
+            ${token}, NOW(), ${user.email}
+          )
+          ON CONFLICT DO NOTHING
+        `;
+        newBlcRows.push({ name: blc.name, email: blc.personal_email, token });
+      } catch (bcErr) {
+        console.error('Portal-added BLC waiver insert error (non-fatal):', bcErr);
+      }
+    }
+
+    if (newBlcRows.length > 0) {
+      const baseUrl = (req.headers['x-forwarded-proto'] && req.headers.host)
+        ? `${req.headers['x-forwarded-proto']}://${req.headers.host}`
+        : 'https://roots-and-wings-topaz.vercel.app';
+      const mlcParent = people.find(p => p.role === 'mlc');
+      const mlcName = (mlcParent && mlcParent.name) ? mlcParent.name : familyName;
+      waitUntil((async () => {
+        try {
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          for (const bc of newBlcRows) {
+            const link = `${baseUrl}/waiver.html?token=${encodeURIComponent(bc.token)}`;
+            await resend.emails.send({
+              from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+              to: bc.email,
+              replyTo: 'membership@rootsandwingsindy.com',
+              subject: emailSubject(`Roots & Wings Co-op: Please sign the backup Learning Coach waiver`),
+              html: `
+                <h2>Backup Learning Coach waiver</h2>
+                <p>Hi ${escapeHtml(bc.name)},</p>
+                <p>${escapeHtml(mlcName)} listed you as a backup Learning Coach for the <strong>${escapeHtml(familyName)} family</strong> at Roots &amp; Wings Homeschool Co-op Inc. When you sub or cover for the Main Learning Coach at co-op, this waiver needs to be on file.</p>
+                <p><a href="${escapeHtml(link)}" style="display:inline-block;background:#523A79;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Review &amp; sign the waiver</a></p>
+                <p style="color:#666;font-size:0.9rem;">Or copy this link into your browser:<br><span style="word-break:break-all;">${escapeHtml(link)}</span></p>
+                <p style="color:#666;font-size:0.9rem;margin-top:20px;">Questions? Reply to this email and it'll reach the Membership team.</p>
+              `,
+            });
+          }
+        } catch (mailErr) {
+          console.error('Portal-added BLC email error (non-fatal):', mailErr);
+        }
+      })());
+    }
+
     // Echo the saved family back. The frontend ignores the returned shape
     // (it triggers a refresh from /api/sheets), so just confirm success.
     return res.status(200).json({
@@ -2197,7 +2359,9 @@ async function handleProfileUpdate(body, req, res) {
       family_email: familyEmail,
       family_name: familyName,
       people_count: people.length,
-      kids_count: kids.length
+      kids_count: kids.length,
+      blc_waivers_sent: newBlcRows.map(r => ({ name: r.name, email: r.email })),
+      blc_waivers_skipped: skippedBlcs
     });
   } catch (err) {
     console.error('Profile update error:', err);
