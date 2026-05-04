@@ -184,22 +184,89 @@ async function upsertBoardPhotos(workspaceUsers, optedOut) {
   }
 }
 
-// ── Public endpoint: return cached board photos, no auth ──
+// Pure: dedupe + canonical-order joined role_holder rows for the public
+// board grid. Pulled out so scripts/test-board-scope.js can exercise the
+// shape contract without a live DB.
+//
+// Input rows: [{ email, person_name, title, photo_url }]
+// Output:     [{ role_title, full_name, email, photo_url }] in canonical
+// board hierarchy. Titles are normalized (Vice-President → Vice President).
+// When a role has multiple rows, the one with a non-empty photo wins; ties
+// keep the first-seen.
+function shapeBoardRows(rows) {
+  const titleOrder = {};
+  BOARD_ROLE_TITLES.forEach((t, i) => { titleOrder[t.toLowerCase()] = i; });
+  function normalizeTitle(t) {
+    return String(t || '').replace(/^Vice-President$/i, 'Vice President');
+  }
+  const byTitle = {};
+  (rows || []).forEach(r => {
+    const title = normalizeTitle(r.title);
+    const existing = byTitle[title];
+    if (!existing || (!existing.photo_url && r.photo_url)) {
+      byTitle[title] = {
+        role_title: title,
+        full_name: r.person_name || '',
+        email: String(r.email || '').toLowerCase(),
+        photo_url: r.photo_url || ''
+      };
+    }
+  });
+  return Object.keys(byTitle)
+    .sort((a, b) => (titleOrder[a.toLowerCase()] ?? 99) - (titleOrder[b.toLowerCase()] ?? 99))
+    .map(t => byTitle[t]);
+}
+
+// ── Public endpoint: return current board members from the DB, no auth ──
+//
+// Source of truth is role_holders + role_descriptions for THIS school year
+// (membership rotates annually). photo_url is left-joined from board_photos
+// (which is populated as a side-effect of authed /api/photos calls); a
+// missing photo just means "no Workspace photo on file" — the public-site
+// script falls back to initials.
+//
+// Returned shape: { board: [{ role_title, full_name, email, photo_url }] }
+// Order is the canonical board hierarchy (President → Comms Director),
+// not alphabetical, so the public grid always renders in the order the
+// co-op presents itself.
 async function handleBoardScope(req, res) {
   const sql = getSql();
   if (!sql) return res.status(200).json({ board: [] });
+  // 30-minute CDN cache; board membership changes once a year.
+  res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=1800');
   try {
-    const rows = await sql`
-      SELECT email, photo_url, role_title, full_name
-      FROM board_photos
-      ORDER BY role_title
+    // Pick the most recent school_year that actually has board holders.
+    // Usually this is the current academic year, but it tolerates a
+    // common transition state where next year's board has been seeded
+    // before the calendar flips (e.g. May, when the new board is
+    // confirmed but the academic year hasn't closed). Falls back to a
+    // calendar-derived year if role_holders is empty so the empty-state
+    // response still has a sensible label.
+    const yrRows = await sql`
+      SELECT MAX(school_year) AS sy FROM role_holders
     `;
-    // 30-minute CDN cache; photos change rarely.
-    res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=1800');
-    return res.status(200).json({ board: rows });
+    const now = new Date();
+    const fallbackStart = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+    const schoolYear = (yrRows[0] && yrRows[0].sy) || (fallbackStart + '-' + (fallbackStart + 1));
+
+    const rows = await sql`
+      SELECT
+        rh.email,
+        rh.person_name,
+        rd.title,
+        bp.photo_url
+      FROM role_holders rh
+      JOIN role_descriptions rd ON rd.id = rh.role_id
+      LEFT JOIN board_photos bp ON LOWER(bp.email) = LOWER(rh.email)
+      WHERE rh.school_year = ${schoolYear}
+        AND rd.status = 'active'
+        AND LOWER(rd.title) = ANY(${BOARD_ROLE_TITLES.map(t => t.toLowerCase()).concat(['vice-president'])})
+    `;
+
+    return res.status(200).json({ board: shapeBoardRows(rows), school_year: schoolYear });
   } catch (err) {
-    console.error('board_photos read failed:', err);
-    return res.status(500).json({ error: 'Failed to read board photos' });
+    console.error('board scope read failed:', err);
+    return res.status(500).json({ error: 'Failed to read board' });
   }
 }
 
@@ -256,3 +323,7 @@ module.exports = async function handler(req, res) {
     res.status(500).json({ error: 'Failed to fetch photos' });
   }
 };
+
+// Exported for tests (scripts/test-board-scope.js). Vercel runs the
+// default function as the handler and ignores attached properties.
+module.exports.shapeBoardRows = shapeBoardRows;

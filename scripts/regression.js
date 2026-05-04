@@ -147,6 +147,48 @@ function jsFilesIn(dir) {
   return fs.readdirSync(dir).filter(f => f.endsWith('.js')).map(f => path.join(dir, f));
 }
 
+// ─── Tier 1d: cache-bust freshness ───────────────────────────────────────
+// script.js gets cached aggressively by browsers. If the `?v=` string in
+// the HTML doesn't change when script.js does, members keep running the
+// old code — features silently disappear AND (worse) EMI saves can revert
+// to stale form state. Hit on 2026-05-03 when ~1500 lines of script.js
+// changed but `?v=20260430g` stayed.
+//
+// The check: index.html and members.html must reference the SAME `?v=`,
+// and the version's date prefix must be >= the date of the last script.js
+// commit (so a script.js touch always rides with a cache-bust bump).
+section('Tier 1d — cache-bust freshness');
+try {
+  const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const mem = fs.readFileSync(path.join(ROOT, 'members.html'), 'utf8');
+  const idxV = (idx.match(/script\.js\?v=([A-Za-z0-9._-]+)/) || [])[1];
+  const memV = (mem.match(/script\.js\?v=([A-Za-z0-9._-]+)/) || [])[1];
+  if (!idxV || !memV) {
+    fail('cache-bust present in both index.html and members.html', 'missing ?v= in one or both');
+  } else if (idxV !== memV) {
+    fail('index.html and members.html share the same script.js ?v=', `index=${idxV}, members=${memV}`);
+  } else {
+    ok('index.html and members.html share script.js?v=' + idxV);
+  }
+  const dateMatch = (idxV || '').match(/^(\d{8})/);
+  if (dateMatch) {
+    const bustDate = dateMatch[1];
+    let lastScriptDate = '';
+    try {
+      lastScriptDate = execFileSync('git', ['log', '-1', '--format=%cd', '--date=format:%Y%m%d', '--', 'script.js'], { cwd: ROOT, encoding: 'utf8' }).trim();
+    } catch (gitErr) {
+      lastScriptDate = '';
+    }
+    if (lastScriptDate && lastScriptDate > bustDate) {
+      fail('cache-bust date keeps up with script.js commits', `script.js last touched ${lastScriptDate}, bust=${bustDate}`);
+    } else if (lastScriptDate) {
+      ok('cache-bust date >= last script.js commit (' + lastScriptDate + ')');
+    }
+  }
+} catch (err) {
+  fail('cache-bust freshness check', err.message);
+}
+
 for (const lm of landmines) {
   let totalHits = 0;
   const hitFiles = [];
@@ -173,6 +215,7 @@ const unitTests = [
   'scripts/test-reports.js',
   'scripts/test-coparent-auth.js',
   'scripts/test-responsibilities.js',
+  'scripts/test-board-scope.js',
 ];
 
 for (const rel of unitTests) {

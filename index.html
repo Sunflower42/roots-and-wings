@@ -764,48 +764,63 @@
     </div>
   </div>
 
-  <script src="script.js?v=20260430g"></script>
+  <script src="script.js?v=20260503a"></script>
 
-  <!-- Swap hardcoded board photos for real Workspace profile photos when
-       available. The cache is populated every time a logged-in member hits
-       /api/photos; the public ?scope=board endpoint reads it without auth.
-       Hardcoded images remain as fallback if the fetch fails or if a board
-       member hasn't set a Workspace profile photo. -->
+  <!-- Pull the Board of Directors from the DB so the public site reflects
+       role_holders without hand-edits to this HTML when the board rotates.
+       The hardcoded grid above is the no-JS / fetch-failed fallback; if the
+       API responds with rows, the entire grid is replaced with API data.
+       Photos come from the board_photos cache (populated as a side-effect
+       of authed /api/photos calls); a missing photo falls back to initials. -->
   <script>
     (function () {
+      function escapeHtml(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+      function initialsFor(name) {
+        var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return '?';
+        var first = parts[0].charAt(0);
+        var last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : '';
+        return (first + last).toUpperCase();
+      }
       fetch('/api/photos?scope=board')
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (data) {
           if (!data || !Array.isArray(data.board) || data.board.length === 0) return;
-          var byRole = {};
-          data.board.forEach(function (b) {
-            if (b && b.role_title && b.photo_url) byRole[b.role_title] = b;
-          });
-          document.querySelectorAll('.board-member').forEach(function (card) {
-            var roleEl = card.querySelector('.board-role');
-            if (!roleEl) return;
-            var entry = byRole[roleEl.textContent.trim()];
-            if (!entry) return;
-            // Prefer a larger thumbnail when Google offers sizing hints.
-            var url = String(entry.photo_url).replace(/=s\d+-c/, '=s256-c');
-            var existingImg = card.querySelector('img.board-avatar-photo');
-            if (existingImg) {
-              existingImg.src = url;
-              return;
+          var grid = document.querySelector('.board-grid');
+          if (!grid) return;
+          var html = '';
+          data.board.forEach(function (m) {
+            var name = escapeHtml(m.full_name || '');
+            var role = escapeHtml(m.role_title || '');
+            html += '<div class="board-member fade-in">';
+            if (m.photo_url) {
+              // Bigger thumbnail when Google offers sizing hints.
+              var url = String(m.photo_url).replace(/=s\d+-c/, '=s256-c');
+              html += '<img src="' + escapeHtml(url) + '" alt="' + name + '" class="board-avatar-photo" loading="lazy">';
+            } else {
+              html += '<div class="board-avatar" aria-hidden="true">' + escapeHtml(initialsFor(m.full_name)) + '</div>';
             }
-            // No hardcoded image (initials avatar): replace the initials div with an <img>.
-            var initials = card.querySelector('.board-avatar');
-            if (initials) {
-              var img = document.createElement('img');
-              img.src = url;
-              img.alt = entry.full_name || (card.querySelector('h4') && card.querySelector('h4').textContent) || '';
-              img.className = 'board-avatar-photo';
-              img.loading = 'lazy';
-              img.onerror = function () { img.remove(); initials.style.display = ''; };
-              initials.style.display = 'none';
-              card.insertBefore(img, initials);
-            }
+            html += '<h4>' + name + '</h4>';
+            html += '<span class="board-role">' + role + '</span>';
+            html += '</div>';
           });
+          grid.innerHTML = html;
+          // Re-arm the fade-in observer for the freshly-injected cards so
+          // they animate in like the rest of the page.
+          if ('IntersectionObserver' in window) {
+            var io = new IntersectionObserver(function (entries) {
+              entries.forEach(function (e) {
+                if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); }
+              });
+            }, { threshold: 0.1 });
+            grid.querySelectorAll('.fade-in').forEach(function (el) { io.observe(el); });
+          } else {
+            grid.querySelectorAll('.fade-in').forEach(function (el) { el.classList.add('visible'); });
+          }
         })
         .catch(function () { /* keep hardcoded fallbacks */ });
     })();
