@@ -2122,6 +2122,12 @@
           if (person.type === 'parent') return;
           if (person.group !== activeFilter) return;
         }
+        if (activeFilter === 'hasAllergies') {
+          if (person.type !== 'kid' || !person.allergies) return;
+        }
+        if (activeFilter === 'noPhotos') {
+          if (person.photoConsent !== false) return;
+        }
 
         if (query) {
           var searchText = (person.name + ' ' + (person.lastName || person.family) + ' ' + person.family + ' ' + (person.group || '') + ' ' + person.parentNames + ' ' + (person.kidNames ? person.kidNames.join(' ') : '')).toLowerCase();
@@ -2175,6 +2181,10 @@
           ? '<div class="yb-no-photo" title="Opted out of photos.">⛔ No Photos</div>'
           : '';
 
+        var allergyTag = (person.type === 'kid' && person.allergies)
+          ? '<div class="yb-allergy">' + person.allergies + '</div>'
+          : '';
+
         html += '<button class="yb-card' + (person.boardRole ? ' yb-card-board' : '') + (absenceTag ? ' yb-card-absent' : '') + (person.photoConsent === false ? ' yb-card-no-photo' : '') + '" data-idx="' + idx + '" aria-label="' + displayName + ' ' + person.family + '">' +
           '<div class="yb-photo" style="background:' + bgStyle + '"><span>' + person.name.charAt(0) + '</span></div>' +
           '<div class="yb-name">' + displayName + '</div>' +
@@ -2184,6 +2194,7 @@
           '<div class="yb-family">' + (person.familyDisplay || person.family) + ' Family</div>' +
           parentOfTag +
           absenceTag +
+          allergyTag +
           noPhotoTag +
           '</button>';
         shown++;

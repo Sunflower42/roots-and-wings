@@ -3115,6 +3115,33 @@ p + p { margin-top: 1rem; }
   color: var(--color-white);
 }
 
+.directory-filters-secondary {
+  margin-top: -10px;
+  margin-bottom: 16px;
+}
+
+.filter-pill-secondary {
+  padding: 4px 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-style: dashed;
+  border-color: var(--color-border);
+  color: var(--color-text-light);
+  opacity: 0.85;
+}
+
+.filter-pill-secondary:hover {
+  opacity: 1;
+}
+
+.filter-pill-secondary.active {
+  background: var(--color-text-light);
+  border-color: var(--color-text-light);
+  border-style: solid;
+  color: var(--color-white);
+  opacity: 1;
+}
+
 /* Search bar + count */
 .directory-search-wrap {
   max-width: 480px;
@@ -3269,7 +3296,7 @@ p + p { margin-top: 1rem; }
 }
 
 /* Extra info shown on class-view cards */
-.yb-card-class .yb-allergy {
+.yb-allergy {
   font-size: 0.65rem;
   font-weight: 700;
   color: #a04030;
