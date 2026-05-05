@@ -5629,6 +5629,7 @@
         if (role === 'Communications Director') {
           h += '<li id="ws-todo-onboard-item" hidden><button type="button" class="ws-link-btn" data-resource-action="member-onboarding"><span class="ws-link-pre-count" id="ws-onboard-count">0</span><span class="ws-link-icon">🌱</span><span id="ws-onboard-label">Member Onboarding</span></button></li>';
           h += '<li id="ws-todo-waivers-item" hidden><button type="button" class="ws-link-btn" data-resource-action="waivers-pending"><span class="ws-link-pre-count" id="ws-waivers-count">0</span><span class="ws-link-icon">📝</span><span id="ws-waivers-label">Pending Waivers</span></button></li>';
+          h += '<li id="ws-todo-waivers-resent-item" hidden><button type="button" class="ws-link-btn" data-resource-action="waivers-pending"><span class="ws-link-pre-count" id="ws-waivers-resent-count">0</span><span class="ws-link-icon">🔁</span><span id="ws-waivers-resent-label">Resent Waivers</span></button></li>';
         }
         if (role === 'Membership Director') {
           h += '<li id="ws-todo-tours-item" hidden><button type="button" class="ws-link-btn" data-resource-action="membership-tour-requests"><span class="ws-link-pre-count" id="ws-tours-count">0</span><span class="ws-link-icon">🏡</span><span id="ws-tours-label">Tour Requests</span></button></li>';
@@ -6102,9 +6103,17 @@
       render: function (w) { return escapeHtmlWs(w.name); }
     },
     { key: 'status', label: 'Status', type: 'string',
-      sortValue: function (w) { return w.signed ? 'z' : 'a'; },
+      // Sort: Resent (a) → Pending (b) → Signed (z). Resent rows are
+      // the active-escalation pile (already nudged once, still no
+      // signature) so they read first when Comms is triaging.
+      sortValue: function (w) {
+        if (w.signed) return 'z';
+        return w.last_sent_at ? 'a' : 'b';
+      },
       render: function (w) {
-        return renderStatusPill(w.signed ? 'signed' : 'pending', w.signed_at);
+        if (w.signed) return renderStatusPill('signed', w.signed_at);
+        if (w.last_sent_at) return renderStatusPill('resent', w.last_sent_at);
+        return renderStatusPill('pending', null);
       }
     },
     { key: 'source', label: 'Source', type: 'string',
@@ -6187,10 +6196,10 @@
       // (always signed by definition \u2014 form requires signature inline).
       var merged = [];
       backup.forEach(function (b) {
-        merged.push({ source: 'Backup Coach', rowId: b.id, name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '', waiver_version: b.waiver_version || '', photo_consent: b.photo_consent });
+        merged.push({ source: 'Backup Coach', rowId: b.id, name: b.name, email: b.email, signed: !!b.signed_at, sent_at: b.sent_at, last_sent_at: b.last_sent_at, signed_at: b.signed_at, context: b.sent_by ? 'for ' + b.sent_by : '', waiver_version: b.waiver_version || '', photo_consent: b.photo_consent });
       });
       oneOff.forEach(function (o) {
-        merged.push({ source: 'One-off', rowId: o.id, name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, signed_at: o.signed_at, note: o.note || '', context: o.sent_by ? 'by ' + o.sent_by : '', waiver_version: o.waiver_version || '', photo_consent: o.photo_consent });
+        merged.push({ source: 'One-off', rowId: o.id, name: o.name, email: o.email, signed: !!o.signed_at, sent_at: o.sent_at, last_sent_at: o.last_sent_at, signed_at: o.signed_at, note: o.note || '', context: o.sent_by ? 'by ' + o.sent_by : '', waiver_version: o.waiver_version || '', photo_consent: o.photo_consent });
       });
       registration.forEach(function (r) {
         merged.push({ source: 'Registration', rowId: r.id, name: r.name, email: r.email, signed: true, sent_at: r.sent_at, signed_at: r.signed_at, context: r.context || '', waiver_version: r.waiver_version || '', photo_consent: r.photo_consent });
@@ -6199,7 +6208,8 @@
 
       var total   = merged.length;
       var signed  = merged.filter(function (w) { return  w.signed; }).length;
-      var pending = total - signed;
+      var resent  = merged.filter(function (w) { return !w.signed && w.last_sent_at; }).length;
+      var pending = total - signed - resent;
 
       // Modal meta line \u2014 total waivers count.
       var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
@@ -6209,6 +6219,7 @@
       // Status badges so the summary maps onto the column.
       var countsHtml = '<div class="rd-counts">';
       countsHtml += '<span class="ws-wv-pending">' + pending + ' Pending</span>';
+      countsHtml += '<span class="ws-wv-resent">' + resent + ' Resent</span>';
       countsHtml += '<span class="ws-wv-ok">' + signed + ' Signed</span>';
       countsHtml += '</div>';
 
@@ -6220,7 +6231,8 @@
       var tableTarget = body.querySelector('#ws-waivers-table-target');
 
       function rowsForFilter() {
-        if (_waiversFilter === 'pending') return merged.filter(function (w) { return !w.signed; });
+        if (_waiversFilter === 'pending') return merged.filter(function (w) { return !w.signed && !w.last_sent_at; });
+        if (_waiversFilter === 'resent')  return merged.filter(function (w) { return !w.signed &&  w.last_sent_at; });
         if (_waiversFilter === 'signed')  return merged.filter(function (w) { return  w.signed; });
         return merged;
       }
@@ -6232,6 +6244,7 @@
               options: [
                 { value: 'all',     label: 'Any',     count: total   },
                 { value: 'pending', label: 'Pending', count: pending },
+                { value: 'resent',  label: 'Resent',  count: resent  },
                 { value: 'signed',  label: 'Signed',  count: signed  }
               ],
               current: _waiversFilter,
@@ -6310,7 +6323,8 @@
 
   function waiversFilteredRows() {
     if (!_waiversCache) return [];
-    if (_waiversFilter === 'pending') return _waiversCache.filter(function (w) { return !w.signed; });
+    if (_waiversFilter === 'pending') return _waiversCache.filter(function (w) { return !w.signed && !w.last_sent_at; });
+    if (_waiversFilter === 'resent')  return _waiversCache.filter(function (w) { return !w.signed &&  w.last_sent_at; });
     if (_waiversFilter === 'signed')  return _waiversCache.filter(function (w) { return  w.signed; });
     return _waiversCache;
   }
@@ -6329,9 +6343,10 @@
     }
     var lines = [headers.join(',')];
     rows.forEach(function (w) {
+      var statusLabel = w.signed ? 'Signed' : (w.last_sent_at ? 'Resent' : 'Pending');
       lines.push([
         esc(w.name), esc(w.email), esc(w.source), esc(w.context || ''),
-        esc(w.signed ? 'Signed' : 'Pending'),
+        esc(statusLabel),
         esc(photoCell(w)),
         esc(w.sent_at || ''), esc(w.signed_at || '')
       ].join(','));
@@ -7025,6 +7040,7 @@
     var stamp = formatReportDate(dateInput);
     if (state === 'paid') return '<span class="ws-wv-ok">Paid</span>' + (stamp ? ' <span class="ws-wv-stamp">' + escapeHtmlWs(stamp) + '</span>' : '');
     if (state === 'signed') return '<span class="ws-wv-ok">Signed</span>' + (stamp ? ' <span class="ws-wv-stamp">' + escapeHtmlWs(stamp) + '</span>' : '');
+    if (state === 'resent') return '<span class="ws-wv-resent">Resent</span>' + (stamp ? ' <span class="ws-wv-stamp">' + escapeHtmlWs(stamp) + '</span>' : '');
     return '<span class="ws-wv-pending">Pending</span>';
   }
 
@@ -7788,6 +7804,9 @@
     var item = document.getElementById('ws-todo-waivers-item');
     var pill = document.getElementById('ws-waivers-count');
     var label = document.getElementById('ws-waivers-label');
+    var resentItem = document.getElementById('ws-todo-waivers-resent-item');
+    var resentPill = document.getElementById('ws-waivers-resent-count');
+    var resentLabel = document.getElementById('ws-waivers-resent-label');
     if (!item) return;
     var cred = localStorage.getItem('rw_google_credential');
     if (!cred) return;
@@ -7806,20 +7825,32 @@
           if (res.data && res.data.youAre) msg += ' (logged in as ' + res.data.youAre + ', expected ' + res.data.expected + ')';
           console.warn('[loadPendingWaiversCount] ' + msg);
           item.hidden = true;
+          if (resentItem) resentItem.hidden = true;
           recomputeTodoEmptyState();
           return;
         }
         var data = res.data || {};
         var backup = Array.isArray(data.backup) ? data.backup : [];
         var oneOff = Array.isArray(data.oneOff) ? data.oneOff : [];
-        var pending = backup.filter(function (b) { return !b.signed_at; }).length
-          + oneOff.filter(function (o) { return !o.signed_at; }).length;
+        var unsigned = backup.filter(function (b) { return !b.signed_at; })
+          .concat(oneOff.filter(function (o) { return !o.signed_at; }));
+        var pending = unsigned.filter(function (w) { return !w.last_sent_at; }).length;
+        var resent  = unsigned.filter(function (w) { return  w.last_sent_at; }).length;
         if (pending > 0) {
           if (label) label.textContent = 'Pending Waiver' + (pending === 1 ? '' : 's');
           if (pill) pill.textContent = String(pending);
           item.hidden = false;
         } else {
           item.hidden = true;
+        }
+        if (resentItem) {
+          if (resent > 0) {
+            if (resentLabel) resentLabel.textContent = 'Resent Waiver' + (resent === 1 ? '' : 's');
+            if (resentPill) resentPill.textContent = String(resent);
+            resentItem.hidden = false;
+          } else {
+            resentItem.hidden = true;
+          }
         }
         recomputeTodoEmptyState();
       })

@@ -182,3 +182,15 @@ Vercel flagged `GOOGLE_SERVICE_ACCOUNT_KEY` as "Needs Attention" — its value w
 5. Confirm Vercel's revocation prompt.
 
 **Estimated:** 15 min once the org policy is sorted.
+
+## Collect BLC phone numbers in registration (26/27 year)
+
+- **Goal:** Capture a phone number for each Back Up Learning Coach at registration time so we can SMS waiver / coverage / alert messages directly to them.
+- **Why:** BLCs frequently miss the auto-triggered waiver email. They're on a different domain than the MLC, often don't check a workspace inbox, and email lands in spam. We can't backstop with SMS today because we don't store BLC phones — `families.phone` and `parentInfo[].phone` only reliably cover the MLC.
+- **What to do:**
+  1. Add a "BLC mobile phone" field to `register.html` — required when a BLC is added.
+  2. Persist in `families.parentInfo[]` alongside the existing per-parent phone slot, plus mirror to any DB column we add for SMS lookup.
+  3. Same field on EMI's "Add Back Up Learning Coach" flow so BLCs added mid-year aren't missing their number.
+  4. Add a one-time "consent to receive co-op SMS" checkbox at the bottom of the BLC block (TCPA-clean, recordable in DB).
+- **Then:** wire SMS into the waiver auto-trigger (Twilio — R&W doesn't have an account yet; either share the Tell Me The Best account/number or stand up a separate one with A2P 10DLC registration).
+- **Why parked:** Needs the next registration cycle to gather data; retrofitting requires asking every existing MLC to hunt down their BLC's number.

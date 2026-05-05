@@ -9525,7 +9525,8 @@ button.staff-role:hover {
    all-caps + tracking + bold treatment as .ws-part-status / .pmrep-status
    so every report's status column reads as the same kind of badge. */
 .ws-wv-ok,
-.ws-wv-pending {
+.ws-wv-pending,
+.ws-wv-resent {
   display: inline-block;
   padding: 2px 9px;
   border-radius: 999px;
@@ -9538,6 +9539,7 @@ button.staff-role:hover {
 }
 .ws-wv-ok      { background: rgba(90, 107, 57, 0.14);   color: var(--color-leaf); }
 .ws-wv-pending { background: rgba(224, 181, 44, 0.18);  color: var(--color-accent-dark); }
+.ws-wv-resent  { background: rgba(196, 80, 65, 0.14);   color: #b3381a; }
 /* Photos column pills — same shape as the status pills above so the
    Waivers Report reads as one consistent badge style. Allowed = leaf
    green (matches "signed"); opted out = slate so it stands apart from

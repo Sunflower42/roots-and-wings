@@ -1321,6 +1321,7 @@ async function handleWaiversReport(req, res) {
              ws.signed_at, ws.signature_name, ws.signature_date,
              ws.photo_consent,
              COALESCE(ws.last_sent_at, ws.sent_at, ws.signed_at, ws.created_at) AS sent_at,
+             ws.last_sent_at,
              ws.sent_by_email, ws.note,
              r.main_learning_coach
       FROM waiver_signatures ws
@@ -1338,6 +1339,7 @@ async function handleWaiversReport(req, res) {
         backup.push({
           source: 'backup', id: ws.id, name: ws.name, email: ws.email,
           signed_at: ws.signed_at, sent_at: ws.sent_at,
+          last_sent_at: ws.last_sent_at,
           sent_by: ws.main_learning_coach || '',
           season: ws.season, waiver_version: ws.waiver_version,
           photo_consent: ws.photo_consent
@@ -1346,6 +1348,7 @@ async function handleWaiversReport(req, res) {
         oneOff.push({
           source: 'one_off', id: ws.id, name: ws.name, email: ws.email,
           signed_at: ws.signed_at, sent_at: ws.sent_at,
+          last_sent_at: ws.last_sent_at,
           sent_by: ws.sent_by_email || '', note: ws.note,
           season: ws.season, waiver_version: ws.waiver_version,
           photo_consent: ws.photo_consent
@@ -1515,6 +1518,7 @@ async function handleWaiverResend(body, req, res) {
     const rows = await sql`
       SELECT ws.id, ws.role, ws.person_name AS name, ws.person_email AS email,
              ws.pending_token AS token, ws.signed_at, ws.note,
+             ws.family_email,
              r.main_learning_coach AS sent_by
       FROM waiver_signatures ws
       LEFT JOIN registrations r ON r.id = ws.registration_id
@@ -1545,9 +1549,16 @@ async function handleWaiverResend(body, req, res) {
       const intro = isBackup
         ? `<p>This is a reminder to sign the Roots &amp; Wings Homeschool Co-op waiver. ${escapeHtml(row.sent_by || 'The Main Learning Coach')} listed you as a backup Learning Coach; the waiver needs to be on file before you sub or cover at co-op.</p>`
         : `<p>This is a reminder to review and sign the Roots &amp; Wings Homeschool Co-op waiver before joining us at co-op.</p>`;
+      // On a resend (BLC role only), CC the MLC's family email so they
+      // see the link too — BLCs frequently miss the original email and
+      // the MLC is the closest backstop.
+      const mlcEmail = row.family_email ? String(row.family_email).trim().toLowerCase() : '';
+      const recipientEmail = String(row.email || '').trim().toLowerCase();
+      const ccMlc = isBackup && mlcEmail && mlcEmail !== recipientEmail ? [mlcEmail] : undefined;
       await resend.emails.send({
         from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
         to: row.email,
+        cc: ccMlc,
         replyTo: 'membership@rootsandwingsindy.com',
         subject: emailSubject(subject),
         html: `
