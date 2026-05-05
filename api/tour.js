@@ -1297,6 +1297,41 @@ async function handleSendWelcomeEmail(body, req, res) {
 }
 
 // ── Comms Workspace: unified waivers report (backup + one-off) ──
+// Lightweight counts-only endpoint for the Comms To Do card. Returns
+// { pending, resent } from a single aggregate query against
+// waiver_signatures — no JOIN, no per-row payload. Same auth gate as
+// the full report so the card stays Comms-only.
+async function handleWaiversCounts(req, res) {
+  const user = await verifyWorkspaceAuth(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!(await canEditAsRole(user.email, 'Communications Director'))) {
+    const expected = await getRoleHolderEmail('Communications Director');
+    return res.status(403).json({
+      error: 'Only the Communications Director can view this report.',
+      youAre: user.email,
+      expected: expected || '(unknown — sheet lookup failed)'
+    });
+  }
+  try {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE signed_at IS NULL AND last_sent_at IS NULL)     AS pending,
+        COUNT(*) FILTER (WHERE signed_at IS NULL AND last_sent_at IS NOT NULL) AS resent
+      FROM waiver_signatures
+      WHERE role IN ('backup_coach', 'one_off')
+    `;
+    const r = rows[0] || {};
+    return res.status(200).json({
+      pending: parseInt(r.pending, 10) || 0,
+      resent:  parseInt(r.resent, 10)  || 0
+    });
+  } catch (err) {
+    console.error('waivers-counts error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
+
 async function handleWaiversReport(req, res) {
   const user = await verifyWorkspaceAuth(req);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -2604,6 +2639,7 @@ module.exports = async function handler(req, res) {
     if (req.query.config === '1' || req.query.config === 'true') return handleConfig(res);
     if (req.query.backup_waiver_token) return handleBackupWaiverInfo(req, res);
     if (req.query.waivers_report === '1') return handleWaiversReport(req, res);
+    if (req.query.waivers_counts === '1') return handleWaiversCounts(req, res);
     if (req.query.action === 'profile') return handleProfileGet(req, res);
     if (req.query.cron === 'reconcile-payments') return handleReconcileCron(req, res);
     return res.status(400).json({ error: 'Unknown GET action.' });

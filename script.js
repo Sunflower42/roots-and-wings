@@ -6288,6 +6288,9 @@
             }
             closeDetail();
             showWaiversReportModal();
+            // Refresh the To Do card counts so Pending → Resent flips
+            // immediately, without waiting for a page reload.
+            if (typeof loadPendingWaiversCount === 'function') loadPendingWaiversCount();
           }).catch(function (err) {
             alert('Resend network error: ' + ((err && err.message) || 'unknown'));
             rb.disabled = false;
@@ -7810,7 +7813,9 @@
     if (!item) return;
     var cred = localStorage.getItem('rw_google_credential');
     if (!cred) return;
-    fetch('/api/tour?waivers_report=1', {
+    // Lightweight counts endpoint — single aggregate query, no per-row
+    // payload. Keeps the To Do card snappy as the waiver table grows.
+    fetch('/api/tour?waivers_counts=1', {
       headers: { 'Authorization': 'Bearer ' + cred }
     })
       .then(function (r) {
@@ -7830,12 +7835,8 @@
           return;
         }
         var data = res.data || {};
-        var backup = Array.isArray(data.backup) ? data.backup : [];
-        var oneOff = Array.isArray(data.oneOff) ? data.oneOff : [];
-        var unsigned = backup.filter(function (b) { return !b.signed_at; })
-          .concat(oneOff.filter(function (o) { return !o.signed_at; }));
-        var pending = unsigned.filter(function (w) { return !w.last_sent_at; }).length;
-        var resent  = unsigned.filter(function (w) { return  w.last_sent_at; }).length;
+        var pending = parseInt(data.pending, 10) || 0;
+        var resent  = parseInt(data.resent,  10) || 0;
         if (pending > 0) {
           if (label) label.textContent = 'Pending Waiver' + (pending === 1 ? '' : 's');
           if (pill) pill.textContent = String(pending);
