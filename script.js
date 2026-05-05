@@ -1841,7 +1841,9 @@
   ];
 
   function faceColor(name) {
-    var i = (name.charCodeAt(0) + (name.length > 1 ? name.charCodeAt(1) : 0)) % FACE_COLORS.length;
+    var s = String(name || '');
+    if (!s) return 'linear-gradient(135deg,' + FACE_COLORS[0][0] + ',' + FACE_COLORS[0][1] + ')';
+    var i = (s.charCodeAt(0) + (s.length > 1 ? s.charCodeAt(1) : 0)) % FACE_COLORS.length;
     return 'linear-gradient(135deg,' + FACE_COLORS[i][0] + ',' + FACE_COLORS[i][1] + ')';
   }
 
@@ -1980,13 +1982,15 @@
 
   // Helper: build a clickable staff member chip
   function staffChip(fullName, role) {
-    var found = findPersonByFullName(fullName);
+    var name = String(fullName || '').trim();
+    if (!name) return '';
+    var found = findPersonByFullName(name);
     var tag = found ? 'button' : 'span';
     var dataAttr = found ? ' data-staff-idx="' + found.idx + '"' : '';
     var pronouns = found && found.person.pronouns ? ' <em class="staff-pronouns">(' + found.person.pronouns + ')</em>' : '';
     return '<' + tag + ' class="staff-role"' + dataAttr + '>' +
-      '<div class="staff-dot" style="background:' + faceColor(fullName) + '"><span>' + fullName.charAt(0) + '</span></div>' +
-      '<div class="staff-label"><strong>' + fullName + pronouns + '</strong><small>' + role + '</small></div>' +
+      '<div class="staff-dot" style="background:' + faceColor(name) + '"><span>' + name.charAt(0) + '</span></div>' +
+      '<div class="staff-label"><strong>' + name + pronouns + '</strong><small>' + role + '</small></div>' +
       '</' + tag + '>';
   }
 
