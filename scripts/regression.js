@@ -216,6 +216,7 @@ const unitTests = [
   'scripts/test-coparent-auth.js',
   'scripts/test-responsibilities.js',
   'scripts/test-board-scope.js',
+  'scripts/test-waiver-access.js',
 ];
 
 for (const rel of unitTests) {

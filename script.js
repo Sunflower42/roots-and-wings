@@ -11835,7 +11835,7 @@
       .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error('fetch failed')); })
       .then(function (html) {
         var doc = new DOMParser().parseFromString(html, 'text/html');
-        var card = doc.querySelector('.wv-card:not(#wv-sign-card)');
+        var card = doc.querySelector('.wv-card:not(#wv-sign-card-top):not(#wv-sign-card-bottom)');
         var styleEl = doc.querySelector('style');
         if (styleEl) injectWaiverStyles(styleEl.textContent);
         waiverHtmlCache = card ? card.innerHTML : null;
