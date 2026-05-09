@@ -1301,6 +1301,10 @@ async function handleSendWelcomeEmail(body, req, res) {
     if (rows.length === 0) return res.status(404).json({ error: 'Registration not found.' });
     const reg = rows[0];
 
+    console.log('[welcome-email] env state', {
+      VERCEL_ENV: process.env.VERCEL_ENV || '(unset)',
+      EMAIL_OVERRIDE_TO_set: Boolean((process.env.EMAIL_OVERRIDE_TO || '').trim())
+    });
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
       await resend.emails.send({

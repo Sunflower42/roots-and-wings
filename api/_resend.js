@@ -37,10 +37,14 @@ class Resend {
   constructor(apiKey) {
     const inner = new _Resend(apiKey);
     const overrideTo = (process.env.EMAIL_OVERRIDE_TO || '').trim();
+    // Hard guard: production MUST NEVER re-route mail or prepend [DEV],
+    // even if EMAIL_OVERRIDE_TO leaks into the prod env (marketplace
+    // integrations, accidental scope edits, etc.). Real recipients only.
+    const isProd = process.env.VERCEL_ENV === 'production';
 
     this.emails = {
       send: async (payload) => {
-        if (!overrideTo) return inner.emails.send(payload);
+        if (isProd || !overrideTo) return inner.emails.send(payload);
 
         const banner =
           '<div style="background:#fff8e1;border:1px solid #f0c14b;color:#6b4e00;' +
