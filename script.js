@@ -7964,8 +7964,10 @@
         var canSend = step1Done && step2Done;
         h += '<div class="mo-row" data-reg-id="' + r.id + '">';
         h += '<div class="mo-row-head">';
-        h += '<div class="mo-row-name"><strong>' + escapeHtmlWs(r.main_learning_coach || '') + '</strong>'
-          + '<span class="mo-row-sub"> &middot; ' + escapeHtmlWs(r.email || '') + '</span></div>';
+        h += '<div class="mo-row-name"><strong>' + escapeHtmlWs(r.main_learning_coach || '') + '</strong></div>';
+        h += '<div class="mo-row-derived">Personal email: <a href="mailto:' + escapeHtmlWs(r.email || '') + '">' + escapeHtmlWs(r.email || '') + '</a>'
+          + (r.phone ? ' &middot; Phone: <a href="tel:' + escapeHtmlWs(r.phone) + '">' + escapeHtmlWs(r.phone) + '</a>' : '')
+          + '</div>';
         h += '<div class="mo-row-derived">Suggested Workspace email: <code>' + escapeHtmlWs(wsEmail) + '</code></div>';
         h += '</div>';
         h += '<ul class="mo-checklist">';
