@@ -30,23 +30,30 @@ const OLD_VERSION = '2026-04-27';
 // naturally ("Communications Director", "Afternoon Class Liaison"). A
 // uniform "Family" suffix is used for short single-word roles where there's
 // no longer descriptor that reads cleanly.
+// Distinct gender-neutral first names per role so seeded display names
+// look like real people ("Cam Communications Director" rather than just
+// "Communications Director"). The role-as-last-name pattern keeps each
+// row self-documenting in the DB. people.first_name + last_name and
+// role_holders.person_name both end up with the same string, so the
+// preferred join (people→role_holders by email) and the role_holders
+// fallback agree at seed time.
 const ROLE_FAMILIES = [
-  { roleKey: 'president',                familyEmail: 'president@rootsandwingsindy.com',      firstName: 'President',      lastName: 'Family'         },
-  { roleKey: 'vice_president',           familyEmail: 'vp@rootsandwingsindy.com',             firstName: 'VP',             lastName: 'Family'         },
-  { roleKey: 'communications_director',  familyEmail: 'communications@rootsandwingsindy.com', firstName: 'Communications', lastName: 'Director'       },
-  { roleKey: 'membership_director',      familyEmail: 'membership@rootsandwingsindy.com',     firstName: 'Membership',     lastName: 'Director'       },
-  { roleKey: 'treasurer',                familyEmail: 'treasurer@rootsandwingsindy.com',      firstName: 'Treasurer',      lastName: 'Family'         },
-  { roleKey: 'secretary',                familyEmail: 'secretary@rootsandwingsindy.com',      firstName: 'Secretary',      lastName: 'Family'         },
-  { roleKey: 'afternoon_class_liaison',  familyEmail: 'afternoon@rootsandwingsindy.com',      firstName: 'Afternoon',      lastName: 'Class Liaison'  },
-  { roleKey: 'morning_class_liaison',    familyEmail: 'morning@rootsandwingsindy.com',        firstName: 'Morning',        lastName: 'Class Liaison'  }
+  { roleKey: 'president',                familyEmail: 'president@rootsandwingsindy.com',      firstName: 'Pat',    lastName: 'President'              },
+  { roleKey: 'vice_president',           familyEmail: 'vp@rootsandwingsindy.com',             firstName: 'Vee',    lastName: 'Vice-President'         },
+  { roleKey: 'communications_director',  familyEmail: 'communications@rootsandwingsindy.com', firstName: 'Cam',    lastName: 'Communications Director' },
+  { roleKey: 'membership_director',      familyEmail: 'membership@rootsandwingsindy.com',     firstName: 'Mel',    lastName: 'Membership Director'    },
+  { roleKey: 'treasurer',                familyEmail: 'treasurer@rootsandwingsindy.com',      firstName: 'Tess',   lastName: 'Treasurer'              },
+  { roleKey: 'secretary',                familyEmail: 'secretary@rootsandwingsindy.com',      firstName: 'Sam',    lastName: 'Secretary'              },
+  { roleKey: 'afternoon_class_liaison',  familyEmail: 'afternoon@rootsandwingsindy.com',      firstName: 'Avery',  lastName: 'Afternoon Class Liaison' },
+  { roleKey: 'morning_class_liaison',    familyEmail: 'morning@rootsandwingsindy.com',        firstName: 'Morgan', lastName: 'Morning Class Liaison'  }
 ];
 
 // One regular member family with no role — for testing the "what does a
 // rank-and-file member see?" perspective.
 const REGULAR_FAMILY = {
   familyEmail: 'member@rootsandwingsindy.com',
-  firstName: 'Member',
-  lastName: 'Family'
+  firstName: 'Reg',
+  lastName: 'Member'
 };
 
 function buildFamilyRecord(f) {

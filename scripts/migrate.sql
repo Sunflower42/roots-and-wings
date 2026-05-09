@@ -281,6 +281,14 @@ CREATE INDEX IF NOT EXISTS role_descriptions_category_idx
 -- display. The sheet stays authoritative for permission checks until
 -- Phase B cuts _permissions.js and the participation tracker over to
 -- read from here.
+-- person_name + family_name are SNAPSHOTS at assignment time — they
+-- preserve historical attribution (who held this role for school_year X)
+-- even if the underlying people row is later edited or deleted. They are
+-- NOT the source of truth for the holder's *current* display name. For
+-- live UI / outbound email, resolve the name by joining role_holders.email
+-- to people (LOWER(p.email) = LOWER(rh.email) OR p.family_email = rh.email,
+-- AND p.role = 'mlc'), and fall back to person_name only if no people row
+-- matches.
 CREATE TABLE IF NOT EXISTS role_holders (
   id SERIAL PRIMARY KEY,
   role_id INTEGER NOT NULL REFERENCES role_descriptions(id) ON DELETE CASCADE,
