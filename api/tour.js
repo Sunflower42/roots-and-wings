@@ -14,7 +14,7 @@ const { google } = require('googleapis');
 const { put } = require('@vercel/blob');
 const { waitUntil } = require('@vercel/functions');
 const { ALLOWED_ORIGINS, emailSubject, WAIVER_VERSION } = require('./_config');
-const { canEditAsRole, getRoleHolderEmail, isSuperUser } = require('./_permissions');
+const { canEditAsRole, getRoleHolderEmail, isSuperUser, activeSchoolYear } = require('./_permissions');
 const { canActAs } = require('./_family');
 const { fetchSheet, getAuth, parseBillingSheet } = require('./sheets');
 
@@ -696,7 +696,35 @@ async function handleList(req, res) {
       }
     }
 
-    return res.status(200).json({ registrations: rows });
+    // Resolve the Communications Director's display name: prefer the
+    // people row keyed off the role_holders.email (the actual MLC name),
+    // fall back to role_holders.person_name only if no people match.
+    // Seed data sets person_name to a placeholder, so people is the
+    // authoritative source.
+    let commsDirectorName = '';
+    try {
+      const cdRows = await sql`
+        SELECT
+          rh.person_name AS rh_name,
+          NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), '') AS people_name
+        FROM role_holders rh
+        JOIN role_descriptions rd ON rd.id = rh.role_id
+        LEFT JOIN people p
+          ON (LOWER(p.email) = LOWER(rh.email) OR LOWER(p.family_email) = LOWER(rh.email))
+          AND p.role = 'mlc'
+        WHERE LOWER(rd.title) = 'communications director'
+          AND rh.school_year = ${activeSchoolYear()}
+        ORDER BY rh.id ASC
+        LIMIT 1
+      `;
+      if (cdRows.length > 0) {
+        commsDirectorName = cdRows[0].people_name || cdRows[0].rh_name || '';
+      }
+    } catch (cdErr) {
+      console.error('Comms Director name lookup failed (non-fatal):', cdErr);
+    }
+
+    return res.status(200).json({ registrations: rows, comms_director_name: commsDirectorName });
   } catch (err) {
     console.error('Registration list error:', err);
     return res.status(500).json({ error: 'Could not load registrations.' });

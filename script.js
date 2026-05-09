@@ -7897,22 +7897,43 @@
       .catch(function (err) { console.warn('[loadMemberOnboardingCount] network error:', err); });
   }
 
-  function defaultWelcomeEmailHtml(name, workspaceEmail) {
+  function defaultWelcomeEmailHtml(name, directorName) {
+    var greetingName = String(name || '').trim() || 'there';
+    var dirName = String(directorName || '').trim() || '[Communications Director\'s Name]';
+    var dirEsc = escapeHtmlWs(dirName);
     return [
       '<h2>Welcome to Roots &amp; Wings!</h2>',
-      '<p>Hi ' + escapeHtmlWs(name) + ',</p>',
-      '<p>We\'re so glad to have your family joining the co-op. Here\'s what you need to get set up.</p>',
-      '<h3>Your Roots &amp; Wings Workspace account</h3>',
-      '<p>Your new email address is <strong>' + escapeHtmlWs(workspaceEmail || 'your-name@rootsandwingsindy.com') + '</strong>.</p>',
-      '<p>I\'ll share your <strong>temporary password</strong> with you separately for security. The first time you sign in at <a href="https://accounts.google.com">accounts.google.com</a>, Google will ask you to set your own password.</p>',
+      '<p>Hi ' + escapeHtmlWs(greetingName) + '!</p>',
+      '<p>I\'m ' + dirEsc + ', the Communications Director. I just added you to our Google Spaces. You should have received an email from Google with a <strong>Sign in</strong> button — click it to set your password and finish activating your Roots &amp; Wings account. <strong>The Sign in link expires after 48 hours</strong>; if it does, just reach out and I\'ll send you a fresh one.</p>',
+      '<h3>Google Chat</h3>',
+      '<p>You can access Google Chat on the web or via the app on your phone. Our Spaces are where we handle all co-op-related communications. <a href="https://docs.google.com/document/d/1y3Ru6dCnKnfejb2kwHmNh42jUI8D6Q4D4f_APSGnpz0/edit?usp=share_link">A description of each Space can be found here.</a></p>',
+      '<p>It\'s also helpful for other members if you add a photo of yourself to your profile.</p>',
+      '<h3>Google Drive</h3>',
+      '<p>You also have access to our Google Drive, which includes shared co-op files. Make sure to sign in with your Roots &amp; Wings email to access them. The most important files live in the <strong>Essential Documents</strong> folder.</p>',
       '<h3>The Members Portal</h3>',
-      '<p>Once your password is set, sign in to the members portal here:</p>',
+      '<p>Sign in to the members portal with your Roots &amp; Wings email here:</p>',
       '<p><a href="https://roots-and-wings-topaz.vercel.app/members.html" style="display:inline-block;background:#523A79;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Open the Members Portal</a></p>',
-      '<p>Inside you\'ll find the directory, schedule, calendar, member agreement &amp; waivers, your billing card, and ways to get involved.</p>',
+      '<p>Inside you\'ll find the directory, schedule, calendar, member agreement &amp; waivers, financials, and ways to get involved.</p>',
       '<h3>Questions?</h3>',
-      '<p>Reply to this email any time — it reaches me directly. Welcome aboard!</p>',
-      '<p style="margin-top:24px;">— Erin Bogan, Communications Director<br>Roots &amp; Wings Homeschool, Inc.</p>'
+      '<p>Feel free to reach out to me or our <a href="mailto:membership@rootsandwingsindy.com">Membership Director</a>. Welcome aboard!</p>',
+      '<p style="margin-top:24px;">— ' + dirEsc + '<br>Communications Director<br>Roots &amp; Wings Homeschool, Inc.</p>'
     ].join('\n');
+  }
+
+  // Builds the welcome email HTML with an optional personal note injected
+  // just before the "Questions?" section. Note is plain text — split on
+  // blank lines into paragraphs, single newlines become <br>.
+  function composeWelcomeEmailHtml(name, personalNote, directorName) {
+    var base = defaultWelcomeEmailHtml(name, directorName);
+    var note = String(personalNote || '').trim();
+    if (!note) return base;
+    var paras = note.split(/\n\s*\n/).map(function (p) {
+      return '<p>' + escapeHtmlWs(p).replace(/\n/g, '<br>') + '</p>';
+    }).join('\n');
+    var marker = '<h3>Questions?</h3>';
+    var idx = base.indexOf(marker);
+    if (idx === -1) return base + '\n' + paras;
+    return base.slice(0, idx) + paras + '\n' + base.slice(idx);
   }
 
   function showMemberOnboardingModal() {
@@ -7941,16 +7962,22 @@
           body.innerHTML = '<p class="ws-empty ws-wv-err">Could not load: ' + msg + '</p>';
           return;
         }
-        renderMemberOnboardingBody(body, res.data.registrations || []);
+        renderMemberOnboardingBody(body, res.data.registrations || [], res.data.comms_director_name || '');
       }).catch(function (err) {
         body.innerHTML = '<p class="ws-empty ws-wv-err">Network error: ' + ((err && err.message) || 'unknown') + '</p>';
       });
   }
 
-  function renderMemberOnboardingBody(body, regs) {
+  function renderMemberOnboardingBody(body, regs, commsDirectorName) {
     var ready = regs.filter(isReadyToOnboard);
 
     var h = '';
+    // ── Collapsible welcome-email template preview ──
+    h += '<details class="mo-template-preview">';
+    h += '<summary class="mo-template-summary">Preview welcome email</summary>';
+    h += '<div class="mo-template-body">' + defaultWelcomeEmailHtml('[member]', commsDirectorName) + '</div>';
+    h += '</details>';
+
     // ── Section 1: Ready to onboard ──
     h += '<section class="mo-section">';
     h += '<h4 class="mo-section-h">New families to onboard <span class="mo-pill">' + ready.length + '</span></h4>';
@@ -7976,7 +8003,7 @@
         h += '  <li><label><input type="checkbox" class="mo-step-cb" data-step="distribution_list_added_at" data-reg-id="' + r.id + '"' + (step2Done ? ' checked' : '') + '> 2. Added to currentmembers distribution list</label>'
           + (step2Done ? '<span class="mo-step-stamp"> · ' + escapeHtmlWs(new Date(r.distribution_list_added_at).toLocaleDateString()) + '</span>' : '') + '</li>';
         h += '  <li class="mo-step-email">';
-        h += '    <button type="button" class="sc-btn mo-send-email-btn" data-reg-id="' + r.id + '" data-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-email="' + escapeHtmlWs(r.email || '') + '" data-ws-email="' + escapeHtmlWs(wsEmail) + '"' + (canSend ? '' : ' disabled') + '>3. Send welcome email&hellip;</button>';
+        h += '    <button type="button" class="sc-btn mo-send-email-btn" data-reg-id="' + r.id + '" data-name="' + escapeHtmlWs(r.main_learning_coach || '') + '" data-email="' + escapeHtmlWs(r.email || '') + '"' + (canSend ? '' : ' disabled') + '>3. Create welcome email&hellip;</button>';
         if (!canSend) {
           h += '    <span class="mo-row-hint">Finish steps 1 &amp; 2 first.</span>';
         }
@@ -8027,10 +8054,10 @@
     h += '</section>';
 
     body.innerHTML = h;
-    wireMemberOnboardingHandlers(body);
+    wireMemberOnboardingHandlers(body, commsDirectorName);
   }
 
-  function wireMemberOnboardingHandlers(body) {
+  function wireMemberOnboardingHandlers(body, commsDirectorName) {
     body.querySelectorAll('.mo-step-cb').forEach(function (cb) {
       cb.addEventListener('change', function () {
         var id = parseInt(this.getAttribute('data-reg-id'), 10);
@@ -8068,41 +8095,33 @@
         var id = parseInt(this.getAttribute('data-reg-id'), 10);
         var name = this.getAttribute('data-name');
         var emailTo = this.getAttribute('data-email');
-        var wsEmail = this.getAttribute('data-ws-email');
         var composer = document.getElementById('mo-composer-' + id);
         if (!composer) return;
         var subject = 'Welcome to Roots & Wings — your member portal access';
-        var bodyHtml = defaultWelcomeEmailHtml(name, wsEmail);
+        var notePlaceholder = 'e.g. We\'d love to have you join us at Field Day next Friday!';
         var ch = '<div class="mo-composer-inner">';
         ch += '<p class="mo-composer-info">Sending to <strong>' + escapeHtmlWs(emailTo) + '</strong> · cc Communications</p>';
         ch += '<label class="mo-composer-label">Subject</label>';
         ch += '<input type="text" class="cl-input mo-composer-subject" value="' + escapeHtmlWs(subject) + '">';
-        ch += '<label class="mo-composer-label">Email body (HTML — edit if you need to swap in the real Workspace email or notes)</label>';
-        ch += '<textarea class="rd-textarea mo-composer-body" rows="14">' + escapeHtmlWs(bodyHtml) + '</textarea>';
+        ch += '<label class="mo-composer-label">Personal note <span class="mo-composer-hint">(optional — added before the sign-off in the welcome template)</span></label>';
+        ch += '<textarea class="rd-textarea mo-composer-note" rows="5" placeholder="' + escapeHtmlWs(notePlaceholder) + '"></textarea>';
         ch += '<div class="rd-btn-row mo-composer-actions">';
         ch += '<button type="button" class="sc-btn mo-composer-send" data-reg-id="' + id + '">Send welcome email</button>';
-        ch += '<button type="button" class="sc-btn mo-composer-cancel">Cancel</button>';
         ch += '</div>';
         ch += '<p class="mo-composer-status" aria-live="polite"></p>';
         ch += '</div>';
         composer.innerHTML = ch;
         composer.hidden = false;
-        // Don't textarea-encode the HTML twice — the textarea displays
-        // the escaped form which is what we want, but on send we need the
-        // original. Re-set value via property to bypass HTML parse.
-        composer.querySelector('.mo-composer-body').value = bodyHtml;
 
-        composer.querySelector('.mo-composer-cancel').addEventListener('click', function () {
-          composer.hidden = true;
-          composer.innerHTML = '';
-        });
+        var noteEl = composer.querySelector('.mo-composer-note');
+
         composer.querySelector('.mo-composer-send').addEventListener('click', function () {
           var sendBtn = this;
           var statusEl = composer.querySelector('.mo-composer-status');
           var subj = composer.querySelector('.mo-composer-subject').value;
-          var bod = composer.querySelector('.mo-composer-body').value;
+          var bod = composeWelcomeEmailHtml(name, noteEl.value, commsDirectorName);
           if (!subj.trim() || !bod.trim()) {
-            statusEl.textContent = 'Subject and body are required.';
+            statusEl.textContent = 'Subject is required.';
             return;
           }
           sendBtn.disabled = true;
@@ -8122,6 +8141,7 @@
                 return;
               }
               statusEl.textContent = 'Sent — family will get the email shortly.';
+              if (typeof loadMemberOnboardingCount === 'function') loadMemberOnboardingCount();
               setTimeout(function () {
                 closeDetail();
                 showMemberOnboardingModal();

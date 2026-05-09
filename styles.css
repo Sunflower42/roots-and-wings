@@ -9901,10 +9901,39 @@ button.staff-role:hover {
 }
 .mo-composer-info { margin: 0 0 10px; font-size: 0.88rem; color: var(--color-text-light); }
 .mo-composer-label { display: block; font-weight: 600; color: var(--color-primary-dark); font-size: 0.85rem; margin: 8px 0 4px; }
+.mo-composer-hint { font-weight: normal; color: var(--color-text-light); }
 .mo-composer-subject { width: 100%; }
-.mo-composer-body { width: 100%; font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace; font-size: 0.82rem; }
+.mo-composer-note { width: 100%; font-size: 0.9rem; }
 .mo-composer-actions { margin-top: 10px; }
 .mo-composer-status { margin-top: 8px; font-size: 0.88rem; color: var(--color-text-light); }
+
+.mo-template-preview {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  margin: 0 0 16px;
+}
+.mo-template-summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  font-size: 0.92rem;
+  list-style: revert;
+  user-select: none;
+}
+.mo-template-summary:hover { background: var(--color-bg-soft, #f7f4fb); border-radius: 8px; }
+.mo-template-preview[open] .mo-template-summary { border-bottom: 1px solid var(--color-border); border-radius: 8px 8px 0 0; }
+.mo-template-body {
+  padding: 14px 18px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.mo-template-body h2 { font-size: 1.15rem; margin: 0 0 10px; color: var(--color-primary-dark); }
+.mo-template-body h3 { font-size: 1rem; margin: 14px 0 6px; color: var(--color-primary-dark); }
+.mo-template-body p { margin: 0 0 8px; }
 .mo-removal-hint { font-size: 0.88rem; color: var(--color-text-light); margin: 0 0 10px; }
 .mo-removal-list {
   margin: 0;
