@@ -902,6 +902,34 @@
       wirePaypal();
     });
 
+    // Fire-and-forget report of a client-side PayPal failure to /api/tour
+    // so treasurer@ + membership@ get an email alert. Critical for the
+    // "paid but registration didn't save" case where the buyer is charged
+    // and we'd otherwise only learn about it if they write in.
+    function reportPaypalError(stage, error, paypalTxnId) {
+      try {
+        var payload = {
+          kind: 'paypal-error',
+          stage: stage || 'unknown',
+          error: (error && error.message) ? { message: error.message, name: error.name, stack: (error.stack || '').slice(0, 2000) } : error,
+          form_snapshot: {
+            main_learning_coach: (state.form || {}).main_learning_coach || '',
+            email: (state.form || {}).email || '',
+            phone: (state.form || {}).phone || '',
+            track: (state.form || {}).track || '',
+            kids: (state.form || {}).kids || []
+          },
+          paypal_transaction_id: paypalTxnId || ''
+        };
+        fetch('/api/tour', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          keepalive: true
+        }).catch(function () { /* swallow — we're already in an error path */ });
+      } catch (_) { /* never let the reporter itself throw */ }
+    }
+
     // ── Step 4: PayPal ──
     function wirePaypal() {
       var wrap = document.getElementById('reg-paypal-btn-wrap');
@@ -913,6 +941,7 @@
 
       if (typeof paypal_sdk === 'undefined' || !paypal_sdk.Buttons) {
         if (fallback) fallback.style.display = '';
+        reportPaypalError('sdk_missing', 'paypal_sdk global is undefined or has no Buttons');
         return;
       }
 
@@ -948,6 +977,9 @@
                   // Payment succeeded but save failed — tell the user clearly,
                   // and if the API returned a specific reason (e.g. duplicate
                   // registration), surface that so they know what to fix.
+                  // Also alert treasurer@ + membership@ so the family doesn't
+                  // have to write in themselves.
+                  reportPaypalError('post_capture_save', res || 'submitRegistration returned null', details.id);
                   document.getElementById('reg-done-msg').textContent = 'Your payment went through.';
                   var txnEl = document.getElementById('reg-done-txn');
                   if (txnEl) txnEl.textContent = details.id;
@@ -963,10 +995,17 @@
                 }
                 showStep('done');
               });
+            }).catch(function (captureErr) {
+              // Capture itself blew up (PayPal API error, network, etc.).
+              // We don't know if the charge went through — treasurer needs
+              // to check PayPal Activity manually for this buyer.
+              reportPaypalError('capture', captureErr, (data && data.orderID) || '');
+              showError('reg-pay-error', 'Payment could not be processed. Please try again or email treasurer@rootsandwingsindy.com.');
             });
           },
           onError: function (err) {
             console.error('PayPal Buttons onError:', err);
+            reportPaypalError('on_error', err);
             showError('reg-pay-error', 'Payment could not be processed. Please try again or email treasurer@rootsandwingsindy.com.');
           },
           onCancel: function () {
@@ -974,11 +1013,13 @@
           }
         }).render('#reg-paypal-btn-wrap').then(function () {
           state.paypalRendered = true;
-        }).catch(function () {
+        }).catch(function (renderErr) {
           if (fallback) fallback.style.display = '';
+          reportPaypalError('render', renderErr);
         });
       } catch (e) {
         if (fallback) fallback.style.display = '';
+        reportPaypalError('render_threw', e);
       }
     }
 

@@ -608,8 +608,96 @@ async function handleRegistration(body, req, res) {
       return res.status(409).json({ error: 'A registration already exists for this email this season. Please contact membership@rootsandwingsindy.com.' });
     }
     console.error('Registration insert error:', err);
+    // Treasurer needs to know immediately when a paid PayPal transaction
+    // failed to record — otherwise the family is charged but has no
+    // membership row, and the only signal is them writing in. Best-effort
+    // alert; never block the 500 response on email delivery.
+    if (paypal_transaction_id) {
+      try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+          to: ['treasurer@rootsandwingsindy.com', 'membership@rootsandwingsindy.com'],
+          subject: emailSubject(`ALERT: Paid registration failed to save — ${main_learning_coach}`),
+          html: `
+            <h2>Registration save failed AFTER PayPal capture</h2>
+            <p>The family was charged but the registration row did NOT save. They will see an error and have been told to email treasurer@. Reach out to them and either reconcile the registration manually or refund the PayPal charge.</p>
+            <table style="border-collapse:collapse;font-family:sans-serif;">
+              <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Main Learning Coach</td><td>${escapeHtml(main_learning_coach)}</td></tr>
+              <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Email</td><td>${escapeHtml(email)}</td></tr>
+              <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Phone</td><td>${escapeHtml(phone)}</td></tr>
+              <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">PayPal txn</td><td>${escapeHtml(paypal_transaction_id)} — $${escapeHtml(String(payment_amount))}</td></tr>
+              <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Season</td><td>${escapeHtml(season)}</td></tr>
+              <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">DB error</td><td><code>${escapeHtml(String(err && err.message || err))}</code></td></tr>
+            </table>
+          `,
+        });
+      } catch (mailErr) {
+        console.error('Treasurer alert email failed (non-fatal):', mailErr);
+      }
+    }
     return res.status(500).json({ error: 'Could not save registration. Please email treasurer@rootsandwingsindy.com with your PayPal transaction ID.' });
   }
+}
+
+// ── PayPal client-side error reporter ──
+// Receives errors that fire in the buyer's browser (SDK render failure,
+// capture failure, post-capture network/API failures) and emails treasurer@
+// + membership@ so we hear about broken payment attempts even when the
+// buyer never writes in. Always returns 200 — this is fire-and-forget
+// from the client and we don't want to drive retry storms or surface
+// a follow-up error to a user who's already seeing one.
+async function handlePaypalError(body, req, res) {
+  const stage = String(body.stage || 'unknown').slice(0, 60);
+  const errorText = (function () {
+    var e = body.error;
+    if (e == null) return '(no error payload)';
+    if (typeof e === 'string') return e.slice(0, 4000);
+    try { return JSON.stringify(e, null, 2).slice(0, 4000); }
+    catch (_) { return String(e).slice(0, 4000); }
+  })();
+  const form = body.form_snapshot || {};
+  const mlc = String(form.main_learning_coach || '').trim().slice(0, 200);
+  const email = String(form.email || '').trim().slice(0, 200);
+  const phone = String(form.phone || '').trim().slice(0, 50);
+  const track = String(form.track || '').trim().slice(0, 50);
+  const kidsCount = Array.isArray(form.kids) ? form.kids.length : 0;
+  const paypalTxn = String(body.paypal_transaction_id || '').trim().slice(0, 100);
+  const userAgent = String((req.headers && req.headers['user-agent']) || '').slice(0, 500);
+
+  console.error('[paypal-error]', stage, mlc || '(no name)', email || '(no email)', errorText.slice(0, 500));
+
+  try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const subjectStage = paypalTxn
+      ? 'PAID but post-capture failed'
+      : (stage === 'render' ? 'PayPal button never loaded' : 'PayPal flow failed');
+    await resend.emails.send({
+      from: 'Roots & Wings Website <noreply@rootsandwingsindy.com>',
+      to: ['treasurer@rootsandwingsindy.com', 'membership@rootsandwingsindy.com'],
+      subject: emailSubject(`ALERT: ${subjectStage} — ${mlc || '(no name yet)'}`),
+      html: `
+        <h2>PayPal client-side error</h2>
+        <p>A buyer hit an error during the registration payment flow. ${paypalTxn ? '<strong style="color:#b00;">PayPal already captured the payment — refund or reconcile manually.</strong>' : 'No PayPal transaction was captured (or none we received).'}</p>
+        <table style="border-collapse:collapse;font-family:sans-serif;">
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Stage</td><td><code>${escapeHtml(stage)}</code></td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Main Learning Coach</td><td>${escapeHtml(mlc) || '(not entered yet)'}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Email</td><td>${escapeHtml(email) || '(not entered yet)'}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Phone</td><td>${escapeHtml(phone) || '(not entered yet)'}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Track</td><td>${escapeHtml(track) || '(not entered yet)'}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">Kids on form</td><td>${kidsCount}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;">PayPal txn</td><td>${paypalTxn ? escapeHtml(paypalTxn) : '(none captured)'}</td></tr>
+          <tr><td style="padding:6px 16px 6px 0;font-weight:bold;vertical-align:top;">User agent</td><td><code style="word-break:break-all;">${escapeHtml(userAgent)}</code></td></tr>
+        </table>
+        <h3>Error payload</h3>
+        <pre style="background:#f5f5f5;padding:12px;border-radius:6px;font-size:12px;overflow-x:auto;">${escapeHtml(errorText)}</pre>
+      `,
+    });
+  } catch (mailErr) {
+    console.error('paypal-error alert email failed (non-fatal):', mailErr);
+  }
+
+  return res.status(200).json({ logged: true });
 }
 
 // ── List registrations (Workspace auth + Comms/Membership Director role) ──
@@ -2679,6 +2767,7 @@ module.exports = async function handler(req, res) {
     if (kind === 'tour') return handleTour(body, res);
     if (kind === 'tour-update') return handleTourUpdate(body, req, res);
     if (kind === 'registration') return handleRegistration(body, req, res);
+    if (kind === 'paypal-error') return handlePaypalError(body, req, res);
     if (kind === 'registration-decline') return handleRegistrationDecline(body, req, res);
     if (kind === 'registration-mark-paid') return handleRegistrationMarkPaid(body, req, res);
     if (kind === 'onboarding-step') return handleOnboardingStep(body, req, res);
