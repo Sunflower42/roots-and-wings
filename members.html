@@ -531,6 +531,19 @@
           html += '</button>';
         });
         grid.innerHTML = html;
+        // Re-arm the fade-in observer for the freshly-injected cards.
+        // Without this, .fade-in's opacity:0 sticks and the whole grid
+        // looks empty even though the buttons are in the DOM.
+        if ('IntersectionObserver' in window) {
+          var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); }
+            });
+          }, { threshold: 0.1 });
+          grid.querySelectorAll('.fade-in').forEach(function (el) { io.observe(el); });
+        } else {
+          grid.querySelectorAll('.fade-in').forEach(function (el) { el.classList.add('visible'); });
+        }
         rebindCards();
       }
       // Public scope works without auth, so we fetch immediately; the
