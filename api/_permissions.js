@@ -1,17 +1,23 @@
 // Shared role-based permission helper.
 //
-// Phase B (2026-04-29): the role-holder source of truth is the
-// `role_holders` Postgres table (joined to `role_descriptions`), not the
-// volunteer Google sheet. The President + super users manage holders
-// through the Workspace UI (api/cleaning.js role-holders endpoints).
-// The seed script `scripts/seed-role-holders.js` is now a one-shot
-// migration tool only — runtime no longer touches the sheet.
+// Roles v2 (2026-05-14): the role-holder source of truth is the
+// `role_holders_v2` Postgres table (joined to `roles`). The President +
+// super users manage holders through the Workspace UI (api/cleaning.js
+// role-holders endpoints). The .docx job descriptions in
+// `roles/Volunteer Position Job Descriptions/` were imported once via
+// `scripts/import-role-docs.js`; runtime no longer reads them.
 //
 // Every role check is additionally satisfied by:
 //   - any address in SUPER_USER_EMAILS (app-wide super users), or
-//   - the canonical board mailbox for that role (BOARD_ROLE_EMAILS),
+//   - any canonical board mailbox for that role (BOARD_ROLE_EMAILS),
 //     so signing in as e.g. treasurer@ always grants Treasurer
-//     regardless of who currently holds the role in role_holders.
+//     regardless of who currently holds the role in role_holders_v2.
+//
+// BOARD_ROLE_EMAILS stays as a hardcoded map (not roles.role_email)
+// because each role can have multiple alias mailboxes (vp@ and
+// vicepresident@; sustaining@ and sustainingdirector@) — the schema's
+// scalar role_email is the canonical display address, not the full
+// authorization set.
 
 const { neon } = require('@neondatabase/serverless');
 
@@ -43,7 +49,7 @@ const BOARD_ROLE_EMAILS = {
 };
 
 // Title aliases — call sites use the un-hyphenated form ("Vice
-// President"); role_descriptions stores the hyphenated canonical
+// President"); roles.title stores the hyphenated canonical
 // ("Vice-President"). Map common variants to the canonical title used
 // in the DB so the lookup matches.
 const TITLE_ALIASES = {
@@ -89,7 +95,7 @@ function getDb() {
 // `roleTitle`. Resolution order:
 //   1. App-wide super user (communications@ / vicepresident@ / vp@)
 //   2. Canonical board mailbox for that role (treasurer@, etc.)
-//   3. role_holders row matching this email + role for the active year
+//   3. role_holders_v2 row matching this email + role for the active year
 async function canEditAsRole(userEmail, roleTitle) {
   if (!userEmail || !roleTitle) return false;
   const email = String(userEmail).toLowerCase();
@@ -104,16 +110,17 @@ async function canEditAsRole(userEmail, roleTitle) {
     const canonical = canonicalTitle(roleTitle).toLowerCase();
     const rows = await sql`
       SELECT 1
-      FROM role_holders rh
-      JOIN role_descriptions rd ON rd.id = rh.role_id
-      WHERE LOWER(rh.email) = ${email}
-        AND LOWER(rd.title) = ${canonical}
-        AND rh.school_year = ${activeSchoolYear()}
+      FROM role_holders_v2 rhv
+      JOIN roles r ON r.id = rhv.role_id
+      WHERE LOWER(rhv.person_email) = ${email}
+        AND LOWER(r.title) = ${canonical}
+        AND rhv.school_year = ${activeSchoolYear()}
+        AND rhv.ended_at IS NULL
       LIMIT 1
     `;
     if (rows.length > 0) return true;
     console.warn('[perms] canEditAsRole DENY user=' + email +
-      ' role=' + roleTitle + ' (no role_holders row for active year)');
+      ' role=' + roleTitle + ' (no role_holders_v2 row for active year)');
     return false;
   } catch (err) {
     console.error('[perms] canEditAsRole DB lookup failed for user=' + email +
@@ -132,15 +139,16 @@ async function getRoleHolderEmail(roleTitle) {
     const sql = getDb();
     const canonical = canonicalTitle(roleTitle).toLowerCase();
     const rows = await sql`
-      SELECT rh.email
-      FROM role_holders rh
-      JOIN role_descriptions rd ON rd.id = rh.role_id
-      WHERE LOWER(rd.title) = ${canonical}
-        AND rh.school_year = ${activeSchoolYear()}
-      ORDER BY rh.id ASC
+      SELECT rhv.person_email
+      FROM role_holders_v2 rhv
+      JOIN roles r ON r.id = rhv.role_id
+      WHERE LOWER(r.title) = ${canonical}
+        AND rhv.school_year = ${activeSchoolYear()}
+        AND rhv.ended_at IS NULL
+      ORDER BY rhv.id ASC
       LIMIT 1
     `;
-    if (rows.length > 0) return rows[0].email;
+    if (rows.length > 0) return rows[0].person_email;
   } catch (err) {
     console.error('[perms] getRoleHolderEmail failed:', err);
   }
@@ -161,12 +169,13 @@ async function getRoleHolderEmails(roleTitles) {
     // alias.
     const canonicalLc = roleTitles.map(t => canonicalTitle(t).toLowerCase());
     const rows = await sql`
-      SELECT LOWER(rd.title) AS title, rh.email, rh.id
-      FROM role_holders rh
-      JOIN role_descriptions rd ON rd.id = rh.role_id
-      WHERE LOWER(rd.title) = ANY(${canonicalLc}::text[])
-        AND rh.school_year = ${activeSchoolYear()}
-      ORDER BY rh.id ASC
+      SELECT LOWER(r.title) AS title, rhv.person_email AS email, rhv.id
+      FROM role_holders_v2 rhv
+      JOIN roles r ON r.id = rhv.role_id
+      WHERE LOWER(r.title) = ANY(${canonicalLc}::text[])
+        AND rhv.school_year = ${activeSchoolYear()}
+        AND rhv.ended_at IS NULL
+      ORDER BY rhv.id ASC
     `;
     rows.forEach(r => {
       // Map back to the caller's original title casing.

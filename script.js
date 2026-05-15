@@ -1642,7 +1642,14 @@
     });
     if (dbg.length) console.log('[rw-debug] applyPhotos kids:', dbg);
 
-    // Update board cards with Workspace photos
+    // Update board cards with Workspace photos. Extracted so the DB
+    // overlay in members.html can re-apply photos to freshly-rendered
+    // cards (the overlay dispatches `rw:portal-board-rerender` after
+    // replacing .portal-board-grid).
+    applyBoardCardPhotos();
+  }
+
+  function applyBoardCardPhotos() {
     document.querySelectorAll('.portal-board-card[data-board]').forEach(function(card) {
       var fullName = card.getAttribute('data-board');
       var familyName = card.getAttribute('data-board-family');
@@ -1666,6 +1673,7 @@
       }
     });
   }
+  document.addEventListener('rw:portal-board-rerender', applyBoardCardPhotos);
 
   // Live data is loaded after authentication (see showDashboard)
 
@@ -3068,39 +3076,50 @@
     });
   }
 
-  // Board card click handlers
-  document.querySelectorAll('.portal-board-card[data-board]').forEach(function (card) {
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', function (e) {
-      if (e.target.closest('a')) return;
-      var fullName = this.getAttribute('data-board');
-      var boardRole = this.getAttribute('data-board-role');
-      var boardEmail = this.getAttribute('data-board-email');
-      var familyName = this.getAttribute('data-board-family');
-      var resp = BOARD_RESPONSIBILITIES[boardRole];
-      var boardInfo = {role: boardRole, email: boardEmail, responsibilities: resp || null};
+  // Board card click handlers. Extracted so we can re-bind after the DB
+  // overlay in members.html replaces .portal-board-grid with fresh API
+  // rows. The overlay dispatches `rw:portal-board-rerender` after it
+  // injects the new HTML, and the listener below calls bindBoardCards()
+  // again. Re-binding is safe — addEventListener on a fresh DOM element
+  // can't double-fire.
+  function bindBoardCards() {
+    document.querySelectorAll('.portal-board-card[data-board]').forEach(function (card) {
+      if (card.__rwBoardBound) return;
+      card.__rwBoardBound = true;
+      card.style.cursor = 'pointer';
+      card.addEventListener('click', function (e) {
+        if (e.target.closest('a')) return;
+        var fullName = this.getAttribute('data-board');
+        var boardRole = this.getAttribute('data-board-role');
+        var boardEmail = this.getAttribute('data-board-email');
+        var familyName = this.getAttribute('data-board-family');
+        var resp = BOARD_RESPONSIBILITIES[boardRole];
+        var boardInfo = {role: boardRole, email: boardEmail, responsibilities: resp || null};
 
-      // Try to find by explicit family mapping first, then by full name
-      var found = null;
-      if (familyName) {
-        var first = fullName.split(' ')[0];
-        for (var i = 0; i < allPeople.length; i++) {
-          if (allPeople[i].name === first && allPeople[i].family === familyName) {
-            found = {person: allPeople[i], idx: i};
-            break;
+        // Try to find by explicit family mapping first, then by full name
+        var found = null;
+        if (familyName) {
+          var first = fullName.split(' ')[0];
+          for (var i = 0; i < allPeople.length; i++) {
+            if (allPeople[i].name === first && allPeople[i].family === familyName) {
+              found = {person: allPeople[i], idx: i};
+              break;
+            }
           }
         }
-      }
-      if (!found) found = findPersonByFullName(fullName);
+        if (!found) found = findPersonByFullName(fullName);
 
-      if (found) {
-        showPersonDetail(found.person, boardInfo);
-      } else {
-        // Board member not in directory yet — show basic card
-        showBoardOnlyDetail(fullName, boardInfo);
-      }
+        if (found) {
+          showPersonDetail(found.person, boardInfo);
+        } else {
+          // Board member not in directory yet — show basic card
+          showBoardOnlyDetail(fullName, boardInfo);
+        }
+      });
     });
-  });
+  }
+  bindBoardCards();
+  document.addEventListener('rw:portal-board-rerender', bindBoardCards);
 
   // ──────────────────────────────────────────────
   // 7c. My Family Dashboard

@@ -784,29 +784,29 @@ async function handleList(req, res) {
       }
     }
 
-    // Resolve the Communications Director's display name: prefer the
-    // people row keyed off the role_holders.email (the actual MLC name),
-    // fall back to role_holders.person_name only if no people match.
-    // Seed data sets person_name to a placeholder, so people is the
-    // authoritative source.
+    // Resolve the Communications Director's display name from the new
+    // role_holders_v2 + roles tables, joined to people for the live name.
+    // Snapshot columns were dropped from role_holders_v2 — the people
+    // row is the only source. Returns empty string if no people row
+    // matches (typical for shared board mailboxes like communications@).
     let commsDirectorName = '';
     try {
       const cdRows = await sql`
         SELECT
-          rh.person_name AS rh_name,
           NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), '') AS people_name
-        FROM role_holders rh
-        JOIN role_descriptions rd ON rd.id = rh.role_id
+        FROM role_holders_v2 rhv
+        JOIN roles r ON r.id = rhv.role_id
         LEFT JOIN people p
-          ON (LOWER(p.email) = LOWER(rh.email) OR LOWER(p.family_email) = LOWER(rh.email))
+          ON (LOWER(p.email) = LOWER(rhv.person_email) OR LOWER(p.family_email) = LOWER(rhv.person_email))
           AND p.role = 'mlc'
-        WHERE LOWER(rd.title) = 'communications director'
-          AND rh.school_year = ${activeSchoolYear()}
-        ORDER BY rh.id ASC
+        WHERE LOWER(r.title) = 'communications director'
+          AND rhv.school_year = ${activeSchoolYear()}
+          AND rhv.ended_at IS NULL
+        ORDER BY rhv.id ASC
         LIMIT 1
       `;
       if (cdRows.length > 0) {
-        commsDirectorName = cdRows[0].people_name || cdRows[0].rh_name || '';
+        commsDirectorName = cdRows[0].people_name || '';
       }
     } catch (cdErr) {
       console.error('Comms Director name lookup failed (non-fatal):', cdErr);

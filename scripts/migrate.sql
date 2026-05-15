@@ -750,3 +750,119 @@ CREATE INDEX IF NOT EXISTS kids_family_email_idx ON kids (LOWER(family_email));
 -- can do ON CONFLICT (family_email, lower(first_name)) DO UPDATE.
 CREATE UNIQUE INDEX IF NOT EXISTS kids_family_first_lc_idx
   ON kids (family_email, LOWER(first_name));
+
+-- ──────────────────────────────────────────────
+-- Roles v2: clean redesign of role_descriptions + role_holders
+-- ──────────────────────────────────────────────
+-- Replaces role_descriptions, role_holders, and cleaning_config.liaison_name
+-- with three first-class tables: committees, roles, role_holders_v2.
+-- Lives alongside the old tables until the Phase 4 frontend cutover; the
+-- Phase 5 cleanup drops role_descriptions + the old role_holders and renames
+-- role_holders_v2 → role_holders.
+--
+-- Key design differences from the old schema:
+--   - committees promoted from a free-text column on role_descriptions to its
+--     own table, so chair assignment + ordering have a real home
+--   - icon_emoji, card_summary, role_email moved out of hardcoded HTML and
+--     hardcoded constants (BOARD_ROLE_EMAILS, .portal-board-grid)
+--   - revision_history JSONB captures the full audit trail that lives in the
+--     .docx headers today (multi-year stack of "Updated YYYY-MM-DD initials")
+--   - person_name + family_name snapshot columns dropped from role_holders;
+--     current holder names resolve via people join (see feedback memory
+--     rw_role_holder_name_resolution)
+CREATE TABLE IF NOT EXISTS committees (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  chair_role_id INTEGER,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by TEXT NOT NULL DEFAULT ''
+);
+ALTER TABLE committees DROP CONSTRAINT IF EXISTS committees_status_chk;
+ALTER TABLE committees ADD CONSTRAINT committees_status_chk
+  CHECK (status IN ('active','archived'));
+
+CREATE TABLE IF NOT EXISTS roles (
+  id SERIAL PRIMARY KEY,
+  role_key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'committee_role',
+  committee_id INTEGER REFERENCES committees(id) ON DELETE SET NULL,
+  parent_role_id INTEGER REFERENCES roles(id) ON DELETE SET NULL,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'active',
+  term_length TEXT NOT NULL DEFAULT '',
+  overview TEXT NOT NULL DEFAULT '',
+  duties TEXT[] NOT NULL DEFAULT '{}',
+  playbook TEXT NOT NULL DEFAULT '',
+  icon_emoji TEXT NOT NULL DEFAULT '',
+  card_summary TEXT[] NOT NULL DEFAULT '{}',
+  role_email TEXT NOT NULL DEFAULT '',
+  last_reviewed_by TEXT NOT NULL DEFAULT '',
+  last_reviewed_date DATE,
+  revision_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by TEXT NOT NULL DEFAULT ''
+);
+ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_category_chk;
+ALTER TABLE roles ADD CONSTRAINT roles_category_chk
+  CHECK (category IN ('board','committee_role'));
+ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_status_chk;
+ALTER TABLE roles ADD CONSTRAINT roles_status_chk
+  CHECK (status IN ('active','archived'));
+
+-- FK from committees.chair_role_id → roles.id, added after roles exists to
+-- avoid circular DDL ordering. Named explicitly so the IF EXISTS drop is
+-- portable across re-runs.
+ALTER TABLE committees DROP CONSTRAINT IF EXISTS committees_chair_role_fk;
+ALTER TABLE committees ADD CONSTRAINT committees_chair_role_fk
+  FOREIGN KEY (chair_role_id) REFERENCES roles(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS roles_category_idx ON roles (category);
+CREATE INDEX IF NOT EXISTS roles_committee_idx ON roles (committee_id);
+CREATE INDEX IF NOT EXISTS roles_parent_idx ON roles (parent_role_id);
+CREATE INDEX IF NOT EXISTS roles_status_idx ON roles (status);
+
+-- Refined role_holders. Named _v2 during the parallel phase so the old
+-- role_holders table can continue serving _permissions.js and the sheet
+-- overlay until Phase 4 cuts the readers over. Phase 5 drops the old and
+-- renames this to role_holders.
+CREATE TABLE IF NOT EXISTS role_holders_v2 (
+  id SERIAL PRIMARY KEY,
+  role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  person_email TEXT NOT NULL,
+  school_year TEXT NOT NULL DEFAULT '2025-2026',
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by TEXT NOT NULL DEFAULT ''
+);
+CREATE UNIQUE INDEX IF NOT EXISTS role_holders_v2_unique_idx
+  ON role_holders_v2 (role_id, LOWER(person_email), school_year);
+CREATE INDEX IF NOT EXISTS role_holders_v2_role_idx
+  ON role_holders_v2 (role_id);
+CREATE INDEX IF NOT EXISTS role_holders_v2_year_idx
+  ON role_holders_v2 (school_year);
+CREATE INDEX IF NOT EXISTS role_holders_v2_email_idx
+  ON role_holders_v2 (LOWER(person_email));
+
+-- ──────────────────────────────────────────────
+-- Roles v2 Phase 5 cleanup: drop legacy tables
+-- ──────────────────────────────────────────────
+-- Drops were intentionally MOVED OUT of migrate.sql to avoid a
+-- sequencing footgun: running run-migration.js before the v2 data is
+-- in place would have dropped the legacy tables and erased the source
+-- of the holder migration. Run scripts/drop-legacy-role-tables.js
+-- AFTER:
+--   1. run-migration.js  (creates committees, roles, role_holders_v2)
+--   2. import-role-docs.js  (seeds committees + roles from the .docx files)
+--   3. migrate-role-holders-to-v2.js  (copies role_holders → role_holders_v2)
+--   4. Spot-check parity (counts, sample rows for the current school year)
+--
+-- The drop script is small and explicit so it can't accidentally fire
+-- on a run-migration.js sweep.

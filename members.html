@@ -453,6 +453,98 @@
   </div><!-- end .dashboard -->
 
   <script src="https://www.paypal.com/sdk/js?client-id=AcJZV39ZKQGi3MSgpG0juU3fvY8yezjfC7vdNAC_YaWmjt4__LU9juHSOlm_E9CUVrArgn8uNxrjAWZ0&components=buttons&enable-funding=venmo&currency=USD" data-namespace="paypal_sdk"></script>
-  <script src="script.js?v=20260508h"></script>
+  <script src="script.js?v=20260514a"></script>
+
+  <!-- Pull the Board of Directors from the DB so the portal reflects
+       role_holders_v2 without hand-edits to this HTML when the board
+       rotates. The hardcoded grid above is the fetch-failed fallback;
+       if /api/roles?scope=board responds with rows, the entire grid is
+       replaced with API-rendered cards. data-board-* attributes are
+       preserved so the click-to-detail handlers in script.js (which
+       read data-board, data-board-role, data-board-email,
+       data-board-family) keep working unchanged. -->
+  <script>
+    (function () {
+      function escapeHtml(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+      function initialsFor(name) {
+        var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return '?';
+        var first = parts[0].charAt(0);
+        var last = parts.length > 1 ? parts[parts.length - 1].charAt(0) : '';
+        return (first + last).toUpperCase();
+      }
+      function lastNameOf(fullName) {
+        var parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+        return parts.length > 0 ? parts[parts.length - 1] : '';
+      }
+      function rebindCards() {
+        // The board cards are buttons whose click handlers are attached in
+        // script.js after DOMContentLoaded. After we replace the grid,
+        // script.js's existing handler binding (which iterates
+        // .portal-board-card[data-board]) won't re-run, so we dispatch a
+        // custom event the script.js handler listens for to re-bind.
+        // If script.js doesn't expose a re-bind hook, the buttons still
+        // render correctly — they just won't open the detail modal. The
+        // fallback hardcoded grid avoids this issue when API succeeds
+        // BEFORE script.js has bound handlers (load order).
+        var ev = new CustomEvent('rw:portal-board-rerender');
+        document.dispatchEvent(ev);
+      }
+      function renderPortalBoard(rows) {
+        var grid = document.querySelector('.portal-board-grid');
+        if (!grid) return;
+        var html = '';
+        rows.forEach(function (m) {
+          var name = m.full_name || '';
+          var role = m.role_title || '';
+          var emoji = m.icon_emoji || '';
+          var email = m.role_email || m.email || '';
+          var family = lastNameOf(name);
+          var bullets = Array.isArray(m.card_summary) ? m.card_summary : [];
+          html += '<button class="portal-board-card fade-in"';
+          html += ' data-board="' + escapeHtml(name) + '"';
+          html += ' data-board-role="' + escapeHtml(role) + '"';
+          html += ' data-board-email="' + escapeHtml(email) + '"';
+          html += ' data-board-family="' + escapeHtml(family) + '">';
+          if (m.photo_url) {
+            var url = String(m.photo_url).replace(/=s\d+-c/, '=s256-c');
+            html += '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(name) + '" class="portal-board-photo">';
+          } else {
+            html += '<div class="board-avatar" aria-hidden="true">' + escapeHtml(initialsFor(name)) + '</div>';
+          }
+          html += '<h4>' + escapeHtml(name) + '</h4>';
+          html += '<span class="board-role">' + escapeHtml(emoji ? emoji + ' ' + role : role) + '</span>';
+          if (bullets.length) {
+            html += '<ul class="board-bullets">';
+            bullets.forEach(function (b) {
+              html += '<li>' + escapeHtml(b) + '</li>';
+            });
+            html += '</ul>';
+          }
+          if (email) {
+            html += '<span class="portal-board-email">' + escapeHtml(email) + '</span>';
+          }
+          html += '</button>';
+        });
+        grid.innerHTML = html;
+        rebindCards();
+      }
+      // Public scope works without auth, so we fetch immediately; the
+      // sign-in gate doesn't block this endpoint. Same source as
+      // index.html — /api/photos?scope=board returns the rich shape
+      // (icon_emoji + card_summary + role_email) for portal cards.
+      fetch('/api/photos?scope=board')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || !Array.isArray(data.board) || data.board.length === 0) return;
+          renderPortalBoard(data.board);
+        })
+        .catch(function () { /* keep hardcoded fallbacks */ });
+    })();
+  </script>
 </body>
 </html>

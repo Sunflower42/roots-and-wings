@@ -51,7 +51,11 @@ function formatTodayMDY() {
     year: 'numeric'
   }).format(new Date());
 }
-const VALID_CATEGORIES = ['board', 'committee_role', 'cleaning_area', 'class'];
+// Categories are validated client-side AND server-side. Roles v2 dropped
+// 'cleaning_area' and 'class' — cleaning lives in cleaning_areas /
+// cleaning_assignments, classes have a separate home, and `roles` covers
+// humans on the org chart only.
+const VALID_CATEGORIES = ['board', 'committee_role'];
 const VALID_STATUSES = ['active', 'archived'];
 
 async function canEditRoleMeta(userEmail) {
@@ -60,9 +64,10 @@ async function canEditRoleMeta(userEmail) {
   return await canEditAsRole(userEmail, 'President');
 }
 
-// Walks up parent_role_id (max depth 5 — really 3 in practice) and
-// collects titles. User can edit content if they hold ANY of those
-// titles in the volunteer sheet, or if they pass the meta gate.
+// Walks up parent_role_id (max depth 5 — really 3 in practice) on the
+// new `roles` table and collects titles. User can edit content if they
+// hold ANY of those titles in role_holders_v2, or if they pass the meta
+// gate (President + super user).
 async function canEditRoleContent(userEmail, sql, roleId) {
   if (await canEditRoleMeta(userEmail)) return true;
   const titles = [];
@@ -70,7 +75,7 @@ async function canEditRoleContent(userEmail, sql, roleId) {
   const seen = new Set();
   for (let depth = 0; depth < 5 && currentId && !seen.has(currentId); depth++) {
     seen.add(currentId);
-    const row = await sql`SELECT title, parent_role_id FROM role_descriptions WHERE id = ${currentId}`;
+    const row = await sql`SELECT title, parent_role_id FROM roles WHERE id = ${currentId}`;
     if (row.length === 0) break;
     titles.push(row[0].title);
     currentId = row[0].parent_role_id;
@@ -79,6 +84,18 @@ async function canEditRoleContent(userEmail, sql, roleId) {
     if (await canEditAsRole(userEmail, title)) return true;
   }
   return false;
+}
+
+// Resolve a free-text committee name to a committees.id. Returns null if
+// the input is empty (clears the committee_id), or undefined if the name
+// doesn't match an existing committee (caller should 400). Committees
+// can't be created via this path — they live in the committees table
+// and are managed separately.
+async function resolveCommitteeId(sql, committeeName) {
+  const name = String(committeeName == null ? '' : committeeName).trim();
+  if (!name) return null;
+  const row = await sql`SELECT id FROM committees WHERE LOWER(name) = LOWER(${name}) LIMIT 1`;
+  return row.length > 0 ? row[0].id : undefined;
 }
 
 const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.googleusercontent.com';
@@ -143,7 +160,22 @@ module.exports = async function handler(req, res) {
         JOIN cleaning_areas a ON a.id = ca.cleaning_area_id
         ORDER BY ca.session_number, a.sort_order, ca.sort_order
       `;
-      const config = await sql`SELECT liaison_name FROM cleaning_config WHERE id = 1`;
+      // Liaison name is now derived from role_holders_v2 — the
+      // cleaning_config table was retired in Phase 5. Joins through
+      // people for the live name (resolves to '' for board-mailbox
+      // assignees with no people row, same fallback behavior as the
+      // old config text field's empty-string default).
+      const liaisonRows = await sql`
+        SELECT
+          NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), '') AS person_name
+        FROM role_holders_v2 rhv
+        JOIN roles r ON r.id = rhv.role_id
+        LEFT JOIN people p ON LOWER(p.email) = LOWER(rhv.person_email)
+        WHERE r.role_key = 'cleaning_crew_liaison'
+          AND rhv.ended_at IS NULL
+        ORDER BY rhv.school_year DESC, rhv.id ASC
+        LIMIT 1
+      `;
 
       // Build sessions object matching CLEANING_CREW shape
       const sessions = {};
@@ -161,38 +193,55 @@ module.exports = async function handler(req, res) {
       });
 
       return res.status(200).json({
-        liaison: (config[0] && config[0].liaison_name) || '',
+        liaison: (liaisonRows[0] && liaisonRows[0].person_name) || '',
         areas,
         assignments,
         sessions
       });
     }
 
-    // ── Role Descriptions ──
+    // ── Roles (v2) ──
+    // GET response preserves the old field names (`job_length`, `committee`)
+    // so the existing Roles Manager UI continues to work unchanged through
+    // the Phase 4 frontend cutover. Internally:
+    //   - term_length is exposed as job_length
+    //   - committees.name is exposed as committee (via JOIN)
     if (action === 'roles') {
       if (req.method === 'GET') {
-        // includeArchived=1 returns every row (for the President's
-        // management page). Default excludes archived so the duty-popup
-        // + directory lookups don't bloat.
         const includeArchived = req.query.includeArchived === '1';
-        const roles = includeArchived
+        const rows = includeArchived
           ? await sql`
-              SELECT id, role_key, title, job_length, overview, duties, committee,
-                     parent_role_id, category, display_order, status,
-                     last_reviewed_by, last_reviewed_date, playbook,
-                     updated_at, updated_by
-              FROM role_descriptions
-              ORDER BY category, display_order, title
+              SELECT r.id, r.role_key, r.title,
+                     r.term_length AS job_length,
+                     r.overview, r.duties,
+                     c.name AS committee,
+                     r.parent_role_id, r.category, r.display_order, r.status,
+                     r.last_reviewed_by, r.last_reviewed_date, r.playbook,
+                     r.icon_emoji, r.card_summary, r.role_email,
+                     r.revision_history,
+                     r.updated_at, r.updated_by
+              FROM roles r
+              LEFT JOIN committees c ON c.id = r.committee_id
+              ORDER BY r.category, r.display_order, r.title
             `
           : await sql`
-              SELECT id, role_key, title, job_length, overview, duties, committee,
-                     parent_role_id, category, display_order, status,
-                     last_reviewed_by, last_reviewed_date, playbook,
-                     updated_at, updated_by
-              FROM role_descriptions
-              WHERE status = 'active'
-              ORDER BY category, display_order, title
+              SELECT r.id, r.role_key, r.title,
+                     r.term_length AS job_length,
+                     r.overview, r.duties,
+                     c.name AS committee,
+                     r.parent_role_id, r.category, r.display_order, r.status,
+                     r.last_reviewed_by, r.last_reviewed_date, r.playbook,
+                     r.icon_emoji, r.card_summary, r.role_email,
+                     r.revision_history,
+                     r.updated_at, r.updated_by
+              FROM roles r
+              LEFT JOIN committees c ON c.id = r.committee_id
+              WHERE r.status = 'active'
+              ORDER BY r.category, r.display_order, r.title
             `;
+        // Normalize "" committee for client compat — legacy rows had
+        // empty-string here, not NULL.
+        const roles = rows.map(r => Object.assign({}, r, { committee: r.committee || '' }));
         return res.status(200).json({ roles });
       }
 
@@ -209,24 +258,33 @@ module.exports = async function handler(req, res) {
         const category = VALID_CATEGORIES.indexOf(body.category) !== -1 ? body.category : 'committee_role';
         const status = VALID_STATUSES.indexOf(body.status) !== -1 ? body.status : 'active';
         const parent_role_id = body.parent_role_id ? parseInt(body.parent_role_id, 10) : null;
-        const committee = String(body.committee || '').trim();
-        const job_length = String(body.job_length || '').trim();
+        const term_length = String(body.job_length || body.term_length || '').trim();
         const overview = String(body.overview || '').trim();
         const dutiesArr = Array.isArray(body.duties) ? body.duties.map(d => String(d).trim()).filter(Boolean) : [];
         const display_order = Number.isFinite(parseInt(body.display_order, 10)) ? parseInt(body.display_order, 10) : 0;
 
+        let committee_id = null;
+        if (body.committee_id !== undefined && body.committee_id !== null) {
+          committee_id = parseInt(body.committee_id, 10);
+          if (!Number.isFinite(committee_id)) return res.status(400).json({ error: 'committee_id must be a number' });
+        } else if (body.committee !== undefined) {
+          const resolved = await resolveCommitteeId(sql, body.committee);
+          if (resolved === undefined) return res.status(400).json({ error: 'Unknown committee: ' + body.committee });
+          committee_id = resolved;
+        }
+
         if (parent_role_id) {
-          const exists = await sql`SELECT id FROM role_descriptions WHERE id = ${parent_role_id}`;
+          const exists = await sql`SELECT id FROM roles WHERE id = ${parent_role_id}`;
           if (exists.length === 0) return res.status(400).json({ error: 'parent_role_id does not exist' });
         }
 
         try {
           const inserted = await sql`
-            INSERT INTO role_descriptions (
-              role_key, title, job_length, overview, duties, committee,
+            INSERT INTO roles (
+              role_key, title, term_length, overview, duties, committee_id,
               parent_role_id, category, display_order, status, updated_by
             ) VALUES (
-              ${role_key}, ${title}, ${job_length}, ${overview}, ${dutiesArr}, ${committee},
+              ${role_key}, ${title}, ${term_length}, ${overview}, ${dutiesArr}, ${committee_id},
               ${parent_role_id}, ${category}, ${display_order}, ${status}, ${user.email}
             )
             RETURNING *
@@ -258,93 +316,205 @@ module.exports = async function handler(req, res) {
           return res.status(403).json({ error: 'You don\'t have permission to edit this role.' });
         }
 
-        // Apply per-field updates.
+        // Apply per-field updates. job_length is the legacy field name —
+        // the column is `term_length` on the new schema.
         if (body.overview !== undefined) {
-          await sql`UPDATE role_descriptions SET overview = ${String(body.overview)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET overview = ${String(body.overview)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.job_length !== undefined) {
-          await sql`UPDATE role_descriptions SET job_length = ${String(body.job_length)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET term_length = ${String(body.job_length)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.duties !== undefined) {
           const dutiesArr = Array.isArray(body.duties) ? body.duties.map(d => String(d).trim()).filter(Boolean) : [];
-          await sql`UPDATE role_descriptions SET duties = ${dutiesArr}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET duties = ${dutiesArr}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.playbook !== undefined) {
-          await sql`UPDATE role_descriptions SET playbook = ${String(body.playbook)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET playbook = ${String(body.playbook)}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.title !== undefined) {
           const title = String(body.title).trim();
           if (!title) return res.status(400).json({ error: 'title cannot be empty' });
-          await sql`UPDATE role_descriptions SET title = ${title}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET title = ${title}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.committee !== undefined) {
-          await sql`UPDATE role_descriptions SET committee = ${String(body.committee).trim()}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          // Free-text input → committee_id lookup. Empty string clears
+          // the committee link; unknown name is a 400 (committees aren't
+          // auto-created via this path).
+          const resolved = await resolveCommitteeId(sql, body.committee);
+          if (resolved === undefined) return res.status(400).json({ error: 'Unknown committee: ' + body.committee });
+          await sql`UPDATE roles SET committee_id = ${resolved}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.category !== undefined) {
           if (VALID_CATEGORIES.indexOf(body.category) === -1) return res.status(400).json({ error: 'Invalid category' });
-          await sql`UPDATE role_descriptions SET category = ${body.category}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET category = ${body.category}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.status !== undefined) {
           if (VALID_STATUSES.indexOf(body.status) === -1) return res.status(400).json({ error: 'Invalid status' });
-          await sql`UPDATE role_descriptions SET status = ${body.status}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET status = ${body.status}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.display_order !== undefined) {
           const n = parseInt(body.display_order, 10);
           if (!Number.isFinite(n)) return res.status(400).json({ error: 'display_order must be a number' });
-          await sql`UPDATE role_descriptions SET display_order = ${n}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET display_order = ${n}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
         if (body.parent_role_id !== undefined) {
           const pid = body.parent_role_id === null ? null : parseInt(body.parent_role_id, 10);
           if (pid !== null && !Number.isFinite(pid)) return res.status(400).json({ error: 'parent_role_id must be a number or null' });
           if (pid === id) return res.status(400).json({ error: 'A role cannot be its own parent' });
           if (pid) {
-            const exists = await sql`SELECT id FROM role_descriptions WHERE id = ${pid}`;
+            const exists = await sql`SELECT id FROM roles WHERE id = ${pid}`;
             if (exists.length === 0) return res.status(400).json({ error: 'parent_role_id does not exist' });
           }
-          await sql`UPDATE role_descriptions SET parent_role_id = ${pid}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          await sql`UPDATE roles SET parent_role_id = ${pid}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
         }
 
-        // Auto-stamp the review fields whenever the descriptive content
-        // changed. Skipped for pure meta edits (archive, hierarchy,
-        // display_order) so housekeeping doesn't claim someone "reviewed
-        // the description". Returned to the client so it can update the
-        // local cache without a refetch.
+        // Auto-stamp the review fields + append a revision_history entry
+        // whenever the descriptive content changed. The history append is
+        // new in v2 — captures every save so we don't lose the audit
+        // trail the .docx headers used to track manually. Skipped for
+        // pure meta edits (archive, hierarchy, display_order) so
+        // housekeeping doesn't claim someone "reviewed the description".
         const hitsContent = touchedFields.some(k => REVIEW_TRIGGER_FIELDS.has(k));
         if (hitsContent) {
           const reviewer = (user.name || user.email).trim();
           const today = formatTodayMDY();
-          await sql`UPDATE role_descriptions SET last_reviewed_by = ${reviewer}, last_reviewed_date = ${today}, updated_at = NOW(), updated_by = ${user.email} WHERE id = ${id}`;
+          const isoToday = new Date().toISOString().slice(0, 10);
+          await sql`
+            UPDATE roles
+            SET last_reviewed_by = ${reviewer},
+                last_reviewed_date = ${isoToday}::date,
+                revision_history = ${JSON.stringify({ date: isoToday, by: reviewer })}::jsonb || revision_history,
+                updated_at = NOW(),
+                updated_by = ${user.email}
+            WHERE id = ${id}
+          `;
           return res.status(200).json({ ok: true, last_reviewed_by: reviewer, last_reviewed_date: today });
         }
         return res.status(200).json({ ok: true });
       }
     }
 
-    // ── Role Holders (Phase A: read; Phase B: assign/remove from the UI).
-    // Returns an array of holders; the client groups by role_id on render.
-    // Phase B is editable but the permission lookup still consults the
-    // volunteer sheet via canEditAsRole — once the sheet stops being
-    // authoritative we can flip _permissions.js to read from this table.
+    // ── Committee-grouped tree (for the Roles Manager rewrite) ──
+    // Returns committees in display order, each with `chair` (the board
+    // role pointed at by committees.chair_role_id) and `roles` (every
+    // committee_role attached to that committee). Each role carries its
+    // current-year holders so the "Open Roles" filter is just
+    // `holders.length === 0` client-side.
+    if (action === 'tree' && req.method === 'GET') {
+      const includeArchived = req.query.includeArchived === '1';
+      let schoolYear = req.query.school_year;
+      if (!schoolYear || !/^\d{4}-\d{4}$/.test(schoolYear)) {
+        const yr = await sql`SELECT MAX(school_year) AS sy FROM role_holders_v2`;
+        const now = new Date();
+        const fy = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+        schoolYear = (yr[0] && yr[0].sy) || (fy + '-' + (fy + 1));
+      }
+      const committees = await sql`
+        SELECT id, name, chair_role_id, display_order, status
+        FROM committees
+        WHERE (${includeArchived} OR status = 'active')
+        ORDER BY display_order
+      `;
+      const rolesRows = await sql`
+        SELECT
+          id, role_key, title, category, committee_id, parent_role_id,
+          display_order, status, term_length, overview, duties, playbook,
+          icon_emoji, card_summary, role_email,
+          last_reviewed_by, last_reviewed_date, revision_history,
+          updated_at, updated_by
+        FROM roles
+        WHERE (${includeArchived} OR status = 'active')
+        ORDER BY display_order, title
+      `;
+      const holderRows = await sql`
+        SELECT
+          rhv.id, rhv.role_id, rhv.person_email, rhv.school_year,
+          rhv.started_at, rhv.ended_at, rhv.notes,
+          TRIM(CONCAT_WS(' ', p.first_name, p.last_name)) AS full_name
+        FROM role_holders_v2 rhv
+        LEFT JOIN people p ON LOWER(p.email) = LOWER(rhv.person_email)
+        WHERE rhv.school_year = ${schoolYear}
+          AND rhv.ended_at IS NULL
+        ORDER BY rhv.started_at
+      `;
+      const holdersByRoleId = {};
+      holderRows.forEach(h => {
+        (holdersByRoleId[h.role_id] = holdersByRoleId[h.role_id] || []).push({
+          id: h.id,
+          person_email: h.person_email,
+          full_name: h.full_name || '',
+          school_year: h.school_year,
+          started_at: h.started_at,
+          ended_at: h.ended_at,
+          notes: h.notes || ''
+        });
+      });
+      const rolesById = {};
+      rolesRows.forEach(r => {
+        r.holders = holdersByRoleId[r.id] || [];
+        r.duties = Array.isArray(r.duties) ? r.duties : [];
+        r.card_summary = Array.isArray(r.card_summary) ? r.card_summary : [];
+        rolesById[r.id] = r;
+      });
+      const tree = committees.map(c => {
+        const chair = c.chair_role_id ? (rolesById[c.chair_role_id] || null) : null;
+        const members = rolesRows.filter(r =>
+          r.committee_id === c.id && r.id !== c.chair_role_id
+        ).sort((a, b) => a.display_order - b.display_order);
+        return {
+          id: c.id,
+          name: c.name,
+          display_order: c.display_order,
+          status: c.status,
+          chair,
+          roles: members
+        };
+      });
+      const orphans = rolesRows.filter(r => !r.committee_id);
+      if (orphans.length) {
+        tree.push({
+          id: null, name: 'Unassigned', display_order: 9999,
+          status: 'active', chair: null, roles: orphans
+        });
+      }
+      return res.status(200).json({ school_year: schoolYear, committees: tree });
+    }
+
+    // ── Role Holders (v2) ──
+    // Reads from role_holders_v2 + people. Response preserves the legacy
+    // field names (`email`, `person_name`, `family_name`) so the existing
+    // Roles Manager UI continues to work through Phase 4. person_name and
+    // family_name are derived from the people table — person_email is the
+    // join key. Holders without a people row (typical for shared board
+    // mailboxes like president@) get an empty person_name/family_name.
     if (action === 'role-holders') {
       if (req.method === 'GET') {
         const schoolYear = req.query.school_year || '2025-2026';
         const holders = await sql`
-          SELECT rh.id, rh.role_id, rh.email, rh.person_name, rh.family_name,
-                 rh.school_year, rh.started_at, rh.updated_at, rh.updated_by
-          FROM role_holders rh
-          WHERE rh.school_year = ${schoolYear}
-          ORDER BY rh.role_id, rh.person_name
+          SELECT
+            rhv.id, rhv.role_id,
+            rhv.person_email AS email,
+            TRIM(CONCAT_WS(' ', p.first_name, p.last_name)) AS person_name,
+            COALESCE(p.last_name, '') AS family_name,
+            rhv.school_year, rhv.started_at,
+            rhv.updated_at, rhv.updated_by
+          FROM role_holders_v2 rhv
+          LEFT JOIN people p ON LOWER(p.email) = LOWER(rhv.person_email)
+          WHERE rhv.school_year = ${schoolYear}
+            AND rhv.ended_at IS NULL
+          ORDER BY rhv.role_id, person_name
         `;
         return res.status(200).json({ school_year: schoolYear, holders });
       }
 
       if (req.method === 'POST') {
-        const { role_id, email, person_name, family_name, school_year } = req.body || {};
+        const { role_id, email, school_year } = req.body || {};
         const roleId = parseInt(role_id, 10);
-        if (!roleId || !email || !person_name) {
-          return res.status(400).json({ error: 'role_id, email, person_name required' });
+        if (!roleId || !email) {
+          return res.status(400).json({ error: 'role_id and email required' });
         }
         const yr = String(school_year || '2025-2026').trim();
+        const personEmail = String(email).trim().toLowerCase();
         // Same gate as content edits — President + super user always pass;
         // an ancestor-role holder (e.g., VP for Programming Committee
         // roles) can manage their own committee's assignments.
@@ -353,26 +523,44 @@ module.exports = async function handler(req, res) {
           return res.status(403).json({ error: 'Not authorized to assign holders for this role' });
         }
         const inserted = await sql`
-          INSERT INTO role_holders (role_id, email, person_name, family_name, school_year, updated_by)
-          VALUES (${roleId}, ${String(email).trim().toLowerCase()},
-                  ${String(person_name).trim()},
-                  ${String(family_name || '').trim()},
-                  ${yr}, ${user.email})
-          RETURNING id, role_id, email, person_name, family_name, school_year
+          INSERT INTO role_holders_v2 (role_id, person_email, school_year, updated_by)
+          VALUES (${roleId}, ${personEmail}, ${yr}, ${user.email})
+          RETURNING id, role_id, person_email, school_year
         `;
-        return res.status(201).json({ holder: inserted[0] });
+        const row = inserted[0];
+        // Resolve display names from people for the response so the UI
+        // can render the new holder without an extra round-trip.
+        const named = await sql`
+          SELECT
+            TRIM(CONCAT_WS(' ', p.first_name, p.last_name)) AS person_name,
+            COALESCE(p.last_name, '') AS family_name
+          FROM people p
+          WHERE LOWER(p.email) = ${personEmail}
+          LIMIT 1
+        `;
+        const display = named[0] || { person_name: '', family_name: '' };
+        return res.status(201).json({
+          holder: {
+            id: row.id,
+            role_id: row.role_id,
+            email: row.person_email,
+            person_name: display.person_name,
+            family_name: display.family_name,
+            school_year: row.school_year
+          }
+        });
       }
 
       if (req.method === 'DELETE') {
         const id = parseInt(req.query.id, 10);
         if (!id) return res.status(400).json({ error: 'id required' });
-        const row = await sql`SELECT role_id FROM role_holders WHERE id = ${id}`;
+        const row = await sql`SELECT role_id FROM role_holders_v2 WHERE id = ${id}`;
         if (row.length === 0) return res.status(404).json({ error: 'Not found' });
         const allowed = await canEditRoleContent(user.email, sql, row[0].role_id);
         if (!allowed) {
           return res.status(403).json({ error: 'Not authorized to remove holders for this role' });
         }
-        await sql`DELETE FROM role_holders WHERE id = ${id}`;
+        await sql`DELETE FROM role_holders_v2 WHERE id = ${id}`;
         return res.status(200).json({ ok: true });
       }
 
@@ -487,16 +675,13 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    // ── Config update ──
+    // ── Config update (retired in Phase 5) ──
+    // The Cleaning Crew Liaison is now a regular role with role_key =
+    // 'cleaning_crew_liaison'. Assign/unassign via ?action=role-holders.
     if (action === 'config' && req.method === 'PATCH') {
-      const { liaison_name } = req.body || {};
-      if (liaison_name === undefined) return res.status(400).json({ error: 'liaison_name required' });
-      await sql`
-        UPDATE cleaning_config SET liaison_name = ${String(liaison_name).trim()},
-          updated_at = NOW(), updated_by = ${user.email}
-        WHERE id = 1
-      `;
-      return res.status(200).json({ ok: true });
+      return res.status(410).json({
+        error: 'cleaning_config has been retired. Assign the Cleaning Crew Liaison via /api/cleaning?action=role-holders (POST/DELETE) against the cleaning_crew_liaison role.'
+      });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });

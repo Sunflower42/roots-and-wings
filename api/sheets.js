@@ -1315,21 +1315,32 @@ async function applyMemberProfileOverlay(families) {
     });
   });
 
-  // ── Board roles from role_holders ──
-  // Surface fam.boardRole + fam.boardEmail from the role_holders table so
-  // dev environments (where the master sheet's Volunteer Committees tab
-  // is skipped) and any future sheet-free path get the right board cards
-  // in My Workspace + the right "Board Member" duty in My Responsibilities.
-  // In prod, applySheetsData on the client may still overwrite this from
-  // the Volunteer Committees sheet — both sources should agree, but the
-  // sheet stays authoritative until that flow retires.
+  // ── Board roles from role_holders_v2 ──
+  // Surface fam.boardRole + fam.boardEmail from the new role_holders_v2
+  // table so dev environments (where the master sheet's Volunteer
+  // Committees tab is skipped) and any future sheet-free path get the
+  // right board cards in My Workspace + the right "Board Member" duty
+  // in My Responsibilities.
+  //
+  // Match strategy is family_email-only (per feedback_rw_family_identity
+  // — names drift silently). A holder's family_email is whichever of
+  // these matches the rhv.person_email through the people join:
+  //   - dev seed: role inbox IS the family_email (membership@ etc.)
+  //   - prod: holder's personal Workspace email maps to their family
+  //     via people.family_email
+  // We never fall back to family_name matching — it produced duplicate
+  // assignments in dev (two "Family" families both claiming VP).
   try {
     var boardRows = await sql`
-      SELECT rh.email, rh.family_name, rd.title
-      FROM role_holders rh
-      JOIN role_descriptions rd ON rd.id = rh.role_id
-      WHERE rd.status = 'active'
-        AND rd.title ~* '(President|Treasurer|Secretary|Director|Class Liaison|Vice)'
+      SELECT rhv.person_email AS email,
+             p.family_email AS holder_family_email,
+             r.title
+      FROM role_holders_v2 rhv
+      JOIN roles r ON r.id = rhv.role_id
+      LEFT JOIN people p ON LOWER(p.email) = LOWER(rhv.person_email)
+      WHERE r.status = 'active'
+        AND rhv.ended_at IS NULL
+        AND r.title ~* '(President|Treasurer|Secretary|Director|Class Liaison|Vice)'
     `;
     var BOARD_TITLE_NORMALIZE = {
       'Vice-President': 'Vice President',
@@ -1338,18 +1349,20 @@ async function applyMemberProfileOverlay(families) {
       'Communications Dir.': 'Communications Director'
     };
     families.forEach(function (fam) {
-      // First match: by primary family_email (covers dev seed where the
-      // role inbox IS the family_email). Otherwise by family_name (the
-      // Volunteer Committees sheet convention — last-name match).
       var hit = null;
       var famEmailLc = String(fam.email || '').toLowerCase();
-      var famNameLc = String(fam.name || '').toLowerCase();
+      if (!famEmailLc) return;
       for (var bi = 0; bi < boardRows.length; bi++) {
         var br = boardRows[bi];
         var brEmailLc = String(br.email || '').toLowerCase();
-        var brFamLc = String(br.family_name || '').toLowerCase();
-        if (famEmailLc && brEmailLc === famEmailLc) { hit = br; break; }
-        if (famNameLc && brFamLc === famNameLc) { hit = br; /* keep looking for an email match */ }
+        var brFamEmailLc = String(br.holder_family_email || '').toLowerCase();
+        // Prefer direct holder-email match (dev seed: role inbox =
+        // family_email). Otherwise match the holder's family_email
+        // (prod: personal Workspace email maps to family inbox).
+        if (brEmailLc === famEmailLc || brFamEmailLc === famEmailLc) {
+          hit = br;
+          break;
+        }
       }
       if (hit) {
         var title = BOARD_TITLE_NORMALIZE[hit.title] || hit.title;

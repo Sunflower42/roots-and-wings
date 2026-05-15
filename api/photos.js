@@ -23,8 +23,11 @@ const GOOGLE_CLIENT_ID = '915526936965-ibd6qsd075dabjvuouon38n7ceq4p01i.apps.goo
 const ALLOWED_DOMAIN = 'rootsandwingsindy.com';
 const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// Board role titles as they appear in the volunteer-committees sheet (Chair
-// rows). Kept in sync with the cards in index.html.
+// Board role titles in canonical display order. Sourced statically here
+// because upsertBoardPhotos needs the title set before any DB query — the
+// DB is the source of truth (roles WHERE category='board'), but we want
+// the photo cache to populate even if the DB is unreachable. Order
+// matches what shapeBoardRows / index.html expect.
 const BOARD_ROLE_TITLES = [
   'President',
   'Vice President',
@@ -219,16 +222,31 @@ function shapeBoardRows(rows) {
 
 // ── Public endpoint: return current board members from the DB, no auth ──
 //
-// Source of truth is role_holders + role_descriptions for THIS school year
-// (membership rotates annually). photo_url is left-joined from board_photos
-// (which is populated as a side-effect of authed /api/photos calls); a
-// missing photo just means "no Workspace photo on file" — the public-site
-// script falls back to initials.
+// Source of truth is role_holders_v2 + roles for THIS school year
+// (membership rotates annually). The roles row carries `category='board'`
+// so we filter by category instead of matching titles. Current holder
+// name resolves via the people join (snapshot columns were dropped from
+// role_holders_v2 — see feedback rw_role_holder_name_resolution).
+// photo_url is left-joined from board_photos (populated as a side-effect
+// of authed /api/photos calls); a missing photo just means "no Workspace
+// photo on file" — the public-site script falls back to initials.
 //
-// Returned shape: { board: [{ role_title, full_name, email, photo_url }] }
+// Returned shape: {
+//   board: [{
+//     role_key, role_title, full_name, email, photo_url,
+//     icon_emoji, role_email, card_summary
+//   }],
+//   school_year
+// }
 // Order is the canonical board hierarchy (President → Comms Director),
 // not alphabetical, so the public grid always renders in the order the
 // co-op presents itself.
+//
+// The rich fields (icon_emoji, card_summary, role_email) power the
+// members.html portal-board overlay; index.html only needs role_title /
+// full_name / photo_url. Same response shape serves both — the v2
+// design merged the public + portal endpoints to keep Vercel's Hobby
+// 12-function ceiling.
 async function handleBoardScope(req, res) {
   const sql = getSql();
   if (!sql) return res.status(200).json({ board: [] });
@@ -236,14 +254,12 @@ async function handleBoardScope(req, res) {
   res.setHeader('Cache-Control', 'public, max-age=1800, s-maxage=1800');
   try {
     // Pick the most recent school_year that actually has board holders.
-    // Usually this is the current academic year, but it tolerates a
-    // common transition state where next year's board has been seeded
-    // before the calendar flips (e.g. May, when the new board is
-    // confirmed but the academic year hasn't closed). Falls back to a
-    // calendar-derived year if role_holders is empty so the empty-state
-    // response still has a sensible label.
+    // Usually this is the current academic year, but tolerates the May
+    // transition where next year's board has been seeded before the
+    // calendar flips. Falls back to a calendar-derived year if v2 is
+    // empty so the empty-state response still has a sensible label.
     const yrRows = await sql`
-      SELECT MAX(school_year) AS sy FROM role_holders
+      SELECT MAX(school_year) AS sy FROM role_holders_v2
     `;
     const now = new Date();
     const fallbackStart = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
@@ -251,19 +267,56 @@ async function handleBoardScope(req, res) {
 
     const rows = await sql`
       SELECT
-        rh.email,
-        rh.person_name,
-        rd.title,
+        r.role_key,
+        r.title,
+        r.icon_emoji,
+        r.role_email,
+        r.card_summary,
+        r.display_order,
+        rhv.person_email AS email,
+        TRIM(CONCAT_WS(' ', p.first_name, p.last_name)) AS person_name,
         bp.photo_url
-      FROM role_holders rh
-      JOIN role_descriptions rd ON rd.id = rh.role_id
-      LEFT JOIN board_photos bp ON LOWER(bp.email) = LOWER(rh.email)
-      WHERE rh.school_year = ${schoolYear}
-        AND rd.status = 'active'
-        AND LOWER(rd.title) = ANY(${BOARD_ROLE_TITLES.map(t => t.toLowerCase()).concat(['vice-president'])})
+      FROM roles r
+      LEFT JOIN role_holders_v2 rhv
+        ON rhv.role_id = r.id
+       AND rhv.school_year = ${schoolYear}
+       AND rhv.ended_at IS NULL
+      LEFT JOIN people p
+        ON LOWER(p.email) = LOWER(rhv.person_email)
+      LEFT JOIN board_photos bp
+        ON LOWER(bp.email) = LOWER(rhv.person_email)
+      WHERE r.category = 'board' AND r.status = 'active'
+      ORDER BY r.display_order
     `;
 
-    return res.status(200).json({ board: shapeBoardRows(rows), school_year: schoolYear });
+    // shapeBoardRows handles legacy callers (index.html). Rich fields
+    // pass through untouched for the members.html overlay. The lookup
+    // table keys on role_key (stable across the title normalization
+    // shapeBoardRows applies, which would otherwise miss the
+    // Vice-President → Vice President remap).
+    const shaped = shapeBoardRows(rows);
+    const byKey = {};
+    rows.forEach(r => { if (r.role_key) byKey[r.role_key] = r; });
+    const KEY_BY_NORMALIZED_TITLE = {
+      'president': 'president',
+      'vice president': 'vice_president',
+      'treasurer': 'treasurer',
+      'secretary': 'secretary',
+      'membership director': 'membership_director',
+      'sustaining director': 'sustaining_director',
+      'communications director': 'communications_director'
+    };
+    const enriched = shaped.map(s => {
+      const key = KEY_BY_NORMALIZED_TITLE[String(s.role_title || '').toLowerCase()];
+      const r = key ? (byKey[key] || {}) : {};
+      return Object.assign({}, s, {
+        role_key: r.role_key || '',
+        icon_emoji: r.icon_emoji || '',
+        role_email: r.role_email || '',
+        card_summary: Array.isArray(r.card_summary) ? r.card_summary : []
+      });
+    });
+    return res.status(200).json({ board: enriched, school_year: schoolYear });
   } catch (err) {
     console.error('board scope read failed:', err);
     return res.status(500).json({ error: 'Failed to read board' });
