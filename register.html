@@ -49,6 +49,7 @@
     .reg-field { margin-bottom: 16px; }
     .reg-field label { display: block; font-weight: 600; color: var(--color-primary-dark); margin-bottom: 6px; font-size: 0.95rem; }
     .reg-field label .reg-req { color: var(--color-error); margin-left: 2px; }
+    .reg-field label .reg-optional { color: var(--color-text-light); font-weight: 400; font-size: 0.85rem; margin-left: 4px; }
     .reg-field input[type=text], .reg-field input[type=email], .reg-field input[type=tel], .reg-field input[type=date], .reg-field textarea, .reg-field select {
       width: 100%; padding: 10px 12px; border: 1.5px solid rgba(var(--color-primary-rgb), 0.25); border-radius: 8px; font-size: 1rem; font-family: inherit; background: #fff; color: #222; box-sizing: border-box;
     }
@@ -217,8 +218,8 @@
             <input type="tel" id="reg-phone" required autocomplete="tel" placeholder="(317) 555-1234" aria-required="true">
           </div>
           <div class="reg-field">
-            <label for="reg-address">Address <span class="reg-req" aria-hidden="true">*</span></label>
-            <input type="text" id="reg-address" required autocomplete="street-address" aria-required="true" placeholder="Start typing your address…">
+            <label for="reg-address">Address <span class="reg-optional">(optional)</span></label>
+            <input type="text" id="reg-address" autocomplete="street-address" placeholder="Start typing your address…">
             <p class="reg-field-hint" id="reg-address-hint">We'll suggest matches as you type.</p>
           </div>
         </div>
@@ -870,7 +871,9 @@
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showError('reg-form-error', 'Please enter a valid email.'); markInvalid('reg-email'); return; }
       if (!coach) { showError('reg-form-error', 'Main Learning Coach is required.'); markInvalid('reg-coach'); return; }
       if (!phone) { showError('reg-form-error', 'Phone is required.'); markInvalid('reg-phone'); return; }
-      if (!address || address.length < 8) { showError('reg-form-error', 'Please enter a complete street address.'); markInvalid('reg-address'); return; }
+      // Address is optional — but if anything was typed, validate it's
+      // a plausibly complete street address (≥8 chars filters typos).
+      if (address && address.length < 8) { showError('reg-form-error', 'Please enter a complete street address, or leave it blank.'); markInvalid('reg-address'); return; }
       if (!trackEl) { showError('reg-form-error', 'Please select Morning, Afternoon, or Both.'); return; }
       if (kids.length === 0) { showError('reg-form-error', 'Please add at least one child.'); return; }
       for (var i = 0; i < kids.length; i++) {

@@ -348,7 +348,8 @@ async function handleRegistration(body, req, res) {
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid email required.' });
   if (!main_learning_coach) return res.status(400).json({ error: 'Main Learning Coach name required.' });
-  if (!address) return res.status(400).json({ error: 'Address required.' });
+  // Address is optional on the registration form — accept blank, but
+  // still cap the length below when supplied.
   if (!phone) return res.status(400).json({ error: 'Phone number required.' });
   if (VALID_TRACKS.indexOf(track) === -1) return res.status(400).json({ error: 'Select AM / PM / Both.' });
   if (kids.length === 0) return res.status(400).json({ error: 'At least one child required.' });
