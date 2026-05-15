@@ -17,7 +17,7 @@
 const { neon } = require('@neondatabase/serverless');
 const { OAuth2Client } = require('google-auth-library');
 const { ALLOWED_ORIGINS } = require('./_config');
-const { canEditAsRole, isSuperUser } = require('./_permissions');
+const { canEditAsRole, isSuperUser, canImpersonate } = require('./_permissions');
 
 // Editing a role_descriptions row is gated by which bucket of fields
 // you're touching. Meta = title / hierarchy / lifecycle, reserved for
@@ -70,9 +70,14 @@ function formatTodayMDY() {
 const VALID_CATEGORIES = ['board', 'committee_role'];
 const VALID_STATUSES = ['active', 'archived'];
 
+// Structural meta (move-between-committees, change category) is the
+// President's job exclusively. Super-user-the-login (communications@,
+// vp@, vicepresident@) does NOT bypass this — they impersonate the
+// President via X-View-As if they need to perform a structural edit.
+// Treating super-user as "impersonate, not omnipotent" keeps role
+// edits scoped to the role you're effectively acting as.
 async function canEditRoleMeta(userEmail) {
   if (!userEmail) return false;
-  if (isSuperUser(userEmail)) return true;
   return await canEditAsRole(userEmail, 'President');
 }
 
@@ -145,11 +150,23 @@ module.exports = async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-View-As');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const user = await verifyGoogleAuth(req);
-  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const realUser = await verifyGoogleAuth(req);
+  if (!realUser) return res.status(401).json({ error: 'Unauthorized' });
+
+  // View-As impersonation. Honored when the real user has impersonation
+  // rights: explicit super users in any env, plus any signed-in
+  // @rootsandwingsindy.com Workspace member on dev/preview so testers
+  // can exercise role flows without a super-user account. The effective
+  // identity (what downstream gates check) IS NOT auto-promoted — it
+  // flows through the real production gates.
+  const viewAsRaw = String(req.headers['x-view-as'] || '').trim().toLowerCase();
+  let user = realUser;
+  if (viewAsRaw && canImpersonate(realUser.email)) {
+    user = { email: viewAsRaw, name: realUser.name, viewedBy: realUser.email };
+  }
 
   try {
     const sql = getSql();
@@ -302,7 +319,7 @@ module.exports = async function handler(req, res) {
           isCreator = await canEditAsRole(user.email, chairRow[0].chair_title);
         }
         if (!isCreator) {
-          return res.status(403).json({ error: 'Only the President (or the chair of the target committee) can create a role here.' });
+          return res.status(403).json({ error: 'Only the President or the chair of the target committee can create a role here.' });
         }
 
         if (parent_role_id) {
@@ -385,7 +402,7 @@ module.exports = async function handler(req, res) {
         //    user, President, and the committee chair for this role.
         const hitsStructural = touchedFields.some(k => STRUCTURAL_META_FIELDS.has(k));
         if (hitsStructural && !(await canEditRoleMeta(user.email))) {
-          return res.status(403).json({ error: 'Only the President (or super user) can move a role between committees or change its category.' });
+          return res.status(403).json({ error: 'Only the President can move a role between committees or change its category. (View-As president@ if you need to.)' });
         }
         if (!(await canEditRoleContent(user.email, sql, id))) {
           return res.status(403).json({ error: 'You don\'t have permission to edit this role.' });

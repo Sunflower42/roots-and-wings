@@ -61,19 +61,29 @@ function canonicalTitle(t) {
   return TITLE_ALIASES[lower] || String(t || '').trim();
 }
 
+// True super-user — same in dev and prod, only the explicit list. Used
+// by every permission gate, so the dev environment exercises the real
+// production rules. The PREVIOUS implementation auto-granted super-user
+// to any @rootsandwingsindy.com email on dev, which masked the real
+// gates whenever a tester (or View-As) hit the server as a board
+// mailbox like treasurer@.
 function isSuperUser(email) {
   if (!email) return false;
-  // In non-prod environments (preview / development), any signed-in
-  // @rootsandwingsindy.com user is treated as a super user so dev testers
-  // can use View As to impersonate any role-holder family. Auth itself is
-  // unchanged — Google ID token verification still runs first, so only
-  // real Workspace accounts get past the gate. Mirrors the client-side
-  // isDevHost() unlock in script.js.
-  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
-    const lower = String(email).toLowerCase();
-    if (lower.endsWith('@rootsandwingsindy.com')) return true;
-  }
   return SUPER_USER_EMAILS.indexOf(String(email).toLowerCase()) !== -1;
+}
+
+// "Can this verified Workspace user initiate View-As at all?" — broader
+// than isSuperUser. On dev/preview, any signed-in @rootsandwingsindy.com
+// member can impersonate any role for testing; in prod, only the real
+// super-user list. This is what lets non-prod testers sign in with
+// their own emails and still exercise role flows via the header.
+function canImpersonate(email) {
+  if (!email) return false;
+  if (isSuperUser(email)) return true;
+  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
+    return String(email).toLowerCase().endsWith('@rootsandwingsindy.com');
+  }
+  return false;
 }
 
 // April 1 flip — matches activeSchoolYear() in script.js and
@@ -91,15 +101,17 @@ function getDb() {
   return neon(process.env.DATABASE_URL);
 }
 
-// True if `userEmail` is authorized to perform actions gated to
-// `roleTitle`. Resolution order:
-//   1. App-wide super user (communications@ / vicepresident@ / vp@)
-//   2. Canonical board mailbox for that role (treasurer@, etc.)
-//   3. role_holders_v2 row matching this email + role for the active year
+// True if `userEmail` is authorized to act as `roleTitle`. Resolution
+// order:
+//   1. Canonical board mailbox for that role (treasurer@, etc.)
+//   2. role_holders_v2 row matching this email + role for the active year
+//
+// Super-user-the-login is NOT a shortcut here. The super-user list
+// gates impersonation (canImpersonate), not authority — a super user
+// who needs to act as another role does so via X-View-As.
 async function canEditAsRole(userEmail, roleTitle) {
   if (!userEmail || !roleTitle) return false;
   const email = String(userEmail).toLowerCase();
-  if (isSuperUser(email)) return true;
 
   const titleLc = String(roleTitle).toLowerCase();
   const boardEmails = BOARD_ROLE_EMAILS[titleLc] || [];
@@ -195,6 +207,7 @@ module.exports = {
   SUPER_USER_EMAILS,
   BOARD_ROLE_EMAILS,
   isSuperUser,
+  canImpersonate,
   canEditAsRole,
   getRoleHolderEmail,
   getRoleHolderEmails,

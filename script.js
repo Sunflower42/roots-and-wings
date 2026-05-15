@@ -292,6 +292,26 @@
     return localStorage.getItem('rw_user_email');
   }
 
+  // Build the standard Authorization + X-View-As header bundle for API
+  // calls. The server only honors X-View-As when the real (verified)
+  // user is a super user, so it's safe to send unconditionally. This
+  // makes server-side permission checks track the View-As selection
+  // (e.g., communications@ viewing as Treasurer correctly hits the
+  // Treasurer scope, not their super-user bypass).
+  // Pass json=true for POST/PATCH bodies; the helper adds Content-Type.
+  function rwAuthHeaders(json) {
+    var headers = {};
+    var cred = localStorage.getItem('rw_google_credential');
+    if (cred) headers['Authorization'] = 'Bearer ' + cred;
+    var viewAs = sessionStorage.getItem(VIEW_AS_KEY) || '';
+    var real = String(localStorage.getItem('rw_user_email') || '').toLowerCase();
+    if (viewAs && viewAs.toLowerCase() !== real) {
+      headers['X-View-As'] = viewAs;
+    }
+    if (json) headers['Content-Type'] = 'application/json';
+    return headers;
+  }
+
   // Return the fam.people[] entry for the logged-in user (or the View-As
   // target). Match priority: exact email match > family_email match for
   // the MLC entry. Returns null if nothing matches — callers should
@@ -841,7 +861,7 @@
 
     var googleCred = localStorage.getItem('rw_google_credential');
     if (!googleCred) return;
-    fetch('/api/cleaning?action=roles', { headers: { 'Authorization': 'Bearer ' + googleCred } })
+    fetch('/api/cleaning?action=roles', { headers: rwAuthHeaders() })
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (data.error) return;
@@ -966,7 +986,7 @@
           var googleCred = localStorage.getItem('rw_google_credential');
           fetch('/api/cleaning?action=roles&id=' + role.id, {
             method: 'PATCH',
-            headers: { 'Authorization': 'Bearer ' + googleCred, 'Content-Type': 'application/json' },
+            headers: rwAuthHeaders(true),
             body: JSON.stringify({
               overview: newOverview,
               job_length: newJobLength,
@@ -1115,7 +1135,7 @@
       var googleCred = localStorage.getItem('rw_google_credential');
       fetch('/api/cleaning?action=roles&id=' + role.id, {
         method: 'PATCH',
-        headers: { 'Authorization': 'Bearer ' + googleCred, 'Content-Type': 'application/json' },
+        headers: rwAuthHeaders(true),
         body: JSON.stringify({ playbook: newPlaybook })
       })
       .then(function (res) { return res.json(); })
@@ -1249,7 +1269,7 @@
 
     var googleCred = localStorage.getItem('rw_google_credential');
     if (!googleCred) return;
-    fetch('/api/cleaning', { headers: { 'Authorization': 'Bearer ' + googleCred } })
+    fetch('/api/cleaning', { headers: rwAuthHeaders() })
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (data.error) return;
@@ -4617,9 +4637,8 @@
   }
 
   function cleaningApiCall(method, params, body) {
-    var googleCred = localStorage.getItem('rw_google_credential');
     var url = '/api/cleaning' + (params ? '?' + params : '');
-    var opts = { method: method, headers: { 'Authorization': 'Bearer ' + googleCred, 'Content-Type': 'application/json' } };
+    var opts = { method: method, headers: rwAuthHeaders(true) };
     if (body) opts.body = JSON.stringify(body);
     return fetch(url, opts).then(function (r) { return r.json(); });
   }
@@ -4734,7 +4753,7 @@
     }, Promise.resolve()).then(function () {
       // Refresh local cleaningDB so subsequent findAssignmentId calls work.
       return fetch('/api/cleaning', {
-        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('rw_google_credential') }
+        headers: rwAuthHeaders()
       }).then(function (r) { return r.json(); }).then(function (data) {
         if (data && !data.error) applyCleaningData(data);
       });
@@ -13727,15 +13746,16 @@
     var cred = localStorage.getItem('rw_google_credential');
     if (!cred) return;
     fetch('/api/cleaning?action=roles&includeArchived=1', {
-      headers: { 'Authorization': 'Bearer ' + cred }
+      headers: rwAuthHeaders()
     })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (!data) return;
-        // Only update the pill — don't touch _rolesMgrState, since the
-        // modal needs to fetch roles + holders together in a single
-        // consistent pass when it opens.
-        var roles = Array.isArray(data.roles) ? data.roles : [];
+        // Pill reflects the user's manageable scope, not the org-wide
+        // total — a Treasurer sees "3 active" for Finance Committee,
+        // not "28 active" for the whole co-op. Doesn't touch
+        // _rolesMgrState since the modal fetches a fresh pass on open.
+        var roles = scopeRolesToUser(Array.isArray(data.roles) ? data.roles : []);
         var active = roles.filter(function (r) { return r.status === 'active'; }).length;
         pill.textContent = active + ' active';
         pill.hidden = false;
@@ -13790,7 +13810,7 @@
   // with no holder still emit a row with the holder columns blank so the
   // President can see "Roles still open for 2026-27" at a glance.
   function exportRoleHoldersCSV() {
-    var roles = _rolesMgrState.roles || [];
+    var roles = scopeRolesToUser(_rolesMgrState.roles || []);
     var holdersByRoleId = _rolesMgrState.holdersByRoleId || {};
     var year = _rolesMgrState.schoolYear;
     var headers = ['Role', 'Category', 'Term', 'Status', 'School year', 'Holder name', 'Holder email'];
@@ -13831,10 +13851,10 @@
     // Fetch roles + current-year holders in parallel. Holders are Phase A
     // read-only — displayed on each row to show who currently holds it.
     var rolesReq = fetch('/api/cleaning?action=roles&includeArchived=1', {
-      headers: { 'Authorization': 'Bearer ' + cred }
+      headers: rwAuthHeaders()
     });
     var holdersReq = fetch('/api/cleaning?action=role-holders&school_year=' + encodeURIComponent(_rolesMgrState.schoolYear), {
-      headers: { 'Authorization': 'Bearer ' + cred }
+      headers: rwAuthHeaders()
     });
     Promise.all([rolesReq, holdersReq])
       .then(function (responses) {
@@ -13864,14 +13884,41 @@
       });
   }
 
+  // Filter the role list down to what the active user can actually
+  // manage. Super users + the President see everything; every other
+  // board chair sees only the committee they chair (their own board
+  // role + the committee_role rows whose parent_role_id points at them).
+  // Respects View-As — uses getActiveEmail / getWorkspaceRoles which
+  // both flow through sessionStorage[VIEW_AS_KEY].
+  function scopeRolesToUser(allRoles) {
+    var activeEmail = getActiveEmail() || '';
+    if (isSuperUserEmail(activeEmail)) return allRoles;
+    var userRoles = (typeof getWorkspaceRoles === 'function') ? getWorkspaceRoles() : [];
+    if (userRoles.indexOf('President') !== -1) return allRoles;
+    function normalize(t) { return String(t || '').toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim(); }
+    var roleSet = {};
+    userRoles.forEach(function (t) { roleSet[normalize(t)] = true; });
+    var userBoardIds = {};
+    allRoles.forEach(function (r) {
+      if (r.category === 'board' && roleSet[normalize(r.title)]) userBoardIds[r.id] = true;
+    });
+    return allRoles.filter(function (r) {
+      if (userBoardIds[r.id]) return true;
+      if (r.parent_role_id && userBoardIds[r.parent_role_id]) return true;
+      return false;
+    });
+  }
+
   function renderRolesManagerTree() {
     var body = document.getElementById('roles-mgr-tree');
     if (!body) return;
-    var roles = _rolesMgrState.roles || [];
+    var allRoles = _rolesMgrState.roles || [];
+    var roles = scopeRolesToUser(allRoles);
     var show = _rolesMgrState.showArchived;
     var visible = roles.filter(function (r) { return show || r.status !== 'archived'; });
 
-    // Modal meta line — count of visible roles (post archived filter).
+    // Modal meta line — count of visible roles (post scope + archived
+    // filter). Reflects the user's manageable set, not the org-wide total.
     var metaEl = personDetailCard && personDetailCard.querySelector('.rd-title-meta');
     if (metaEl) {
       var activeCount = roles.filter(function (r) { return r.status === 'active'; }).length;
@@ -14041,7 +14088,7 @@
     if (!cred) return;
     fetch('/api/cleaning?action=roles&id=' + id, {
       method: 'PATCH',
-      headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+      headers: rwAuthHeaders(true),
       body: JSON.stringify({ status: nextStatus })
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
@@ -14108,7 +14155,7 @@
       var cred = localStorage.getItem('rw_google_credential');
       fetch('/api/cleaning?action=role-holders', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+        headers: rwAuthHeaders(true),
         body: JSON.stringify(payload)
       })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
@@ -14133,7 +14180,7 @@
     if (!cred) return;
     fetch('/api/cleaning?action=role-holders&id=' + holderId, {
       method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + cred }
+      headers: rwAuthHeaders()
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })
       .then(function (res) {
@@ -14280,7 +14327,7 @@
     if (saveBtn) saveBtn.disabled = true;
     fetch(url, {
       method: method,
-      headers: { 'Authorization': 'Bearer ' + cred, 'Content-Type': 'application/json' },
+      headers: rwAuthHeaders(true),
       body: JSON.stringify(payload)
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, data: d }; }); })

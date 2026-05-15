@@ -102,22 +102,41 @@ t('Dec returns the in-progress year', () => {
   assert.strictEqual(perms.activeSchoolYear(new Date(2026, 11, 15)), '2026-2027');
 });
 
-// ── 4. canEditAsRole — super-user short-circuit ───────────────────────
-console.log('\ncanEditAsRole (super-user path)');
+// ── 4. canEditAsRole — super-user is NOT a shortcut ───────────────────
+// Per the 2026-05-15 scoping change: super-user-the-login is just an
+// impersonation gate. canEditAsRole follows the BOARD_ROLE_EMAILS map
+// + role_holders_v2 lookup for every user (including super users).
+console.log('\ncanEditAsRole (no super-user shortcut)');
 
-await t('super user allowed for any role', async () => {
-  // Hits the short-circuit before any DB call, so it works with no DB.
-  const ok = await perms.canEditAsRole('communications@rootsandwingsindy.com', 'Supply Coordinator');
+await t('communications@ can act as Communications Director (board mailbox)', async () => {
+  const ok = await perms.canEditAsRole('communications@rootsandwingsindy.com', 'Communications Director');
   assert.strictEqual(ok, true);
 });
 
-await t('vicepresident@ as super user passes any role', async () => {
-  const ok = await perms.canEditAsRole('vicepresident@rootsandwingsindy.com', 'Supply Coordinator');
+await t('communications@ CANNOT act as Supply Coordinator (out of scope)', async () => {
+  // No DB → no role_holders_v2 fallback either. Pure board-mailbox check.
+  const prev = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  const ok = await perms.canEditAsRole('communications@rootsandwingsindy.com', 'Supply Coordinator');
+  if (prev !== undefined) process.env.DATABASE_URL = prev;
+  assert.strictEqual(ok, false);
+});
+
+await t('vicepresident@ can act as Vice President', async () => {
+  const ok = await perms.canEditAsRole('vicepresident@rootsandwingsindy.com', 'Vice President');
   assert.strictEqual(ok, true);
+});
+
+await t('vicepresident@ CANNOT act as President', async () => {
+  const prev = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  const ok = await perms.canEditAsRole('vicepresident@rootsandwingsindy.com', 'President');
+  if (prev !== undefined) process.env.DATABASE_URL = prev;
+  assert.strictEqual(ok, false);
 });
 
 await t('case-insensitive on email', async () => {
-  const ok = await perms.canEditAsRole('Communications@RootsAndWingsIndy.com', 'Supply Coordinator');
+  const ok = await perms.canEditAsRole('Communications@RootsAndWingsIndy.com', 'Communications Director');
   assert.strictEqual(ok, true);
 });
 
