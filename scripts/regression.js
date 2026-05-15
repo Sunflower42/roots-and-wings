@@ -134,12 +134,14 @@ const landmines = [
     //     REAL account, not the impersonated one)
     //   - 401 diagnostic in fetchWithAuth
     //   - notifViewAsSuffix() (needs to know who is really viewing)
-    // High-water mark: 8. If you add a 9th, prefer getActiveEmail() unless the
-    // check is about the real user's identity; if it's intentional, bump this
-    // number with a comment and ideally add the call to a named helper above.
+    //   - rwAuthHeaders() compares real vs. view-as to decide whether to
+    //     emit the X-View-As header — needs the REAL identity
+    // High-water mark: 9. If you add a 10th, prefer getActiveEmail() unless
+    // the check is about the real user's identity; if it's intentional, bump
+    // this number with a comment and ideally add the call to a named helper.
     files: [SCRIPT_JS],
     regex: /localStorage\.getItem\s*\(\s*['"]rw_user_email['"]\s*\)/,
-    allowedHits: 8,
+    allowedHits: 9,
   },
 ];
 
