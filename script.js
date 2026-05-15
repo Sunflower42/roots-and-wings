@@ -2023,9 +2023,18 @@
   }
 
   // Is this a class/group filter? Handle "Teens" alias for "Pigeons"
+  // Anchored to the brand age-group list (members.html filter pills),
+  // not AM_CLASSES — AM_CLASSES is populated from the Master sheet's
+  // AM Volunteer tab and stays empty on dev/preview, which used to
+  // make "Saplings"-style filters silently fall through to "Everyone".
+  var BRAND_AGE_GROUPS = [
+    'Greenhouse', 'Saplings', 'Sassafras', 'Oaks',
+    'Maples', 'Birch', 'Willows', 'Cedars', 'Pigeons'
+  ];
   function isGroupFilter(f) {
     if (f === 'all' || f === 'parents') return false;
-    return AM_CLASSES[f] || (f === 'Teens' && AM_CLASSES['Pigeons']);
+    if (BRAND_AGE_GROUPS.indexOf(f) !== -1) return true;
+    return f === 'Teens'; // legacy alias for Pigeons
   }
 
   // Nearest upcoming co-op day — returns today's date if today is co-op day,
@@ -2044,7 +2053,11 @@
     if (!directoryGrid) return;
     var query = (directorySearch ? directorySearch.value : '').toLowerCase();
     var staff = AM_CLASSES[activeFilter];
-    var isClassView = isGroupFilter(activeFilter) && !query;
+    // Class View requires the AM Volunteer sheet payload (staff + sessions).
+    // When that's missing — e.g., dev/preview skips the Master sheet —
+    // fall through to the face-grid view so kids in this group still
+    // render, even if the staff banner doesn't.
+    var isClassView = isGroupFilter(activeFilter) && !query && !!staff && !!staff.sessions;
     var html = '';
     var shown = 0;
 
@@ -4681,21 +4694,61 @@
   // Skips families with only a family name (no parent first names) and
   // any "parents" entry that isn't a real word — defensive against the
   // odd directory row.
+  // Returns one option per actual Workspace login email — the same
+  // source the View-As picker uses (fam.people / fam.loginEmails). Used
+  // by the coverage-assign + role-holder-assign modals so both flows
+  // pick from real people rows, not from synthetic email derivations.
+  // Falls back to a fam.parents split for families that haven't been
+  // backfilled into the people table yet.
   function buildParentPickerOptions() {
     var opts = [];
+    var seen = {};
+    function push(opt) {
+      var key = String(opt.email || '').toLowerCase();
+      if (!key || seen[key]) return;
+      seen[key] = true;
+      opts.push(opt);
+    }
+
     (FAMILIES || []).forEach(function (fam) {
-      if (!fam || !fam.name || !fam.parents) return;
-      var familyLast = String(fam.name).trim();
-      if (!familyLast) return;
+      if (!fam) return;
+      var familyDisplay = fam.displayName || fam.name || '';
+      var familyLast = String(fam.name || '').trim();
+
+      // Preferred path: emit one option per people-row (real Workspace
+      // identity). Skips kids — only role='mlc'/'blc'/'parent' qualify
+      // as role holders.
+      if (Array.isArray(fam.people) && fam.people.length > 0) {
+        fam.people.forEach(function (pp) {
+          if (!pp) return;
+          var email = String(pp.email || '').toLowerCase();
+          if (!email) return;
+          var first = String(pp.first_name || '').trim();
+          var last = String(pp.last_name || '').trim();
+          var fullName = (first + (last ? ' ' + last : '')).trim() || familyDisplay || email;
+          push({
+            email: email,
+            person_name: fullName,
+            family_name: last || familyLast,
+            displayName: fullName,
+            sortKey: (familyLast + ' ' + first).toLowerCase()
+          });
+        });
+        return;
+      }
+
+      // Fallback: split fam.parents and synthesize an @rootsandwingsindy
+      // email per parent. Only fires for families with no people rows —
+      // which should be empty once member_profiles fully owns family data.
+      if (!fam.parents || !familyLast) return;
       var lastInitial = familyLast.charAt(0).toLowerCase();
       String(fam.parents).split(/\s*&\s*/).forEach(function (firstRaw) {
         var first = String(firstRaw || '').trim();
         if (!first) return;
         var firstClean = first.replace(/[^A-Za-z]/g, '');
         if (!firstClean) return;
-        var email = firstClean.toLowerCase() + lastInitial + '@rootsandwingsindy.com';
-        opts.push({
-          email: email,
+        push({
+          email: firstClean.toLowerCase() + lastInitial + '@rootsandwingsindy.com',
           person_name: first + ' ' + familyLast,
           family_name: familyLast,
           displayName: first + ' ' + familyLast,
@@ -13885,14 +13938,17 @@
   }
 
   // Filter the role list down to what the active user can actually
-  // manage. Super users + the President see everything; every other
-  // board chair sees only the committee they chair (their own board
-  // role + the committee_role rows whose parent_role_id points at them).
-  // Respects View-As — uses getActiveEmail / getWorkspaceRoles which
-  // both flow through sessionStorage[VIEW_AS_KEY].
+  // manage. Per the role-scope model: super-user-the-login is just an
+  // impersonator — it does NOT grant edit authority. So scope is
+  // strictly "which committees does the *effective* role chair?":
+  //   - holds President → see all committees (President sits above all)
+  //   - holds any other board chair → see only their own committee
+  //   - holds none → see nothing
+  // Respects View-As (getActiveEmail / getWorkspaceRoles both flow
+  // through sessionStorage[VIEW_AS_KEY]). communications@ acting as
+  // herself now sees only the Communications Committee — to manage
+  // other committees, she View-As's that chair (or the President).
   function scopeRolesToUser(allRoles) {
-    var activeEmail = getActiveEmail() || '';
-    if (isSuperUserEmail(activeEmail)) return allRoles;
     var userRoles = (typeof getWorkspaceRoles === 'function') ? getWorkspaceRoles() : [];
     if (userRoles.indexOf('President') !== -1) return allRoles;
     function normalize(t) { return String(t || '').toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim(); }

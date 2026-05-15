@@ -1586,9 +1586,12 @@ function participationBlankCounts() {
 // has the full roster. The fam.parents string + parentInfo[] (consumed by
 // participationBuildNameIndex) only carry MLC + 'parent' rows.
 async function loadFamiliesFromProfiles(sql) {
-  // Pull families and people in parallel; group people by family.
+  // Pull families, people, and kids in parallel; group each by family.
+  // The kids join is what lets us retire the Directory + Classlist
+  // tabs: parseDirectory used to be the only source of kid age-group
+  // assignments + AM/PM schedule, both now live on the kids table.
   var famRows = await sql`
-    SELECT family_email, family_name
+    SELECT family_email, family_name, phone
     FROM member_profiles
     ORDER BY LOWER(family_name)
   `;
@@ -1599,16 +1602,38 @@ async function loadFamiliesFromProfiles(sql) {
     FROM people
     ORDER BY family_email, sort_order, email
   `;
+  var kidRows = await sql`
+    SELECT family_email, first_name, last_name, pronouns, allergies,
+           schedule, class_group, photo_url, photo_consent, sort_order
+    FROM kids
+    ORDER BY family_email, sort_order, LOWER(first_name)
+  `;
   var byFamily = {};
   peopleRows.forEach(function (pr) {
     var k = String(pr.family_email || '').toLowerCase();
     if (!byFamily[k]) byFamily[k] = [];
     byFamily[k].push(shapePersonRow(pr));
   });
+  var kidsByFamily = {};
+  kidRows.forEach(function (kr) {
+    var k = String(kr.family_email || '').toLowerCase();
+    if (!kidsByFamily[k]) kidsByFamily[k] = [];
+    kidsByFamily[k].push({
+      name: String(kr.first_name || '').trim(),
+      lastName: String(kr.last_name || '').trim(),
+      group: String(kr.class_group || ''),
+      schedule: String(kr.schedule || 'all-day'),
+      pronouns: String(kr.pronouns || ''),
+      allergies: String(kr.allergies || ''),
+      photo_consent: kr.photo_consent !== false,
+      photoUrl: String(kr.photo_url || '')
+    });
+  });
 
   return famRows.map(function (r) {
     var key = String(r.family_email || '').toLowerCase();
     var people = byFamily[key] || [];
+    var kids = kidsByFamily[key] || [];
 
     var firstNames = [];
     var parentInfo = [];
@@ -1628,7 +1653,9 @@ async function loadFamiliesFromProfiles(sql) {
       name: String(r.family_name || '').trim(),
       parents: firstNames.join(' & '),
       email: String(r.family_email || '').toLowerCase(),
+      phone: String(r.phone || ''),
       parentInfo: parentInfo,
+      kids: kids,
       // Full normalized roster for downstream consumers that want every
       // person (e.g. dev-mode renderMyFamily / View As).
       people: people
@@ -2228,14 +2255,11 @@ module.exports = async function handler(req, res) {
       return id ? ('https://docs.google.com/spreadsheets/d/' + id + '/edit') : '';
     }
     var entries = [
-      {
-        key: 'directory',
-        label: 'Directory',
-        purpose: 'Family directory + Classlist (kid → AM group) + Allergies. Being phased out — most fields now live in member_profiles.',
-        envVar: 'DIRECTORY_SHEET_ID',
-        id: process.env.DIRECTORY_SHEET_ID || '',
-        url: urlFor(process.env.DIRECTORY_SHEET_ID)
-      },
+      // Directory sheet retired 2026-05-15 — family + kid data now
+      // lives in member_profiles / people / kids. The DIRECTORY_SHEET_ID
+      // env var is still consumed by one-shot migration scripts
+      // (seed-profiles-from-sheet, backfill-kids-from-classlist,
+      // seed-role-holders) but is no longer read at runtime.
       {
         key: 'master',
         label: 'Master Coordination',
@@ -2294,24 +2318,16 @@ module.exports = async function handler(req, res) {
     var auth = getAuth();
     var sheets = google.sheets({ version: 'v4', auth: auth });
 
-    var directorySheetId = process.env.DIRECTORY_SHEET_ID;
     var masterSheetId = process.env.MASTER_SHEET_ID;
 
-    // Fetch both spreadsheets — but ONLY in production. Preview / Development
-    // deploys read DB-only so dev testers see the seeded role-named families
-    // instead of the real prod members that live in the shared Google Sheets.
-    // Billing reads (handled in a separate handler) intentionally still touch
-    // sheets in dev — they're scoped to a different sheet ID.
-    var directoryTabs = {}, masterTabs = {};
+    // The Directory sheet is retired — member_profiles + people + kids
+    // (Postgres) are the canonical family source. The Master Coordination
+    // sheet is still authoritative for AM/PM class assignments, cleaning,
+    // events, and the volunteer overlay, so we still fetch it.
+    var masterTabs = {};
     var errors = [];
     var isProdEnv = process.env.VERCEL_ENV === 'production';
     if (isProdEnv) {
-      try {
-        directoryTabs = await fetchSheet(sheets, directorySheetId);
-      } catch (e) {
-        errors.push({ sheet: 'directory', error: 'Failed to fetch' });
-        directoryTabs = {};
-      }
       try {
         masterTabs = await fetchSheet(sheets, masterSheetId);
       } catch (e) {
@@ -2319,40 +2335,35 @@ module.exports = async function handler(req, res) {
         masterTabs = {};
       }
     } else {
-      console.log('[dev-mode] skipping directory + master sheet reads in non-prod env (VERCEL_ENV=' + (process.env.VERCEL_ENV || 'unset') + ')');
+      console.log('[dev-mode] skipping master sheet read in non-prod env (VERCEL_ENV=' + (process.env.VERCEL_ENV || 'unset') + ')');
     }
 
     var result = { errors: errors };
 
-    // ── Directory / Families ──
-    var dirTab = directoryTabs['Directory'] || null;
-    var classTab = directoryTabs['Classlist'] || null;
-    var allergyTab = directoryTabs['Allergies'] || null;
-    var dirParsed = parseDirectory(dirTab, classTab, allergyTab);
-    result.families = dirParsed.families || [];
-    result.groupMeta = dirParsed.groupMeta || {};
-
-    // Dev/Preview: sheets were skipped, so families is empty. Build the
-    // list directly from member_profiles instead so the directory + View As
-    // dropdown render against the seeded role-named families.
-    if (!isProdEnv && result.families.length === 0) {
-      try {
-        var sql = getDb();
-        result.families = await loadFamiliesFromProfiles(sql);
-        console.log('[dev-mode] families loaded from member_profiles:', result.families.length);
-      } catch (devLoadErr) {
-        console.error('[dev-mode] loadFamiliesFromProfiles failed:', devLoadErr.message);
-      }
+    // ── Families (DB-only as of 2026-05-15) ──
+    // Source of truth: member_profiles + people + kids tables. The
+    // legacy Directory + Classlist tabs used to feed parseDirectory
+    // here; one-time backfill (scripts/backfill-kids-from-classlist.js)
+    // moved kid age-group + schedule into the kids table.
+    try {
+      var sql = getDb();
+      result.families = await loadFamiliesFromProfiles(sql);
+    } catch (loadErr) {
+      console.error('loadFamiliesFromProfiles failed:', loadErr);
+      result.families = [];
+      errors.push({ source: 'families', error: 'Failed to load from DB' });
     }
 
-    // Overlay member_profiles (member self-edits). DB wins for any non-empty
-    // field; blank DB fields fall through to the sheet value so membership@
-    // can still import/correct data via the Sheet when needed.
+    // applyMemberProfileOverlay was originally the merge step that
+    // layered DB edits on top of the sheet read. Now that families
+    // come from the DB directly, the overlay is mostly redundant —
+    // but it still surfaces fam.boardRole / fam.boardEmail from
+    // role_holders_v2 (the board-role overlay block at line ~1318
+    // is the only piece that's load-bearing).
     try {
       await applyMemberProfileOverlay(result.families);
     } catch (overlayErr) {
       console.error('Member profile overlay failed:', overlayErr);
-      // fall through: sheet-only data still serves
     }
 
     // Default loginEmails = [primary] for every family — see buildSheetData

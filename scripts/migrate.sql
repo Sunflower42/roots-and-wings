@@ -750,6 +750,14 @@ CREATE INDEX IF NOT EXISTS kids_family_email_idx ON kids (LOWER(family_email));
 -- can do ON CONFLICT (family_email, lower(first_name)) DO UPDATE.
 CREATE UNIQUE INDEX IF NOT EXISTS kids_family_first_lc_idx
   ON kids (family_email, LOWER(first_name));
+-- Age-group class assignment (Greenhouse, Saplings, Sassafras, …, Pigeons).
+-- Free text so the brand-aligned group list can evolve without a schema
+-- change; populated by scripts/backfill-kids-from-classlist.js (one-time
+-- read of the legacy Classlist sheet) and going forward by the registration
+-- flow / Membership Director edits. Empty string = unassigned.
+ALTER TABLE kids ADD COLUMN IF NOT EXISTS class_group TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS kids_class_group_idx ON kids (class_group)
+  WHERE class_group <> '';
 
 -- ──────────────────────────────────────────────
 -- Roles v2: clean redesign of role_descriptions + role_holders

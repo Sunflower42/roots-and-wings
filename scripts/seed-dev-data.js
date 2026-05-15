@@ -71,8 +71,11 @@ function buildFamilyRecord(f) {
         role: 'mlc'
       }
     ],
+    // class_group + schedule populated so dev directory filters
+    // (Saplings / Oaks / etc.) have something to match against. Real
+    // prod data flows through scripts/backfill-kids-from-classlist.js.
     kids: [
-      { name: 'Test Kid', birth_date: '2018-01-15', photo_consent: true }
+      { name: 'Test Kid', birth_date: '2018-01-15', photo_consent: true, class_group: 'Sassafras', schedule: 'all-day' }
     ]
   };
 }
@@ -128,10 +131,12 @@ function buildFamilyRecord(f) {
       const k = f.kids[i];
       await sql`
         INSERT INTO kids (
-          family_email, first_name, last_name, birth_date, photo_consent, sort_order
+          family_email, first_name, last_name, birth_date, photo_consent,
+          schedule, class_group, sort_order
         ) VALUES (
           ${f.family_email}, ${(k.name || '').split(/\s+/)[0]}, ${k.last_name || ''},
-          ${k.birth_date || null}, ${k.photo_consent !== false}, ${i}
+          ${k.birth_date || null}, ${k.photo_consent !== false},
+          ${k.schedule || 'all-day'}, ${k.class_group || ''}, ${i}
         )
       `;
     }
