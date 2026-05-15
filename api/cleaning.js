@@ -26,9 +26,21 @@ const { canEditAsRole, isSuperUser } = require('./_permissions');
 // by anyone whose volunteer-sheet role is an ancestor of the target
 // row (so the VP can update any Programming Committee role, the
 // Cleaning Crew Liaison can update the area rows they oversee, etc.).
+// Meta edits split into two tiers:
+//  - STRUCTURAL: changes that move a role between committees or
+//    promote/demote its category. Stay President-only because they
+//    redraw the org chart.
+//  - SUBTREE: title rename, display_order, archive/restore. A board
+//    chair can do these freely on roles inside their own committee.
+const STRUCTURAL_META_FIELDS = new Set([
+  'committee', 'committee_id', 'parent_role_id', 'category'
+]);
+const SUBTREE_META_FIELDS = new Set([
+  'title', 'display_order', 'status'
+]);
 const META_FIELDS = new Set([
-  'title', 'committee', 'parent_role_id', 'category',
-  'display_order', 'status'
+  ...STRUCTURAL_META_FIELDS,
+  ...SUBTREE_META_FIELDS
 ]);
 const CONTENT_FIELDS = new Set([
   'overview', 'duties', 'job_length', 'playbook'
@@ -246,10 +258,6 @@ module.exports = async function handler(req, res) {
       }
 
       if (req.method === 'POST') {
-        // Create a new role. President + super user only.
-        if (!(await canEditRoleMeta(user.email))) {
-          return res.status(403).json({ error: 'Only the President (or super user) can create roles.' });
-        }
         const body = req.body || {};
         const role_key = String(body.role_key || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
         const title = String(body.title || '').trim();
@@ -271,6 +279,30 @@ module.exports = async function handler(req, res) {
           const resolved = await resolveCommitteeId(sql, body.committee);
           if (resolved === undefined) return res.status(400).json({ error: 'Unknown committee: ' + body.committee });
           committee_id = resolved;
+        }
+
+        // Auth: President + super user can create anywhere. A board
+        // chair can also create a new role, but only inside the
+        // committee they chair (and only as a committee_role — they
+        // can't seed peer board rows). Everyone else: 403.
+        let isCreator = await canEditRoleMeta(user.email);
+        if (!isCreator && committee_id) {
+          if (category !== 'committee_role') {
+            return res.status(403).json({ error: 'Only the President (or super user) can create board-tier roles.' });
+          }
+          const chairRow = await sql`
+            SELECT r.title AS chair_title
+            FROM committees c
+            JOIN roles r ON r.id = c.chair_role_id
+            WHERE c.id = ${committee_id}
+          `;
+          if (chairRow.length === 0) {
+            return res.status(400).json({ error: 'Committee has no chair on file — President must create new roles here.' });
+          }
+          isCreator = await canEditAsRole(user.email, chairRow[0].chair_title);
+        }
+        if (!isCreator) {
+          return res.status(403).json({ error: 'Only the President (or the chair of the target committee) can create a role here.' });
         }
 
         if (parent_role_id) {
@@ -302,17 +334,60 @@ module.exports = async function handler(req, res) {
         const id = parseInt(req.query.id, 10);
         if (!id) return res.status(400).json({ error: 'id required' });
         const body = req.body || {};
-        const touchedFields = Object.keys(body).filter(k => META_FIELDS.has(k) || CONTENT_FIELDS.has(k));
-        if (touchedFields.length === 0) return res.status(400).json({ error: 'No editable fields supplied' });
+        const supplied = Object.keys(body).filter(k => META_FIELDS.has(k) || CONTENT_FIELDS.has(k));
+        if (supplied.length === 0) return res.status(400).json({ error: 'No editable fields supplied' });
 
-        const hitsMeta = touchedFields.some(k => META_FIELDS.has(k));
-        if (hitsMeta && !(await canEditRoleMeta(user.email))) {
-          return res.status(403).json({ error: 'Only the President (or super user) can change role title, hierarchy, or lifecycle.' });
+        // Diff against current row so unchanged values don't count as
+        // "touched". The existing role-edit form posts every field on
+        // every save — without this diff, a board chair renaming a role
+        // would also be flagged as changing committee_id (which they
+        // can't), and the request would 403 even though they touched
+        // only the title. The legacy `committee` field maps to the
+        // joined committees.name from the GET response.
+        const currentRows = await sql`
+          SELECT r.id, r.title, r.term_length, r.overview, r.duties, r.playbook,
+                 r.parent_role_id, r.category, r.committee_id, r.display_order,
+                 r.status, c.name AS committee
+          FROM roles r LEFT JOIN committees c ON c.id = r.committee_id
+          WHERE r.id = ${id}
+        `;
+        if (currentRows.length === 0) return res.status(404).json({ error: 'Role not found.' });
+        const current = currentRows[0];
+
+        function unchanged(field, incoming) {
+          let cur;
+          if (field === 'job_length') cur = current.term_length || '';
+          else if (field === 'duties') cur = Array.isArray(current.duties) ? current.duties : [];
+          else if (field === 'parent_role_id') cur = current.parent_role_id == null ? null : Number(current.parent_role_id);
+          else if (field === 'display_order') cur = Number(current.display_order || 0);
+          else cur = current[field] == null ? '' : current[field];
+          // Loose equality on scalars; deep-equal on duties arrays.
+          if (Array.isArray(cur) && Array.isArray(incoming)) {
+            return cur.length === incoming.length && cur.every((v, i) => String(v) === String(incoming[i]));
+          }
+          if (field === 'parent_role_id') {
+            return cur === (incoming == null ? null : Number(incoming));
+          }
+          return String(cur) === String(incoming == null ? '' : incoming);
         }
-        // Even for content-only edits, the user needs some stake in the
-        // committee subtree. canEditRoleContent covers super-user + President
-        // + any ancestor-role holder.
-        if (!hitsMeta && !(await canEditRoleContent(user.email, sql, id))) {
+
+        const touchedFields = supplied.filter(k => !unchanged(k, body[k]));
+        if (touchedFields.length === 0) {
+          // Form was submitted with no real changes — still a success.
+          return res.status(200).json({ ok: true, noop: true });
+        }
+
+        // Three permission tiers:
+        //  - Structural meta (committee_id / parent_role_id / category /
+        //    committee): redraws the org chart → President + super user.
+        //  - Subtree meta (title / display_order / status) AND content:
+        //    anyone in the parent_role_id chain may edit → covers super
+        //    user, President, and the committee chair for this role.
+        const hitsStructural = touchedFields.some(k => STRUCTURAL_META_FIELDS.has(k));
+        if (hitsStructural && !(await canEditRoleMeta(user.email))) {
+          return res.status(403).json({ error: 'Only the President (or super user) can move a role between committees or change its category.' });
+        }
+        if (!(await canEditRoleContent(user.email, sql, id))) {
           return res.status(403).json({ error: 'You don\'t have permission to edit this role.' });
         }
 

@@ -5589,14 +5589,19 @@
       }
     },
     'roles': {
-      // President-only roles manager. Communications sees it while
-      // View-As'ing the President because getWorkspaceRoles resolves
-      // against the active (view-as) email. roleGate is set so it only
-      // appears for the President — the server enforces meta-edits too.
+      // Each board chair can manage their own committee from the
+      // Roles Manager. The President + super user can edit anything;
+      // everyone else can rename / reorder / archive roles and assign
+      // holders only inside their own committee. Structural changes
+      // (move between committees, change category) stay President-only.
+      // Server-side gates in api/cleaning.js are the real enforcement.
       title: 'Roles & Committees',
-      roleGate: ['President'],
+      roleGate: [
+        'President', 'Vice President', 'Treasurer', 'Secretary',
+        'Membership Director', 'Sustaining Director', 'Communications Director'
+      ],
       render: function () {
-        var h = '<p class="ws-body-hint">Manage every role’s job description, term, and hierarchy across the co-op.</p>';
+        var h = '<p class="ws-body-hint">Manage role descriptions, terms, and current holders for your committee.</p>';
         h += '<ul class="ws-link-list">';
         h += '<li><button type="button" class="ws-link-btn" data-resource-action="roles-manager"><span class="ws-link-icon">🧭</span>Open Roles Manager<span class="ws-link-count" id="rolesmgr-count" hidden></span></button></li>';
         h += '</ul>';
@@ -5812,12 +5817,19 @@
     'Vice President': []
   };
 
+  // Each board chair now defaults to the 'roles' widget so they can
+  // manage their own committee (server-side gate in api/cleaning.js
+  // limits structural edits to the President; everyone else can rename,
+  // reorder, archive, assign holders, and create roles inside their
+  // own committee).
   var WORKSPACE_DEFAULTS = {
     'President': ['roles', 'my-links', 'ways-to-help', 'resources'],
-    'Communications Director': ['todos', 'reports', 'forms', 'admin-consoles', 'source-sheets', 'my-links', 'ways-to-help', 'resources'],
-    'Membership Director': ['todos', 'reports', 'forms', 'my-links', 'ways-to-help', 'resources'],
-    'Treasurer': ['todos', 'reports', 'my-links', 'ways-to-help', 'resources'],
-    'Vice President': ['reports', 'forms', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
+    'Communications Director': ['todos', 'reports', 'forms', 'admin-consoles', 'source-sheets', 'roles', 'my-links', 'ways-to-help', 'resources'],
+    'Membership Director': ['todos', 'reports', 'forms', 'roles', 'my-links', 'ways-to-help', 'resources'],
+    'Treasurer': ['todos', 'reports', 'roles', 'my-links', 'ways-to-help', 'resources'],
+    'Vice President': ['reports', 'forms', 'pm-scheduling', 'roles', 'my-links', 'ways-to-help', 'resources'],
+    'Secretary': ['roles', 'my-links', 'ways-to-help', 'resources'],
+    'Sustaining Director': ['roles', 'my-links', 'ways-to-help', 'resources'],
     'Afternoon Class Liaison': ['reports', 'pm-scheduling', 'my-links', 'ways-to-help', 'resources'],
     '*': ['my-links', 'ways-to-help', 'resources']
   };
@@ -14181,8 +14193,6 @@
     h += '<label class="role-edit-field">Category<select name="category">';
     h += catOption('committee_role', 'Committee Role');
     h += catOption('board', 'Board');
-    h += catOption('cleaning_area', 'Cleaning Area');
-    h += catOption('class', 'Class');
     h += '</select></label>';
     h += '<label class="role-edit-field role-edit-field-wide">Parent role<select name="parent_role_id">' + parentOptions + '</select></label>';
     h += '<label class="role-edit-field">Status<select name="status">';
