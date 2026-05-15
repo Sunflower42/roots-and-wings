@@ -5,19 +5,20 @@
 
 /* ---------- Custom Properties ---------- */
 :root {
-  /* Primary palette */
+  /* Primary palette — main characters per 2026 brand guide. */
   --color-primary: #523A79;         /* Deep Purple */
   --color-primary-dark: #3A285C;
   --color-primary-light: #8858AD;   /* Medium Purple */
+  --color-leaf: #5A6B39;            /* Olive Green */
+  --color-wood: #5A2E02;            /* Dark Brown — use sparingly (depth) */
+
+  /* Secondary palette — support & variety. */
+  --color-teal: #1A7A7A;            /* Deep Teal */
   --color-accent: #E0B52C;          /* Golden Yellow */
   --color-accent-dark: #B8941C;
   --color-accent-light: #F0D66B;
-  --color-leaf: #5A6B39;            /* Olive Green */
-  --color-wood: #5A2E0E;            /* Dark Brown */
-  --color-sky: #5A6B39;
 
-  /* Secondary palette */
-  --color-teal: #1A7A7A;            /* Deep Teal */
+  /* Accent palette — guest stars, use sparingly. */
   --color-chartreuse: #9BC431;      /* Chartreuse */
   --color-coral: #D95F3B;           /* Warm Coral */
 
@@ -39,8 +40,13 @@
   --color-chartreuse-rgb: 155, 196, 49;
   --color-coral-rgb: 217, 95, 59;
 
+  /* 2026 brand stack. Playfair Display = display heading (elegant
+     vibe per spec); Quicksand = rounded header / eyebrow labels (free
+     Google match for KitRounded Light); Nunito Sans = body (warm
+     humanist replacement for Avenir LT Pro Book). */
   --font-heading: 'Playfair Display', Georgia, 'Times New Roman', serif;
-  --font-body: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+  --font-rounded: 'Quicksand', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Nunito Sans', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
 
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.10);
@@ -113,7 +119,10 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
 }
 
-h1 { font-size: clamp(2.2rem, 5vw, 3.5rem); }
+/* h1 = display moment — bump to Playfair 900 (Black) per 2026 brand
+   spec. Body headings (h3+) stay at 700 to keep the page from feeling
+   shouty. */
+h1 { font-size: clamp(2.2rem, 5vw, 3.5rem); font-weight: 900; }
 h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); }
 h3 { font-size: clamp(1.3rem, 3vw, 1.6rem); }
 h4 { font-size: 1.15rem; }
@@ -140,14 +149,19 @@ p + p { margin-top: 1rem; }
   border: 0;
 }
 
+/* Section eyebrow label. Olive Green + Quicksand (rounded) per 2026
+   brand guide — Olive is the "Earthy" voice color that pairs with
+   Deep Purple headings without competing; Quicksand fills the
+   "Header Font" role (KitRounded Light on the brand spec, closest
+   free Google match). */
 .section-badge {
   display: inline-block;
-  font-family: var(--font-body);
+  font-family: var(--font-rounded);
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 2.5px;
-  color: var(--color-accent-dark);
+  color: var(--color-leaf);
   margin-bottom: 12px;
 }
 
@@ -221,6 +235,11 @@ p + p { margin-top: 1rem; }
   line-height: 1;
 }
 
+/* Primary CTA stays Golden Yellow — the 2026 brand guide formally
+   classes Gold as secondary, but on this site the warm gold reads as
+   the inviting, cheerful action call we want for "Schedule a Tour" /
+   "Members" / "Donate". Deep Purple still leads as the page-wide
+   identity color (navbar, hero gradient, headings, footer). */
 .btn-primary {
   background-color: var(--color-accent);
   color: var(--color-white);
@@ -612,7 +631,7 @@ p + p { margin-top: 1rem; }
   font-family: var(--font-body);
   font-style: normal;
   font-size: clamp(0.85rem, 2vw, 1.1rem);
-  color: #E8A628;
+  color: var(--color-accent);
   margin-bottom: 24px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1417,7 +1436,7 @@ p + p { margin-top: 1rem; }
 }
 
 .beyond-section .schedule-heading svg {
-  color: #E8A628;
+  color: var(--color-accent);
 }
 
 .beyond-grid {
@@ -1761,10 +1780,22 @@ p + p { margin-top: 1rem; }
 }
 
 /* ---------- Footer ---------- */
+/* Deep Purple per 2026 brand guide — replaces the prior slate-grey
+   (#3A3F47), which wasn't in the palette. */
 .footer {
-  background-color: #3A3F47;
-  color: rgba(255, 255, 255, 0.7);
+  background-color: var(--color-primary-dark);
+  color: rgba(255, 255, 255, 0.75);
   padding: 64px 0 32px;
+}
+
+.footer-tagline {
+  font-family: var(--font-heading);
+  font-style: italic;
+  font-size: 1.1rem;
+  color: var(--color-accent-light);
+  width: 100%;
+  text-align: center;
+  margin: 0 0 8px;
 }
 
 .footer-grid {
@@ -2213,7 +2244,10 @@ p + p { margin-top: 1rem; }
 }
 
 .portal-header .nav-brand img {
-  height: 40px;
+  /* 48 px = 2026 brand guide minimum for the horizontal logo. The
+     portal-header navbar is 56 px tall, so we keep 4 px of vertical
+     padding above and below — tight but legible. */
+  height: 48px;
 }
 
 .portal-header .nav-quick-icons {
@@ -2275,7 +2309,11 @@ p + p { margin-top: 1rem; }
     height: 56px;
     min-height: 56px;
   }
-  .portal-header .nav-brand img { height: 34px; }
+  /* Mobile portal-header — 44 px is below the brand-spec 48 px minimum,
+     but at 56 px nav height with the toggle button + chat/drive icons
+     competing for space, 48 px crowded into overlap. 44 px is the
+     compromise; bump higher if the navbar height grows. */
+  .portal-header .nav-brand img { height: 44px; }
   .dashboard-header p { display: none; }
   /* Dedicated icon-nav row sits between the navbar and the greeting band */
   .portal-header > .nav-quick-icons-mobile {
@@ -2550,7 +2588,9 @@ p + p { margin-top: 1rem; }
   }
 
   .nav-brand img {
-    height: 44px;
+    /* Brand minimum is 48 px for the horizontal logo. Mobile navbar is
+       64 px tall so we keep 8 px breathing room top/bottom. */
+    height: 48px;
     width: auto;
     max-width: 200px;
   }
@@ -4724,7 +4764,7 @@ button.staff-role:hover {
 
 .mf-billing-overdue {
   background: rgba(220, 53, 69, 0.12);
-  color: #b02a37;
+  color: var(--color-coral);
 }
 
 .mf-billing-overdue::before {
@@ -4894,7 +4934,7 @@ button.staff-role:hover {
 .mf-billing-error {
   padding: 12px 16px;
   background: rgba(220, 53, 69, 0.06);
-  color: #b02a37;
+  color: var(--color-coral);
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
   border: 1px solid rgba(220, 53, 69, 0.15);
@@ -7134,7 +7174,7 @@ button.staff-role:hover {
   position: absolute;
   top: 2px;
   right: 2px;
-  background: #dc3545;
+  background: var(--color-coral);
   color: #fff;
   font-size: 0.6rem;
   font-weight: 700;
@@ -7150,7 +7190,7 @@ button.staff-role:hover {
 /* Bell button gets a soft red ring + gentle pulse while unread notifications
    exist, so users notice it without having to open the dropdown. */
 .notif-bell-btn.has-unread {
-  color: #dc3545;
+  color: var(--color-coral);
   animation: notifBellPulse 2s ease-in-out infinite;
 }
 .notif-bell-btn.has-unread .notif-badge {
@@ -7917,7 +7957,7 @@ button.staff-role:hover {
 }
 .note-error {
   background: rgba(220, 53, 69, 0.06);
-  color: #b02a37;
+  color: var(--color-coral);
 }
 
 /* Billing feedback (.mf-billing-success, .mf-billing-error) is a
@@ -8904,7 +8944,7 @@ button.staff-role:hover {
 .sc-qty-opt:hover:not(:disabled) { background: rgba(0,0,0,0.04); color: var(--color-text); }
 .sc-qty-opt:disabled { cursor: not-allowed; }
 .sc-qty-opt.sc-qty-active { color: #fff; }
-.sc-qty-opt.sc-qty-empty.sc-qty-active  { background: #c0392b; }
+.sc-qty-opt.sc-qty-empty.sc-qty-active  { background: var(--color-coral); }
 .sc-qty-opt.sc-qty-low.sc-qty-active    { background: #e07a2a; }
 .sc-qty-opt.sc-qty-medium.sc-qty-active { background: #b89400; }
 .sc-qty-opt.sc-qty-high.sc-qty-active   { background: #2e6a2e; }
@@ -8943,7 +8983,7 @@ button.staff-role:hover {
   color: #fff;
 }
 .cl-sup-flag-low   { background: #e07a2a; }
-.cl-sup-flag-empty { background: #c0392b; }
+.cl-sup-flag-empty { background: var(--color-coral); }
 .cl-supply-lowstock { background: rgba(224, 122, 42, 0.06); border-radius: 4px; padding: 1px 4px; }
 @media print {
   .cl-sup-flag { color: #000; background: transparent !important; border: 1px solid #000; }

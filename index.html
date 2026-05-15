@@ -13,10 +13,16 @@
   <title>Roots & Wings Indy — Homeschool Co-op in Indianapolis</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Sans+3:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- Brand fonts (2026 guide): Playfair Display Black for display
+       headings (the "elegant vibe" option), Quicksand for rounded
+       header/eyebrow labels (closest free Google match for KitRounded
+       Light), Nunito Sans for body (warm humanist replacement for
+       Avenir LT Pro Book). Dropped Cormorant Garamond + Source Sans 3 —
+       neither was on-brand and they were costing bytes. -->
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,wght@0,400;0,600;0,700;0,800;1,400&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400;1,700&family=Quicksand:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="preload" href="logo-combined.svg?v=20260430g" as="image">
   <link rel="preload" href="logo-combined-mark.png?v=20260430g" as="image">
-  <link rel="stylesheet" href="styles.css?v=20260430g">
+  <link rel="stylesheet" href="styles.css?v=20260515c">
   <link rel="icon" href="favicon-32.png?v=20260430g" type="image/png" sizes="32x32">
   <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260430g">
   <link rel="manifest" href="manifest-public.json?v=20260430g">
@@ -70,7 +76,7 @@
 
     <div class="hero-content">
       <h1>ROOTS & WINGS</h1>
-      <p class="hero-tagline">Nurturing curiosity, growing together</p>
+      <p class="hero-tagline">Where curiosity takes root.</p>
       <p class="hero-description">
         A welcoming homeschool co-op in Indianapolis where families come together
         to learn, create, and build lasting connections. We believe every child
@@ -248,48 +254,52 @@
       </div>
 
       <div class="age-groups-grid">
-        <div class="age-group-card fade-in" style="--accent: #8DB43E" onclick="openAgeGroupModal('greenhouse')">
+        <!-- Card accents drawn entirely from the 2026 brand palette
+             (Olive, Chartreuse, Coral, Teal, Golden Yellow, Medium Purple,
+             Dark Brown). Sequence varies hue between neighbors so two
+             same-color cards never sit adjacent. -->
+        <div class="age-group-card fade-in" style="--accent: #5A2E02" onclick="openAgeGroupModal('greenhouse')">
           <span class="age-group-emoji" aria-hidden="true">🌱</span>
           <h4>Greenhouse</h4>
           <span class="age-range">Ages 0 – 2</span>
           <span class="age-group-note">No programming</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #2D6A3F" onclick="openAgeGroupModal('saplings')">
+        <div class="age-group-card fade-in" style="--accent: #9BC431" onclick="openAgeGroupModal('saplings')">
           <span class="age-group-emoji" aria-hidden="true">🌿</span>
           <h4>Saplings</h4>
           <span class="age-range">Ages 3 – 5</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #D4712A" onclick="openAgeGroupModal('sassafras')">
+        <div class="age-group-card fade-in" style="--accent: #D95F3B" onclick="openAgeGroupModal('sassafras')">
           <span class="age-group-emoji" aria-hidden="true">🍃</span>
           <h4>Sassafras</h4>
           <span class="age-range">Ages 5 – 6</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #5BACC8" onclick="openAgeGroupModal('oaks')">
+        <div class="age-group-card fade-in" style="--accent: #1A7A7A" onclick="openAgeGroupModal('oaks')">
           <span class="age-group-emoji" aria-hidden="true">🌳</span>
           <h4>Oaks</h4>
           <span class="age-range">Ages 7 – 8</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #E8A628" onclick="openAgeGroupModal('maples')">
+        <div class="age-group-card fade-in" style="--accent: #E0B52C" onclick="openAgeGroupModal('maples')">
           <span class="age-group-emoji" aria-hidden="true">🍁</span>
           <h4>Maples</h4>
           <span class="age-range">Ages 8 – 9</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #1E4F2E" onclick="openAgeGroupModal('birch')">
+        <div class="age-group-card fade-in" style="--accent: #5A6B39" onclick="openAgeGroupModal('birch')">
           <span class="age-group-emoji" aria-hidden="true">🌲</span>
           <h4>Birch</h4>
           <span class="age-range">Ages 9 – 10</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #8DB43E" onclick="openAgeGroupModal('willows')">
+        <div class="age-group-card fade-in" style="--accent: #9BC431" onclick="openAgeGroupModal('willows')">
           <span class="age-group-emoji" aria-hidden="true">🌾</span>
           <h4>Willows</h4>
           <span class="age-range">Ages 10 – 11</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #5BACC8" onclick="openAgeGroupModal('cedars')">
+        <div class="age-group-card fade-in" style="--accent: #1A7A7A" onclick="openAgeGroupModal('cedars')">
           <span class="age-group-emoji" aria-hidden="true">🌲</span>
           <h4>Cedars</h4>
           <span class="age-range">Ages 12 – 13</span>
         </div>
-        <div class="age-group-card fade-in" style="--accent: #D4712A" onclick="openAgeGroupModal('pigeons')">
+        <div class="age-group-card fade-in" style="--accent: #8858AD" onclick="openAgeGroupModal('pigeons')">
           <span class="age-group-emoji" aria-hidden="true">🕊️</span>
           <h4>Pigeons</h4>
           <span class="age-range">Ages 14+</span>
@@ -615,6 +625,7 @@
       </div>
 
       <div class="footer-bottom">
+        <p class="footer-tagline">Where curiosity takes root.</p>
         <p>&copy; 2026 Roots & Wings Indy. All rights reserved.</p>
         <p>Made with care in Indianapolis</p>
       </div>
