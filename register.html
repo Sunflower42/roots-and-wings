@@ -702,14 +702,39 @@
       });
     }
 
+    // base64url → base64 → JSON. The raw atob() approach we used before
+    // throws on payloads containing '-' or '_' (which JWT uses but
+    // standard base64 doesn't), silently zeroing out the payload and
+    // tripping the domain check below for a subset of valid Workspace
+    // credentials. Strict decoder + padding + UTF-8 unescape so accented
+    // characters in name fields don't break JSON.parse either.
+    function decodeJwtPayload(jwt) {
+      try {
+        var b64 = String(jwt || '').split('.')[1] || '';
+        b64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        var raw = atob(b64);
+        var json = decodeURIComponent(raw.split('').map(function (c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        return JSON.parse(json);
+      } catch (e) {
+        console.warn('[reg] JWT decode failed:', e && e.message);
+        return null;
+      }
+    }
+
     function handleGoogleCredential(resp) {
       clearError('reg-google-error');
       state.googleCredential = resp.credential;
 
-      var payload;
-      try { payload = JSON.parse(atob(resp.credential.split('.')[1])); } catch (e) { payload = {}; }
+      var payload = decodeJwtPayload(resp.credential) || {};
       var email = (payload.email || '').toLowerCase();
       if (!email.endsWith('@rootsandwingsindy.com')) {
+        // Surface what the credential actually contained so a stuck user
+        // can paste their console log if this still fails for them.
+        console.warn('[reg] returning-family sign-in rejected. payload keys=' +
+          Object.keys(payload).join(',') + ' email=' + JSON.stringify(payload.email || null));
         showError('reg-google-error', 'Please sign in with your @rootsandwingsindy.com account.');
         return;
       }
